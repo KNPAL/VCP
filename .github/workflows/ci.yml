@@ -3,6 +3,27 @@ on: [push, pull_request]
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vcp
+          POSTGRES_PASSWORD: ephemeral-ci-fixture
+          POSTGRES_DB: vcp_test
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd "pg_isready -U vcp -d vcp_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ['56379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://vcp:ephemeral-ci-fixture@127.0.0.1:55432/vcp_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 56379
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,3 +37,6 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm --filter @vcp/database migrate
+      - run: pnpm test:integration
+      - run: pnpm test:web

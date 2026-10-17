@@ -7,5 +7,5 @@ export async function persistIndicator(db:PrismaClient,input:{listingId:string;s
  try{return await db.indicatorSnapshot.create({data:{...key,asOf:new Date(input.asOf),evidence:input.evidence}})}
  catch(e){if(!(e instanceof Prisma.PrismaClientKnownRequestError)||e.code!=='P2002')throw e;
  const prior=await db.indicatorSnapshot.findUniqueOrThrow({where:{listingId_session_strategyVersion_dataRevision:key}});
- if(canonical(prior.evidence)!==canonical(input.evidence))throw new Error('STALE_CONFLICT: different evidence for the same immutable revision');return prior;}
+ if(canonical(prior.evidence)!==canonical(input.evidence))throw new Error('STALE_CONFLICT: different evidence for the same immutable revision',{cause:e});return prior;}
 }

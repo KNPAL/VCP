@@ -132,3 +132,106 @@ model PortfolioJournal {
   evidence Json
   @@unique([ownerId,sequence])
 }
+model RawDailyCandle {
+  listingId String @db.Uuid
+  session DateTime @db.Date
+  provider String
+  revisionId String @db.Uuid
+  contentHash String @db.VarChar(64)
+  open Decimal @db.Decimal(20,6)
+  high Decimal @db.Decimal(20,6)
+  low Decimal @db.Decimal(20,6)
+  close Decimal @db.Decimal(20,6)
+  volume BigInt
+  finalizedAt DateTime @db.Timestamptz(6)
+  receivedAt DateTime @db.Timestamptz(6)
+  @@id([listingId,session,provider])
+}
+model CandleChangeOutbox {
+  id String @id @db.Uuid
+  listingId String @db.Uuid
+  session DateTime @db.Date
+  provider String
+  beforeRevisionId String? @db.Uuid
+  afterRevisionId String @unique @db.Uuid
+  calendarHash String @db.VarChar(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model CalendarSnapshot {
+  id String @id @db.VarChar(64)
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model CandleQuarantine {
+  id String @id @db.Uuid
+  listingId String @db.Uuid
+  provider String
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model CandleCoverage {
+  listingId String @db.Uuid
+  provider String
+  fromSession DateTime @db.Date
+  watermark DateTime? @db.Date
+  checkedAt DateTime @db.Timestamptz(6)
+  evidence Json
+  @@id([listingId,provider])
+}
+model SourceSnapshot {
+  id String @id @db.VarChar(64)
+  dataset String
+  knownAt DateTime @db.Timestamptz(6)
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model ReadinessProof {
+  id String @id @db.VarChar(64)
+  gate String
+  status String
+  probeAt DateTime @db.Timestamptz(6)
+  sourceAt DateTime? @db.Timestamptz(6)
+  expiresAt DateTime @db.Timestamptz(6)
+  evidence Json
+  @@index([gate,probeAt(sort: Desc)])
+}
+model Company {
+  id String @id @db.Uuid
+  isin String @unique @db.VarChar(12)
+}
+model Listing {
+  id String @id @db.Uuid
+  companyId String @db.Uuid
+  exchange String
+}
+model InstrumentSnapshot {
+  id String @id @db.VarChar(64)
+  knownAt DateTime @db.Timestamptz(6)
+  sourceReference String
+  evidence Json
+}
+model ListingMapping {
+  id String @id @db.VarChar(64)
+  snapshotId String @db.VarChar(64)
+  listingId String @db.Uuid
+  provider String
+  token String
+  validFrom DateTime @db.Date
+  validTo DateTime? @db.Date
+  evidence Json
+}
+model UniverseSnapshot {
+  id String @id @db.VarChar(64)
+  knownAt DateTime @db.Timestamptz(6)
+  evidence Json
+}
+model ScanUniverseSnapshot {
+  scanId String @id @db.Uuid
+  knownAt DateTime @db.Timestamptz(6)
+  evidence Json
+}
+model SectorSnapshot {
+  id String @id @db.VarChar(64)
+  knownAt DateTime @db.Timestamptz(6)
+  evidence Json
+}

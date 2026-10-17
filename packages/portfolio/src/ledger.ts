@@ -48,7 +48,11 @@ export function projectPortfolio(events:readonly PortfolioEvent[],asOf:string){
   cash+=delta;cashEntries.push({eventId:event.id,amount:formatFixed(delta),sourceId:event.sourceId});
  }
  const lots:Lot[]=[],realized:{fillId:string;isin:string;quantity:number;pnl:string;consumed:{lotId:string;quantity:number;buyFees:string}[]}[]=[];
- const fills=visible.filter(e=>e.kind==='FILL'&&!reversed.has(e.id)).sort((a,b)=>instant(a.occurredAt)-instant(b.occurredAt)||a.sequence-b.sequence);
+ const originalSequence=(event:PortfolioEvent):number=>{
+  if(event.kind==='FILL'&&event.replacementOf){const original=byId.get(event.replacementOf);if(!original||original.sequence>=event.sequence)throw new Error('INVALID_REPLACEMENT_TARGET');return originalSequence(original)}
+  return event.sequence;
+ };
+ const fills=visible.filter(e=>e.kind==='FILL'&&!reversed.has(e.id)).sort((a,b)=>instant(a.occurredAt)-instant(b.occurredAt)||originalSequence(a)-originalSequence(b));
  for(const event of fills){if(event.kind!=='FILL')continue;
   if(event.side==='BUY'){lots.push({fillId:event.id,isin:event.isin,originalQty:event.quantity,remainingQty:event.quantity,price:event.price,remainingFees:event.fees,occurredAt:event.occurredAt});continue}
   let remaining=event.quantity,cost=0n;const consumed:{lotId:string;quantity:number;buyFees:string}[]=[];
@@ -61,5 +65,8 @@ export function projectPortfolio(events:readonly PortfolioEvent[],asOf:string){
  }
  const holdings:Record<string,number>={};for(const lot of lots)if(lot.remainingQty)holdings[lot.isin]=(holdings[lot.isin]??0)+lot.remainingQty;
  for(const qty of Object.values(holdings))integerShares(qty);
- return {asOf,cash:initial.length?formatFixed(cash):null,state:initial.length?'KNOWN' as const:'UNKNOWN' as const,reasons:initial.length?[]:['INITIAL_CAPITAL_REQUIRED'],holdings,lots,realized,realizedPnl:formatFixed(realized.reduce((total,row)=>total+parseFixed(row.pnl),0n)),cashEntries,reversed:[...reversed]};
+ const positions=Object.entries(holdings).sort().map(([isin,quantity])=>({isin,quantity,
+  costBasis:formatFixed(lots.filter(lot=>lot.isin===isin).reduce((total,lot)=>total+parseFixed(lot.price)*BigInt(lot.remainingQty)+parseFixed(lot.remainingFees),0n)),
+  realizedPnl:formatFixed(realized.filter(row=>row.isin===isin).reduce((total,row)=>total+parseFixed(row.pnl),0n))}));
+ return {asOf,cash:initial.length?formatFixed(cash):null,state:initial.length?'KNOWN' as const:'UNKNOWN' as const,reasons:initial.length?[]:['INITIAL_CAPITAL_REQUIRED'],holdings,positions,lots,realized,realizedPnl:formatFixed(realized.reduce((total,row)=>total+parseFixed(row.pnl),0n)),cashEntries,reversed:[...reversed]};
 }

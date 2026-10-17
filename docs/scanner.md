@@ -12,4 +12,5 @@ Authenticated reads:
 
 Coverage and ranking are deterministic under input permutations. PostgreSQL/API integration tests verify persisted partial results, duplicate retry, immutable conflict, protected endpoints and invalid cursors. Unit tests cover every rank tie-break, missing inputs, ratio precision and page stability.
 
-Whole-universe scheduling/checkpoints (KAN-73), enriched nested-pattern metadata and references (KAN-76), alerts (KAN-78), and actual finalized-data acquisition remain separate unfinished work. Current candidate DTO contains ranking inputs and evidence; full contraction/chart metadata integration is still required for KAN-77 completion. No scan is fabricated for the application database.
+Whole-universe scheduling/checkpoints (KAN-73), enriched nested-pattern metadata and references (KAN-76), alerts (KAN-78), and actual finalized-data acquisition remain separate unfinished work. Candidate DTO also includes the primary and nested pattern IDs and complete persisted contraction/chart metadata, verified through the authenticated API. Depth values are percentages, matching the VCP engine. No scan is fabricated for the application database.
+

@@ -10,6 +10,14 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "node --test tests/*.test.mjs",
-    "lint": "node scripts/check-boundaries.mjs"
+    "lint": "eslint apps packages scripts tests fixtures && node scripts/check-boundaries.mjs",
+    "test:integration": "node --test tests/database.integration.mjs tests/worker.integration.mjs",
+    "test:web": "node scripts/ci-web-test.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "typescript-eslint": "^8.71.2"
   }
 }

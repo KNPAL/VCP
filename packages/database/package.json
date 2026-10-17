@@ -20,6 +20,7 @@
     "@vcp/domain": "workspace:*",
     "@vcp/strategy": "workspace:*",
     "@vcp/portfolio": "workspace:*",
+    "@vcp/market-data": "workspace:*",
     "@prisma/client": "6.19.0"
   },
   "devDependencies": {

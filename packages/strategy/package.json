@@ -14,7 +14,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@vcp/domain": "workspace:*"
+    "@vcp/domain": "workspace:*",
+    "@vcp/vcp": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.0",

@@ -7,3 +7,6 @@ export {persistScan,getScan,latestScan} from './scans.js';
 export {persistMarketEvent,persistUserDecision} from './signals.js';
 export {appendPortfolio,readPortfolio} from './portfolio.js';
 export type {JournalCommand} from './portfolio.js';
+export {ingestCandles} from './candles.js';
+export {persistSource,persistReadiness,getReadiness} from './readiness.js';
+export {persistInstrumentSnapshot,persistUniverse,pinScanUniverse,persistSectors,getSector} from './instruments.js';

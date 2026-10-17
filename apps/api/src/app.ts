@@ -7,7 +7,7 @@ import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError } from '@vcp/doma
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
-import {getScan,latestScan,appendPortfolio,readPortfolio} from '@vcp/database';
+import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
 
@@ -40,6 +40,12 @@ export const openapi = {
   openapi: '3.1.0', info: { title: 'Study Trade VCP', version: '4.0.0' },
   components: { schemas: wireSchemas, securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: 'vcp_session' } } },
   paths: {
+    '/api/v1/sources/readiness':{get:{operationId:'sourceReadiness',security:[{session:[]}],responses:{'200':{description:'All G01–G10 proof statuses, source timestamps, expiry, blocked capabilities and exact failure policies'},'401':{description:'Authentication required'}}}},
+    '/api/v1/portfolio':{get:{operationId:'portfolioJournal',security:[{session:[]}],responses:{'200':{description:'Actual signed cash, FIFO positions, immutable journal and explicit unknown valuation/reconciliation'}}}},
+    '/api/v1/portfolio/cash':{post:{operationId:'recordCash',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',maxLength:128}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Verified cash event recorded once'},'409':{description:'Initial capital or idempotency conflict'},'422':{description:'Invalid cash evidence'}}}},
+    '/api/v1/positions':{get:{operationId:'actualPositions',security:[{session:[]}],responses:{'200':{description:'Per-ISIN actual holdings and FIFO lots'}}},post:{operationId:'recordActualBuy',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Actual manual fill recorded atomically; no brokerage order'},'409':{description:'Duplicate source or idempotency conflict'}}}},
+    '/api/v1/positions/{id}/fills':{post:{operationId:'recordActualFill',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',description:'Canonical company ISIN'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Actual BUY or SELL fact recorded, with FIFO fee allocation'},'409':{description:'Oversell, duplicate source or idempotency conflict'}}}},
+    '/api/v1/positions/fills/{id}/correct':{post:{operationId:'correctActualFill',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Linked reversal and replacement appended atomically, original retained'},'422':{description:'Invalid correction target or chronology'}}}},
     '/api/v1/vcp/candidates': {
       get: {operationId:'vcpCandidates',security:[{session:[]}],parameters:[
         {name:'scanId',in:'query',required:true,schema:{type:'string',format:'uuid'}},
@@ -150,6 +156,10 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       return writeJournal(request,body as unknown as JournalCommand);
     }
   }
+  @Controller('sources')
+  class SourceController {
+    @Get('readiness') readiness(){return getReadiness(db)}
+  }
   @Controller('system')
   class ScanController {
     @Get('data-gaps') async gaps(){
@@ -161,7 +171,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:()=>db.$disconnect()}}]})
+  @Module({controllers:[SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:()=>db.$disconnect()}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   app.setGlobalPrefix('api/v1');

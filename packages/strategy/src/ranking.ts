@@ -1,10 +1,12 @@
 import {parseFixed,utcInstant} from '@vcp/domain';
+import type {Pattern} from '@vcp/vcp';
 export const MARKET_STATE_ORDER=['BUY_MARKET_SIGNAL','READY','WATCH','DEVELOPING','BLOCKED_DATA','REJECTED'] as const;
 export type MarketState=typeof MARKET_STATE_ORDER[number];
 export interface RankInput {
  instrumentId:string; marketState:MarketState; rsPercentile:string|null; legs:number;
  finalDepth:string|null; vdu:string|null; pivot:string|null; close:string|null; adv20Median:string|null;
  reasons:readonly string[];
+ patternEvidence?:{primaryPatternId:string|null;nestedPatternIds:string[];patterns:Pattern[]};
 }
 export interface ScanEvidence {scanId:string;asOf:string;dataRevision:string;configHash:string}
 const decimal=(value:string)=>parseFixed(value,8,24);
@@ -29,7 +31,7 @@ function validate(row:RankInput){
  if(!Number.isSafeInteger(row.legs)||row.legs<0||row.legs>6)throw new Error('INVALID_LEG_COUNT');
  for(const value of [row.rsPercentile,row.finalDepth,row.vdu,row.pivot,row.close,row.adv20Median])if(value!==null&&decimal(value)<0n)throw new Error('INVALID_RANK_VALUE');
  if(row.rsPercentile!==null&&decimal(row.rsPercentile)>decimal('100'))throw new Error('INVALID_RS_PERCENTILE');
- if(row.finalDepth!==null&&decimal(row.finalDepth)>decimal('1'))throw new Error('INVALID_FINAL_DEPTH');
+ if(row.finalDepth!==null&&decimal(row.finalDepth)>decimal('100'))throw new Error('INVALID_FINAL_DEPTH');
  proximity(row);
 }
 const optional=(value:string|null)=>value===null?null:decimal(value);
@@ -50,7 +52,7 @@ export function rankCandidates(inputs:readonly RankInput[],evidence:ScanEvidence
  const seen=new Set<string>();for(const row of inputs){validate(row);if(seen.has(row.instrumentId))throw new Error('DUPLICATE_CANONICAL_LISTING');seen.add(row.instrumentId)}
  return [...inputs].sort(compareCandidates).map((row,index)=>{
   const distance=proximity(row);
-  return {...row,reasons:[...row.reasons],...evidence,rank:index+1,
+  return {...row,reasons:[...row.reasons],patternEvidence:row.patternEvidence??null,missingData:row.reasons.filter(reason=>/UNKNOWN|MISSING|INCOMPLETE|UNAVAILABLE/.test(reason)),...evidence,rank:index+1,
    rankTuple:[row.marketState,row.rsPercentile,row.legs,row.finalDepth,row.vdu,
     distance?{numerator:distance[0].toString(),denominator:distance[1].toString()}:null,row.adv20Median,row.instrumentId] as const};
  });

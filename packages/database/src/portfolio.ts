@@ -23,12 +23,15 @@ export async function appendPortfolio(db:PrismaClient,ownerId:string,idempotency
   const added:PortfolioEvent[]=[];
   if(command.kind==='CORRECTION'){
    added.push({id:randomUUID(),sequence:sequence++,kind:'REVERSAL',targetId:command.targetId,reason:command.reason,occurredAt:now,recordedAt:now,sourceId:'correction:'+idempotencyKey,author:ownerId});
-   added.push({...command.replacement,id:randomUUID(),sequence:sequence++,kind:'FILL',replacementOf:command.targetId,recordedAt:now,author:ownerId});
-  }else added.push({...command,id:randomUUID(),sequence:sequence++,recordedAt:now,author:ownerId});
+   added.push({...command.replacement,id:randomUUID(),sequence,kind:'FILL',replacementOf:command.targetId,recordedAt:now,author:ownerId});
+  }else added.push({...command,id:randomUUID(),sequence,recordedAt:now,author:ownerId});
   const projection=projectPortfolio([...events,...added],now);
   for(const event of added){const json=canonical(event);await tx.$executeRaw`INSERT INTO "PortfolioJournal" ("id","ownerId","sequence","kind","occurredAt","recordedAt","evidence") VALUES (${event.id}::uuid,${ownerId}::uuid,${event.sequence},${event.kind},${new Date(event.occurredAt)},${new Date(event.recordedAt)},${json}::jsonb)`}
   const response=JSON.parse(canonical({eventIds:added.map(event=>event.id),portfolio:projection})) as Prisma.InputJsonValue;
   await tx.idempotencyRecord.create({data:{ownerId,key,requestHash,response}});return response;
- },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable})}catch(error){if(error instanceof Prisma.PrismaClientKnownRequestError&&error.code==='P2034'&&attempt<3)continue;throw error}
+ },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable})}catch(error){
+  const retryable=error instanceof Prisma.PrismaClientKnownRequestError&&(error.code==='P2034'||(error.code==='P2010'&&['40001','40P01'].includes(String(error.meta?.['code']))));
+  if(retryable&&attempt<3)continue;throw error;
+ }
  throw new Error('PORTFOLIO_TRANSACTION_RETRY_EXHAUSTED');
 }

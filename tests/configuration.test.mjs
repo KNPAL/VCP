@@ -6,4 +6,5 @@ test('immutable profile hashes ignore JSON ordering but reflect all thresholds',
  assert.notEqual(configurationHash(ST_VCP_4_0),configurationHash({...ST_VCP_4_0,maximumStop:'0.09'}));
  assert.throws(()=>{ST_VCP_4_0.maximumStop='0.09'});assert.throws(()=>configurationHash({a:NaN}));
  assert.equal(ST_VCP_4_0.automaticOrders,false);
+ assert.equal(ST_VCP_4_0.quoteFreshnessSeconds,60);assert.equal(ST_VCP_4_0.heartbeatFreshnessSeconds,30);assert.equal(ST_VCP_4_0.planValiditySeconds,30);
 });

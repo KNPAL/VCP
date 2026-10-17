@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {evaluateBreakout,breakoutBeforeRecompute,structuralStop,evaluateEntry,REQUIRED_RISK_GATES} from '../packages/strategy/dist/index.js';
-import {dates,clock,breakoutInput,entryInput} from '../fixtures/signal-golden.mjs';
+import {evaluateBreakout,breakoutBeforeRecompute,structuralStop,evaluateEntry} from '../packages/strategy/dist/index.js';
+import {clock,breakoutInput,entryInput} from '../fixtures/signal-golden.mjs';
 test('breakout uses completed current candle and frozen prior READY pivot with exact volume boundary',()=>{
  const input=breakoutInput();const first=evaluateBreakout(input);assert.equal(first.state,'BREAKOUT_CONFIRMED');
  assert.deepEqual(first,evaluateBreakout(structuredClone(input)));
