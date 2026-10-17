@@ -1,0 +1,69 @@
+services:
+  migrate:
+    build: {context: .., dockerfile: infra/Dockerfile}
+    image: study-trade-vcp:local
+    command: [node, scripts/container-start.mjs, migrate]
+    secrets: [database_password]
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    image: study-trade-vcp:local
+    command: [node, scripts/container-start.mjs, api]
+    environment:
+      API_HOST: 0.0.0.0
+      APP_ORIGIN: https://localhost:8443
+      COOKIE_SECURE: 'true'
+    secrets: [database_password]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3001/api/v1/system/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  web:
+    image: study-trade-vcp:local
+    working_dir: /app/apps/web
+    command: [node, node_modules/next/dist/bin/next, start, -H, 0.0.0.0]
+    environment:
+      API_INTERNAL_URL: http://api:3001
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  worker:
+    image: study-trade-vcp:local
+    command: [node, scripts/container-start.mjs, worker]
+    environment:
+      REDIS_HOST: redis
+    secrets: [database_password]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "process.exit(Date.now()-require('fs').statSync('/tmp/vcp-worker-health').mtimeMs<20000?0:1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  proxy:
+    build: {context: .., dockerfile: infra/Caddy.Dockerfile}
+    ports: [127.0.0.1:8443:8443]
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on:
+      web: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, --cacert, /data/caddy/pki/authorities/local/root.crt, 'https://localhost:8443/api/v1/system/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  caddy_data:
+  caddy_config:

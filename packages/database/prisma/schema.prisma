@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+model Owner {
+  id String @id @default(uuid()) @db.Uuid
+  login String @unique
+  passwordHash String
+  role String @default("OWNER")
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  sessions Session[]
+}
+model Session {
+  id String @id @db.VarChar(64)
+  ownerId String @db.Uuid
+  owner Owner @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  csrfHash String @db.VarChar(64)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  expiresAt DateTime @db.Timestamptz(6)
+  @@index([expiresAt])
+}
+model StrategyProfile {
+  id String @id @db.VarChar(64)
+  version String @unique
+  configuration Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model CandleRevision {
+  id String @id @default(uuid()) @db.Uuid
+  listingId String @db.Uuid
+  session DateTime @db.Date
+  scale String
+  revision Int
+  open Decimal @db.Decimal(20,6)
+  high Decimal @db.Decimal(20,6)
+  low Decimal @db.Decimal(20,6)
+  close Decimal @db.Decimal(20,6)
+  volume BigInt
+  source String
+  receivedAt DateTime @db.Timestamptz(6)
+  finalizedAt DateTime? @db.Timestamptz(6)
+  adjustmentRevision String?
+  @@unique([listingId,session,scale,revision])
+}
+model IdempotencyRecord {
+  id String @id @default(uuid()) @db.Uuid
+  ownerId String @db.Uuid
+  key String
+  requestHash String @db.VarChar(64)
+  response Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([ownerId,key])
+}
+model IndicatorSnapshot {
+  id String @id @default(uuid()) @db.Uuid
+  listingId String @db.Uuid
+  session DateTime @db.Date
+  strategyVersion String
+  dataRevision String
+  asOf DateTime @db.Timestamptz(6)
+  decidedAt DateTime @default(now()) @db.Timestamptz(6)
+  evidence Json
+  @@unique([listingId,session,strategyVersion,dataRevision])
+}
+model PatternSnapshot {
+  id String @id @default(uuid()) @db.Uuid
+  patternId String @db.VarChar(64)
+  listingId String @db.Uuid
+  session DateTime @db.Date
+  dataRevision String
+  adjustmentRevision String
+  asOf DateTime @db.Timestamptz(6)
+  decidedAt DateTime @db.Timestamptz(6)
+  evidence Json
+  @@unique([patternId,session,dataRevision])
+}
+model PatternReplacement {
+  oldId String @id @db.VarChar(64)
+  replacedById String @db.VarChar(64)
+  reason String
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model StrategyActivation {
+  id String @id @default(uuid()) @db.Uuid
+  profileId String @db.VarChar(64)
+  activatedAt DateTime @db.Timestamptz(6)
+  knownAt DateTime @db.Timestamptz(6)
+}
+model ScanResult {
+  id String @id @db.Uuid
+  asOf DateTime @db.Timestamptz(6)
+  configHash String @db.VarChar(64)
+  dataRevision String
+  status String
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([asOf(sort: Desc)])
+}
+model MarketEvent {
+  id String @id @db.VarChar(64)
+  logicalId String @db.VarChar(64)
+  listingId String @db.Uuid
+  session DateTime @db.Date
+  type String
+  configHash String @db.VarChar(64)
+  dataRevision String
+  occurredAt DateTime @db.Timestamptz(6)
+  observedAt DateTime @db.Timestamptz(6)
+  decidedAt DateTime @db.Timestamptz(6)
+  evidence Json
+  @@unique([logicalId,configHash,dataRevision])
+}
+model UserSignalDecision {
+  id String @id @db.VarChar(64)
+  ownerId String @db.Uuid
+  marketEventId String @db.VarChar(64)
+  state String
+  decidedAt DateTime @db.Timestamptz(6)
+  expiresAt DateTime @db.Timestamptz(6)
+  evidence Json
+}
+model PortfolioJournal {
+  id String @id @db.Uuid
+  ownerId String @db.Uuid
+  sequence Int
+  kind String
+  occurredAt DateTime @db.Timestamptz(6)
+  recordedAt DateTime @db.Timestamptz(6)
+  evidence Json
+  @@unique([ownerId,sequence])
+}

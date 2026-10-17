@@ -1,0 +1,30 @@
+{
+  "name": "@vcp/database",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate deploy",
+    "seed": "node dist/seed.js"
+  },
+  "dependencies": {
+    "@vcp/domain": "workspace:*",
+    "@vcp/strategy": "workspace:*",
+    "@vcp/portfolio": "workspace:*",
+    "@prisma/client": "6.19.0"
+  },
+  "devDependencies": {
+    "prisma": "6.19.0",
+    "typescript": "^5.9.0",
+    "@types/node": "^24.0.0"
+  }
+}
