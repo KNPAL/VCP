@@ -30,8 +30,8 @@ export function extrema(s:VcpSeries){
 export function assembleLegs(s:VcpSeries,swings:readonly Swing[],factor='1'):Leg[]{
  const legs:Leg[]=[];const f=Q.decimal(factor);if(f.compare(new Q(0))<=0)throw new Error('INVALID_SCALE');
  for(let i=0;i+1<swings.length;i+=2){const h=swings[i]!,l=swings[i+1]!;if(h.kind!=='H'||l.kind!=='L'||h.index>=l.index)throw new Error('INVALID_LEG_ORDER');
- const volume=s.bars.slice(h.index,l.index+1).reduce((sum,b)=>sum+BigInt(b.volume),0n);
- legs.push({high:h,low:l,depth:new Q(100).mul(Q.decimal(h.price).sub(Q.decimal(l.price))).div(Q.decimal(h.price)).fixed(),duration:l.index-h.index+1,meanVolume:new Q(volume,l.index-h.index+1).fixed(),cumulativeVolume:volume.toString(),highCurrent:Q.decimal(h.price).mul(f).fixed(6),lowCurrent:Q.decimal(l.price).mul(f).fixed(6)});
+ const volume=s.bars.slice(h.index,l.index+1).reduce((sum,b)=>sum.add(Q.decimal(b.volume)),new Q(0));
+ legs.push({high:h,low:l,depth:new Q(100).mul(Q.decimal(h.price).sub(Q.decimal(l.price))).div(Q.decimal(h.price)).fixed(),duration:l.index-h.index+1,meanVolume:volume.div(new Q(l.index-h.index+1)).fixed(),cumulativeVolume:volume.d===1n?volume.n.toString():volume.fixed(),highCurrent:Q.decimal(h.price).mul(f).fixed(6),lowCurrent:Q.decimal(l.price).mul(f).fixed(6)});
  }return legs;
 }
 function depth(l:Leg){return new Q(100).mul(Q.decimal(l.high.price).sub(Q.decimal(l.low.price))).div(Q.decimal(l.high.price))}

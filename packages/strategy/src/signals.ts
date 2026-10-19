@@ -8,7 +8,7 @@ const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).d
 const at=(value:string)=>utcInstant(value).valueOf();
 const price=(value:string)=>{const n=parseFixed(value);if(n<=0n)throw new Error('INVALID_PRICE');return n};
 function evidenceValid(evidence:SignalEvidence){at(evidence.decidedAt);if(!/^[0-9a-f]{64}$/.test(evidence.configHash)||!evidence.dataRevision)throw new Error('INVALID_SIGNAL_EVIDENCE')}
-export function evaluateBreakout(input:{previous:ReadySnapshot|null;today:FinalBar;priorBars:readonly FinalBar[];tick:string;verifiedSessions:readonly string[]|null;evidence:SignalEvidence}){
+export function evaluateBreakout(input:{previous:ReadySnapshot|null;today:FinalBar;priorBars:readonly FinalBar[];tick:string;verifiedSessions:readonly string[]|null;evidence:SignalEvidence;volumeScale?:'RAW'|'ADJUSTED'}){
  const {previous,today,priorBars,evidence}=input;evidenceValid(evidence);sessionDate(today.session);
  const reasons:string[]=[];const now=at(evidence.decidedAt);
  if(!input.verifiedSessions||new Set(input.verifiedSessions).size!==input.verifiedSessions.length||input.verifiedSessions.some((date,i)=>{sessionDate(date);return i>0&&date<=input.verifiedSessions![i-1]!}))reasons.push('CALENDAR_UNKNOWN');
@@ -26,14 +26,14 @@ export function evaluateBreakout(input:{previous:ReadySnapshot|null;today:FinalB
  const frozen=previous!,pivot=price(frozen.pivot),close=price(today.close),priorClose=price(priorBars.at(-1)!.close),tick=price(input.tick);
  if(pivot%tick!==0n)throw new Error('PIVOT_OFF_TICK');price(frozen.lastLow);
  if(close<=pivot||priorClose>pivot)return {state:'NO_CROSS' as const,reasons:['NO_COMPLETED_PRICE_CROSS'],event:null};
- const volume=(value:string)=>{if(!/^(0|[1-9]\d*)$/.test(value))throw new Error('INVALID_VOLUME');return BigInt(value)};
+ const volume=(value:string)=>{if(input.volumeScale==='ADJUSTED'){const n=parseFixed(value,8,24);if(n<0n)throw new Error('INVALID_VOLUME');return n}if(!/^(0|[1-9]\d*)$/.test(value))throw new Error('INVALID_VOLUME');return BigInt(value)};
  const sum=priorBars.reduce((total,bar)=>total+volume(bar.volume),0n),current=volume(today.volume);
  if(sum===0n)return {state:'UNKNOWN' as const,reasons:['VOLUME_BASELINE_ZERO'],event:null};
  const confirmed=current*100n>=sum*3n;
  const state=confirmed?'BREAKOUT_CONFIRMED' as const:'BREAKOUT_PRICE_ONLY' as const;
  const logicalId=hash([frozen.listingId,today.session,(pivot/tick).toString()]);
  const event={id:hash([logicalId,evidence.configHash,evidence.dataRevision]),logicalId,type:state,listingId:frozen.listingId,patternId:frozen.patternId,session:today.session,pivot:frozen.pivot,lastLow:frozen.lastLow,close:today.close,
-  rvol:{numerator:(current*50n).toString(),denominator:sum.toString()},reasons:confirmed?[]:['BREAKOUT_VOLUME_BELOW_1_50'],
+  rvol:{numerator:(current*50n).toString(),denominator:sum.toString()},...(input.volumeScale==='ADJUSTED'?{volumeScale:'ADJUSTED' as const}:{}),reasons:confirmed?[]:['BREAKOUT_VOLUME_BELOW_1_50'],
   occurredAt:today.endedAt,observedAt:today.finalizedAt!,decidedAt:evidence.decidedAt,effectiveAt:evidence.decidedAt,
   strategyVersion:STRATEGY_VERSION,configHash:evidence.configHash,dataRevision:evidence.dataRevision,
   sourceRevisions:[...priorBars.map(bar=>bar.revision),today.revision],previousSnapshot:frozen};

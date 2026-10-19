@@ -235,3 +235,198 @@ model SectorSnapshot {
   knownAt DateTime @db.Timestamptz(6)
   evidence Json
 }
+model AdjustmentSnapshot {
+  id String @id @db.VarChar(64)
+  listingId String @db.Uuid
+  scaleSession DateTime @db.Date
+  asOf DateTime @db.Timestamptz(6)
+  state String
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model AdjustedDailyCandle {
+  adjustmentId String @db.VarChar(64)
+  rawRevisionId String @db.Uuid
+  session DateTime @db.Date
+  open Decimal @db.Decimal(20,6)
+  high Decimal @db.Decimal(20,6)
+  low Decimal @db.Decimal(20,6)
+  close Decimal @db.Decimal(20,6)
+  volume Decimal @db.Decimal(24,8)
+  evidence Json
+  @@id([adjustmentId,session])
+}
+model CorrectionReplayRequest {
+  eventId String @id @db.Uuid
+  listingId String @db.Uuid
+  changedFrom DateTime @db.Date
+  dataRevision String @db.Uuid
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model CandleDispatch {
+  eventId String @id @db.Uuid
+  jobId String?
+  state String
+  attemptsMade Int
+  reason String?
+  checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model BrokerCircuit {
+  accountKey String @id @db.VarChar(64)
+  sessionRevision String @db.Uuid
+  open Boolean
+  expiresAt DateTime @db.Timestamptz(6)
+  reason String?
+  verifiedAt DateTime @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model BrokerSessionEvidence {
+  accountKey String @db.VarChar(64)
+  sessionRevision String @db.Uuid
+  verifiedAt DateTime @db.Timestamptz(6)
+  expiresAt DateTime @db.Timestamptz(6)
+  @@id([accountKey,sessionRevision])
+}
+model BrokerRequestAttempt {
+  accountKey String @db.VarChar(64)
+  requestId String @db.Uuid
+  attempt Int
+  at DateTime @db.Timestamptz(6)
+  reason String?
+  httpStatus Int?
+  retryInMs Int?
+  @@id([accountKey,requestId,attempt])
+}
+model HistoricalSyncRun {
+  id String @id @db.Uuid
+  listingId String @db.Uuid
+  provider String
+  interval String @default("ONE_DAY")
+  fromSession DateTime @db.Date
+  toSession DateTime @db.Date
+  asOf DateTime @db.Timestamptz(6)
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model HistoricalSyncWindow {
+  id String @id @db.Uuid
+  runId String @db.Uuid
+  parentId String? @db.Uuid
+  fromSession DateTime @db.Date
+  toSession DateTime @db.Date
+  expectedSessions Json
+  state String
+  attempts Int @default(0)
+  leaseToken String? @db.Uuid
+  leaseUntil DateTime? @db.Timestamptz(6)
+  nextAttemptAt DateTime @default(now()) @db.Timestamptz(6)
+  reason String?
+  report Json?
+  updatedAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([runId,fromSession,toSession])
+  @@index([state,nextAttemptAt])
+}
+model HistoricalSyncAttempt {
+  windowId String @db.Uuid
+  attempt Int
+  leaseToken String @db.Uuid
+  outcome String
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@id([windowId,attempt])
+}
+model HistoricalProbe {
+  id String @id @db.Uuid
+  accountKey String @db.VarChar(64)
+  revision String @db.VarChar(64)
+  asOf DateTime @db.Timestamptz(6)
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model BrokerCredential {
+ reference String @id @db.Uuid
+ accountKey String @db.VarChar(64)
+ sessionRevision String @db.Uuid
+ keyId String @db.VarChar(64)
+ expiresAt DateTime @db.Timestamptz(6)
+ envelope Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ @@unique([accountKey,sessionRevision])
+}
+model BackfillBinding {
+ runId String @id @db.Uuid
+ credentialReference String @db.Uuid
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model IndicatorReplayReceipt {
+ id String @id @db.VarChar(64)
+ eventId String @db.Uuid
+ adjustmentId String @db.VarChar(64)
+ calendarHash String @db.VarChar(64)
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model IndicatorReplayDispatch {
+ eventId String @db.Uuid
+ adjustmentId String @db.VarChar(64)
+ calendarHash String @db.VarChar(64)
+ checkedAt DateTime @default(now()) @db.Timestamptz(6)
+ state String
+ @@id([eventId,adjustmentId,calendarHash])
+}
+
+model StructureReplayResult {
+ id String @id @db.VarChar(64)
+ indicatorReceiptId String @db.VarChar(64)
+ instrumentSnapshotId String @db.VarChar(64)
+ profileId String
+ strengthReplayId String? @db.VarChar(64)
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model RelativeStrengthReplay {
+ id String @id @db.VarChar(64)
+ indicatorReceiptId String @db.VarChar(64)
+ instrumentSnapshotId String @db.VarChar(64)
+ profileId String @db.VarChar(64)
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model StructureReplayDispatch {
+ strengthReplayId String @id @db.VarChar(64)
+ state String
+ checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model StrengthReplayPlan {
+ id String @id @db.VarChar(64)
+ indicatorReceiptId String @db.VarChar(64)
+ templateId String? @db.VarChar(64)
+ dependencyKey String? @unique @db.VarChar(64)
+ sourceReplayId String? @db.VarChar(64)
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ @@unique([indicatorReceiptId,templateId])
+}
+
+model StrengthReplayDispatch {
+ planId String @id @db.VarChar(64)
+ state String
+ checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model ReplayContextDiscovery {
+ indicatorReceiptId String @id @db.VarChar(64)
+ state String
+ reason String?
+ checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model ReplayDependencyCheck {
+ indicatorReceiptId String @id @db.VarChar(64)
+ reason String?
+ checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}

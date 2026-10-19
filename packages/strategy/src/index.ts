@@ -3,6 +3,8 @@ export * from './ranking.js';
 export * from './scans.js';
 export * from './signals.js';
 export * from './candidates.js';
+export * from './shadow-review.js';
+export * from './correction-replay.js';
 export const PROFILE_VERSION='ST_VCP_4_0_CONFIG_2';
 export const ST_VCP_4_0=Object.freeze({
  configurationRevision:2,

@@ -9,5 +9,5 @@ const prisma='packages/database/node_modules/prisma/build/index.js';
 function run(args){const r=spawnSync(process.execPath,args,{env,stdio:'inherit'});if(r.status!==0)process.exit(r.status??1);}
 if(mode==='migrate'||mode==='test')run([prisma,'migrate','deploy','--schema','packages/database/prisma/schema.prisma']);
 if(mode==='seed')run(['packages/database/dist/seed.js']);
-if(mode==='test')run(['--test','tests/database.integration.mjs']);
+if(mode==='test')run(['--test','--test-concurrency=1','tests/database.integration.mjs','tests/indicator-replay.integration.mjs','tests/rs-replay.integration.mjs']);
 if(mode==='test-web')run(['scripts/ci-web-test.mjs']);

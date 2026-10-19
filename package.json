@@ -11,7 +11,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "node --test tests/*.test.mjs",
     "lint": "eslint apps packages scripts tests fixtures && node scripts/check-boundaries.mjs",
-    "test:integration": "node --test tests/database.integration.mjs tests/worker.integration.mjs",
+    "test:integration": "node --test --test-concurrency=1 tests/database.integration.mjs tests/indicator-replay.integration.mjs tests/rs-replay.integration.mjs tests/worker.integration.mjs",
     "test:web": "node scripts/ci-web-test.mjs"
   },
   "devDependencies": {

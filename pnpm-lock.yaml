@@ -85,9 +85,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@vcp/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@vcp/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@vcp/market-data':
+        specifier: workspace:*
+        version: link:../../packages/market-data
       bullmq:
         specifier: ^5.0.0
         version: 5.81.5
@@ -120,6 +126,9 @@ importers:
       '@vcp/domain':
         specifier: workspace:*
         version: link:../domain
+      '@vcp/indicators':
+        specifier: workspace:*
+        version: link:../indicators
       '@vcp/market-data':
         specifier: workspace:*
         version: link:../market-data

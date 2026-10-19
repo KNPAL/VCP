@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp, StrictObjectPipe } from '../apps/api/dist/app.js';
 test('API starts and uses versioned routes and typed failures', async () => {
-  const app = await createApp();
+  const logs=[];const app = await createApp({logSink:line=>logs.push(JSON.parse(line))});
   try {
     await app.listen(0, '127.0.0.1');
     const base = await app.getUrl();
@@ -23,6 +23,9 @@ test('API starts and uses versioned routes and typed failures', async () => {
     assert.ok(spec.paths['/api/v1/system/health']);
     const unsupported = await fetch(base+'/api/v1/system/health',{method:'POST'});
     assert.equal(unsupported.status,404);
+    const secret='private-token-do-not-log';const failed=await fetch(base+'/api/v1/positions?access_token='+secret,{headers:{authorization:'Bearer '+secret,cookie:'vcp_session='+secret,'x-request-id':secret}});
+    assert.equal(failed.status,401);const failedBody=await failed.json();const requestId=failed.headers.get('x-request-id');assert.notEqual(requestId,secret);assert.equal(failedBody.error.requestId,requestId);
+    const traced=logs.filter(row=>row.requestId===requestId);assert.equal(traced.length,2);assert.equal(traced[1].httpStatus,401);assert.equal(traced[1].result,'FAILED');assert.ok(!JSON.stringify(logs).includes(secret));
   } finally { await app.close(); }
 });
 test('strict DTO rejects arrays, null, unknown properties and wrong field types', () => {

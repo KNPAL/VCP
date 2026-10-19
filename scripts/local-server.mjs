@@ -1,9 +1,11 @@
 import {readFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 const mode=process.argv[2];
-if(!['api','web'].includes(mode))throw new Error('Expected api or web');
+if(!['api','web','worker'].includes(mode))throw new Error('Expected api, web or worker');
+const webPort=Number(process.env.VCP_WEB_PORT??3000);
+if(!Number.isSafeInteger(webPort)||webPort<1||webPort>65535||webPort===3001)throw new Error('Invalid VCP_WEB_PORT');
 const password=(await readFile('.runtime/database-password','utf8')).trim();
-const env={...process.env,DATABASE_URL:'postgresql://vcp:'+encodeURIComponent(password)+'@127.0.0.1:55432/vcp',APP_ORIGIN:'http://localhost:3000',COOKIE_SECURE:'false',NODE_ENV:mode==='web'?'production':'development'};
-const child=spawn(process.execPath,mode==='api'?['apps/api/dist/main.js']:['node_modules/next/dist/bin/next','start','-p','3000'],{cwd:mode==='api'?process.cwd():process.cwd()+'/apps/web',env,stdio:'inherit'});
+const env={...process.env,DATABASE_URL:'postgresql://vcp:'+encodeURIComponent(password)+'@127.0.0.1:55432/vcp',REDIS_HOST:'127.0.0.1',REDIS_PORT:'56379',APP_ORIGIN:'http://localhost:'+webPort,COOKIE_SECURE:'false',NODE_ENV:mode==='web'?'production':'development'};
+const child=spawn(process.execPath,mode==='web'?['node_modules/next/dist/bin/next','start','-p',String(webPort),'-H','127.0.0.1']:['apps/'+mode+'/dist/main.js'],{cwd:mode==='web'?process.cwd()+'/apps/web':process.cwd(),env,stdio:'inherit'});
 child.on('exit',code=>process.exit(code??1));
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>child.kill(signal));

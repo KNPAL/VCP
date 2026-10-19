@@ -7,9 +7,10 @@ import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError } from '@vcp/doma
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
-import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness} from '@vcp/database';
+import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness,syncJobs,instrumentCoverage} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
+import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
 
 export class StrictObjectPipe implements PipeTransform {
   constructor(private readonly fields: Readonly<Record<string, (value: unknown) => boolean>>) {}
@@ -57,6 +58,8 @@ export const openapi = {
     },
     '/api/v1/system/scans/{id}': {get:{operationId:'scanEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Immutable intended universe, per-listing reasons, coverage counts and ranked candidates'},'404':{description:'Scan not found'}}}},
     '/api/v1/system/data-gaps': {get:{operationId:'dataGaps',security:[{session:[]}],responses:{'200':{description:'Latest scan missing and excluded listings, or explicit NO_COMPLETED_SCAN UNKNOWN state'}}}},
+    '/api/v1/system/jobs': {get:{operationId:'historicalSyncJobs',security:[{session:[]}],parameters:[{name:'runId',in:'query',schema:{type:'string',format:'uuid'}},{name:'after',in:'query',schema:{type:'string',format:'uuid'}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:200}}],responses:{'200':{description:'Persistent sync windows, attempts, exact response coverage and retry state'},'400':{description:'Invalid filters'}}}},
+    '/api/v1/system/coverage/{listingId}': {get:{operationId:'instrumentCoverage',security:[{session:[]}],parameters:[{name:'listingId',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'provider',in:'query',required:true,schema:{type:'string'}}],responses:{'200':{description:'Source-specific final session, holes, revision, rejected candles and last successful window; missing evidence is UNKNOWN'},'400':{description:'Listing ID and provider required'}}}},
     '/api/v1/system/health': {
       get: {
         operationId: 'systemHealth',
@@ -82,7 +85,7 @@ class SystemController {
   @Get('health') health() { return { status: 'UP', strategyVersion: STRATEGY_VERSION, at: new Date().toISOString() }; }
   @Get('openapi.json') specification() { return openapi; }
 }
-export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean} = {}) {
+export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink} = {}) {
   const db = options.db ?? await databaseFromEnvironment();
   const auth = new AuthService(db, options.origin ?? process.env['APP_ORIGIN'] ?? 'http://localhost:3000', options.secure ?? process.env['COOKIE_SECURE'] !== 'false');
   @Controller('auth')
@@ -162,7 +165,17 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('system')
   class ScanController {
-    @Get('data-gaps') async gaps(){
+    @Get('jobs') jobs(@Query('runId') runId?:string,@Query('after') after?:string,@Query('limit') limit?:string){
+      for(const id of [runId,after])if(id!==undefined&&(typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)))throw new BadRequestException('Invalid job filter');
+      if(limit!==undefined&&(typeof limit!=='string'||!/^\d+$/.test(limit)||Number(limit)<1||Number(limit)>200))throw new BadRequestException('Invalid job limit');
+      return syncJobs(db,{...(runId?{runId}:{}),...(after?{after}:{}),...(limit?{limit:Number(limit)}:{})});
+    }
+    @Get('coverage/:listingId') coverage(@Param('listingId') listingId:string,@Query('provider') provider?:string){
+      if(typeof listingId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(listingId)||typeof provider!=='string'||!provider.trim()||provider.length>100)throw new BadRequestException('Listing ID and provider required');
+      return instrumentCoverage(db,listingId,provider);
+    }
+    @Get('data-gaps') async gaps(@Query('listingId') listingId?:string,@Query('provider') provider?:string){
+      if(listingId!==undefined||provider!==undefined){if(!listingId)throw new BadRequestException('Listing ID required');return this.coverage(listingId,provider)}
       const scan=await latestScan(db);
       return scan?{scanId:scan.scanId,asOf:scan.asOf,dataRevision:scan.dataRevision,status:scan.status,counts:scan.counts,items:scan.entries.filter(x=>x.status!=='ANALYZED')}:{status:'UNKNOWN',reason:'NO_COMPLETED_SCAN',items:[],asOf:null,dataRevision:null};
     }
@@ -175,11 +188,16 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   app.setGlobalPrefix('api/v1');
-  app.use((request: Request, response: Response, next: () => void) => {
+  app.use((request: Request, response: Response & {statusCode:number;on:(name:string,callback:()=>void)=>void}, next: () => void) => {
     request.requestId = randomUUID();
     response.setHeader('X-Request-Id', request.requestId);
     response.setHeader('Cache-Control', 'no-store');
-    next();
+    withLogContext({requestId:request.requestId,...(options.logSink?{sink:options.logSink}:{})},()=>{
+      const startedAt=new Date().toISOString(),context=logContext();let finished=false;
+      writeLog('api.request',{startedAt,finishedAt:null,result:'STARTED'});
+      const finish=(aborted:boolean)=>{if(finished)return;finished=true;const status=response.statusCode;writeLog('api.request',{startedAt,finishedAt:new Date().toISOString(),result:aborted||status>=400?'FAILED':'SUCCESS',failureCode:aborted?'REQUEST_ABORTED':status>=400?errorCodes[status as keyof typeof errorCodes]??'INTERNAL_ERROR':null,httpStatus:status},context,options.logSink)};
+      response.on('finish',()=>finish(false));response.on('close',()=>finish(true));next();
+    });
   });
   app.useGlobalFilters(new Errors());
   app.use((request:AuthRequest,response:AuthResponse,next:()=>void) => {

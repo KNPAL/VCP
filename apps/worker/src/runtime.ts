@@ -1,9 +1,10 @@
 import { Queue, Worker, UnrecoverableError, type IRedisClient } from 'bullmq';
 import { createHash } from 'node:crypto';
 import { completedSessions, type TradingSession } from '@vcp/domain';
+import {trace,withLogContext} from '@vcp/domain/logging';
 export const connection=()=>({host:process.env['REDIS_HOST']??'127.0.0.1',port:Number(process.env['REDIS_PORT']??6379)});
 export type Handler=(data:unknown)=>Promise<unknown>;
-export function createWorker(name='vcp',handlers:Record<string,Handler>={}){return new Worker(name,async job=>{const handler=handlers[job.name];if(!handler)throw new UnrecoverableError('NOT_IMPLEMENTED: '+job.name);return handler(job.data)},{connection:connection(),concurrency:1})}
+export function createWorker(name='vcp',handlers:Record<string,Handler>={}){return new Worker(name,job=>withLogContext({jobIdentity:name+'|'+job.id},()=>trace('worker.job',async()=>{const handler=handlers[job.name];if(!handler)throw new UnrecoverableError('NOT_IMPLEMENTED');return handler(job.data)})),{connection:connection(),concurrency:1})}
 export function queue(name='vcp'){return new Queue(name,{connection:connection(),defaultJobOptions:{attempts:4,backoff:{type:'exponential',delay:1000},removeOnComplete:false,removeOnFail:false}})}
 export async function enqueueOnce(q:Queue,kind:string,identity:string,data:unknown){const jobId=createHash('sha256').update(kind+'|'+identity).digest('hex');return q.add(kind,data,{jobId})}
 export async function scheduleFinalized(q:Queue,sessions:readonly TradingSession[]|null,asOf:string){const completed=completedSessions(sessions,asOf);if(completed.state==='UNKNOWN')return completed;for(const s of completed.value)await enqueueOnce(q,'eod',s.date,{session:s.date,finalizedAt:s.finalizedAt});return {state:'KNOWN' as const,count:completed.value.length}}

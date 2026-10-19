@@ -1,64 +1,49 @@
-# Implementation evidence
+# Implementation status
 
-Scope: KAN-4 through KAN-139 (136 tickets). User authorized independent UI design; Figma access is no longer a dependency. Requirements snapshot: jira-requirements.json. Ticket status is updated when work starts and when verified implementation is coded. No broker orders are permitted.
+Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requested. Jira requirements are saved in jira-requirements.json; that original snapshot's statuses are historical.
 
-## Verified code
+## Jira status
 
-- KAN-18: pnpm monorepo, strict TypeScript, all app/package boundaries.
-- KAN-20: versioned NestJS API, health, typed failures, correlation, OpenAPI 3.1.
-- KAN-22: PostgreSQL 17 migrations, seed harness, UUID/timestamp/decimal constraints, append-only evidence.
-- KAN-23: persistent single-owner sessions, scrypt passwords, secure HttpOnly SameSite cookies, origin and CSRF checks, login throttling, logout and expiry.
-- KAN-24: shared wire contracts and state enums, decimal strings, UTC/session validators and error mappings.
-- KAN-25: exact decimal/tick/share/session utilities.
-- KAN-51–58: exact rational SMA/EMA, Wilder ATR, volume ratios, strict Trend Template, aligned RS, percentile coverage/ties, market regime and raw-turnover median. Every series result includes source revision and as-of evidence. Raw and adjusted price scales cannot be interchanged.
-- KAN-61–72: confirmed 3/3 extrema, ambiguity and normalization, pretrend/base/leg rules, frozen full-base pivots, READY lifecycle, stable identity, nested selection, signal deduplication, immutable persisted chart evidence and corporate-action supersession, golden fixture/replay tests.
+61 tickets are Coded: KAN-18–20, KAN-22–40, KAN-42–43, KAN-46, KAN-49–59, KAN-61–72, KAN-74–77, KAN-81, KAN-83, KAN-85, KAN-87–91, KAN-128.
 
-Jira confirms 44 Coded tickets: KAN-18–20, KAN-22–25, KAN-27, KAN-31, KAN-34, KAN-49, KAN-51–59, KAN-61–72, KAN-74–77, KAN-81, KAN-83, KAN-85, KAN-87–91. No remote CI has run because there is no configured Git remote.
+75 tickets remain, including epics. In Progress: KAN-4–11, KAN-21, KAN-41, KAN-44–45, KAN-47, KAN-60, KAN-80, KAN-82, KAN-84, KAN-92–94, KAN-122–123, KAN-139. Working status never implies verified completion.
 
-## Work in progress
+## Implemented areas
 
-- KAN-19 Coded: full Compose stack passed health checks, including certificate-validated TLS proxy. Local preview uses current code; Docker image predates the latest scanner/portfolio work.
-- KAN-21: independent BullMQ runtime, scheduler requiring verified finalized sessions, deduplicated jobs, failed-job handling and fenced ownership primitives. Redis integration test passes. Production scan/gateway handlers still need integration.
-- KAN-27 Coded: independently designed responsive authenticated shell; navigation, loading/error boundaries, login/logout and setup routes. All 14 routes passed real HTTP authentication/rendering tests. UI features remain placeholders until their own tickets are implemented.
-- KAN-59 Coded: immutable configuration/hash and append-only point-in-time activation; PostgreSQL tests passed.
-- KAN-60: append-only indicator snapshots, idempotent persistence and forward recomputation from the original EMA/ATR seed. Correction tests pass. Worker-level VCP/signal correction replay integration remains.
-- KAN-4 and KAN-7 epics remain in progress; cross-module acceptance must pass before closing epics.
+- Monorepo, strict TypeScript, versioned API, authentication, CSRF, domain contracts, exact decimals, database constraints, local containers/TLS and CI configuration.
+- Verified-calendar raw ingestion, immutable corrections and transactional change outbox; normalized instrument, universe and sector snapshots; source registry and fail-closed readiness gates.
+- Indicators, relative strength, market regime, immutable strategy profiles and VCP structural detection/evidence.
+- Persisted scan coverage, deterministic candidate ranking, nested pattern evidence and cursor API.
+- Immutable breakout/user-decision evidence, structural stops and pure entry eligibility rules.
+- Durable cash and actual-fill journal, FIFO costs, reversal/replacement corrections, idempotent API and concurrency protection.
+- Authenticated responsive application shell and connected Positions cash/fill/journal interface. Other feature screens remain incomplete.
 
-## Verification
+## Current pipeline work
 
-52 combined unit/HTTP tests passed, plus two new nested-candidate tests. Full build, strict typecheck and all 14 authenticated UI routes passed. Additional PostgreSQL integration verifies migrations, financial CHECK constraints, retry deduplication, retained original indicator/pattern revisions, supersession and authentication. Redis integration verifies duplicate job suppression, unknown job failure and ownership fencing. Full workspace build and strict typecheck pass; package-boundary checks pass. Tests use synthetic fixtures, never live trading data.
+KAN-36 is Coded. Durable incremental runs fetch missing sessions plus the last three finalized sessions through the existing licensed, budgeted window worker. Windows are bounded to 400 calendar days and commit bars/checkpoints atomically; retries preserve the original plan. The direct all-or-nothing helper remains available separately. Corrected overlap emits immutable version-2 replay requests specifying per-session INDICATORS/MARKET_SIGNALS/VCP/SCANS ordering. Six focused tests and PostgreSQL/Redis integration passed, including one correction, unchanged overlap, duplicate resume, context conflicts and durable replay receipt. Worker dependency build and lint passed. Executing replay remains KAN-60; calendar scheduling remains KAN-21. See incremental-sync.md.
 
-## Local runtime
+KAN-37 implements immutable split/bonus adjustment snapshots, separate adjusted candles, raw-revision verification and blocking of unverified action evidence. Fractional adjusted volume is preserved separately from integer raw shares. Synthetic unit and PostgreSQL integration verification passed.
 
-- http://localhost:3000: standalone web preview; API on loopback port 3001.
-- Docker stack: https://localhost:8443 (local CA; system trust is not automatically modified).
-- PostgreSQL dev port 55432, Redis dev port 56379, both bound to loopback.
-- Local secrets are generated under .runtime and ignored by Git. Login owner; password is in .runtime/owner-password and is never printed in logs.
-- node scripts/database-command.mjs migrate / seed / test handles local secrets without placing them in command arguments.
-- tests/database.integration.mjs uses isolated vcp_test, never the application database.
-- On Windows, stop the local API before regenerating Prisma, because the loaded native engine locks its DLL.
-- Local preview servers must restart after a production build to avoid stale route code.
+KAN-35 now delivers candle changes through BullMQ into immutable PostgreSQL replay requests, including duplicate and lost-queue recovery. Replay stages remain explicitly PENDING; executing them is unfinished KAN-60 work. KAN-30 provides shared Redis request ceilings, and KAN-38 adds the bounded read-only historical transport, retry policy, durable auth circuit and sanitized attempt evidence. KAN-29 now validates lossless daily responses, compares overlapping historical windows and persists immutable account-probe evidence; synthetic verification passed. KAN-28 now implements bounded login/profile authentication, verified account identity, AES-GCM reference storage, atomic session restoration, configured key files and worker credential resolution. Synthetic authentication and circuit-failure integration passed. KAN-32 now persists resumable windows, immutable attempts and atomic candle/checkpoint commits; KAN-39 exposes authenticated job and source-specific coverage APIs. KAN-33 has tested five-year planning, 400-day segmentation and shrinking to a seven-day floor, and now integrates normalized broker responses with transactional checkpoints. Shared-budget deferrals preserve retry delays without consuming the four-failure limit. KAN-33 now has immutable run bindings, a registered production handler and SQL-driven Redis delivery recovery. Live deployment requires genuine provisioned credentials and verified source/calendar/mapping evidence. Production scanner KAN-73, entry integration, live risk, exits, notifications, backtesting, remaining UI and operational launch work remain open. No broker connection, verified live market data, production readiness or completed trading workflow is claimed.
 
-## Remaining scope
+## Verification and runtime
 
-Most tickets remain unimplemented: broker integration and data ingestion/readiness, whole-universe scans, entry plans, portfolio/fills/risk, exit monitoring, live transport/notifications, historical portfolio backtesting, functional feature screens, operational deployment/backup/DR/performance, IPO/SME research and launch review. No production readiness, brokerage connection, verified live data, or usable trading workflow is claimed. Placeholder screens are not completion of KAN-118–127.
+2026-10-19, context discovery: KAN-60 now automatically prepares initial or changed-interval replay context from stored verified evidence. The latest mapping, covering historical universe, G04 proof and supported profile are selected without falling back to older favorable mappings or benchmark proofs. Missing context records WAITING with a typed reason and is reconsidered fairly. Discovered plans are immutable and unique per receipt under concurrent preparation. Build, lint and all three PostgreSQL/Redis integration suites passed, including missing mapping, failed benchmark proof, recovery after valid evidence, concurrent discovery and subsequent split replay. Remaining KAN-60 work is cross-listing dependency propagation and full orchestration; it remains In Progress. Counts remain 61 Coded and 75 remaining.
 
-Next: finish current foundation verification/statuses, integrate correction replay, then implement scan/signal/portfolio services and their real UI views. Keep all incomplete tickets out of Coded.
+Migration 24 is applied to both local databases. The VCP worker was restarted with initial context discovery and durable waiting reasons enabled, alongside migration 23's automatic strength-replay handling.
 
-## Continued implementation
+2026-10-19: KAN-60 adds immutable StrengthReplayPlan records and automatic context reuse for a corrected listing with the same historical interval. The registered strength-replay worker reloads pinned evidence; concurrent planning is idempotent, lost queue jobs are recovered, and automatic results never become recursive templates. A split-correction integration fixture verifies EMA/ATR against full recomputation, automatic RS/structure replay, unchanged original evidence and no live market events. Off-tick adjusted pivots now produce UNKNOWN/ADJUSTED_PIVOT_OFF_TICK instead of failing the replay job. The delivery test is scoped to its own listing so accumulated fixtures cannot hide it beyond the query limit. Worker dependency build, lint, focused replay regressions and all three PostgreSQL/Redis integration suites passed. KAN-60 remains In Progress for initial context discovery, changed date ranges and cross-listing dependency orchestration. The earlier 121-test full regression below predates this change.
 
-- KAN-74/75 Coded: immutable scan coverage, explicit missing/excluded outcomes, exact rank tuple; PostgreSQL and API tests pass.
-- KAN-76/77 In Progress: nested chart evidence and primary references included in cursor-paginated results; whole scanner integration pending.
-- KAN-81/83/85/87 Coded: immutable breakout and user-decision records, structural stops, independent portfolio blocking, entry-gap boundary tests. Corrections retain original market events.
-- KAN-80/82/84 In Progress: pure breakout-before-recompute and next-two-session entry evaluator implemented; live data/quote and scanner integration pending.
-- KAN-88–91 Coded: immutable cash ledger, FIFO fees, serializable manual-fill endpoints, idempotent retries, oversell races, reversal/replacement corrections. PostgreSQL concurrency tests passed.
-- KAN-92–94 In Progress: exact valuation/risk cap rules and missing-mark tests pass; persisted live risk snapshots and endpoints pending.
-- KAN-122/123 In Progress: Positions UI reads actual cash/holdings/FIFO costs and immutable journal; records verified funding and actual fills. Marks, stops, EMA and live risk remain explicitly unknown.
-- Seven migrations applied to both application and isolated test databases. Prisma client regenerated. No synthetic financial records were inserted into the application database.
+Previous verification (2026-10-18): immutable historical cross-sectional RS preparation and SQL-to-Redis structure replay passed 121 unit/HTTP tests and three PostgreSQL/Redis integration suites. Context pins verified historical constituents, cash-equity mapping, benchmark proof, adjustment revisions and profile; missing membership stays in the denominator. Each session uses only its prefix, and retrospective evidence remains separate from actual historical availability. The golden fixture reaches BREAKOUT_CONFIRMED without creating live MarketEvent records. Missing context reports PARTIAL/HISTORICAL_RS_UNAVAILABLE.
 
-Current preview restarted with the connected Positions UI. Remaining 92 tickets include the unfinished work above; do not mark them Coded without integration evidence.
+Durable indicator replay reloads pinned correction, adjustment and calendar evidence. Indicator snapshots and an immutable completion receipt commit atomically; conflicts roll back the batch. Full-seed EMA/ATR recomputation, concurrent duplicates, source gaps, unchanged originals and prefix lineage passed PostgreSQL integration. See indicator-replay.md for the preparation and replay commands. Earlier UI verification below predates this backend-only change.
 
+KAN-139 now has a documented post-V1 authority/audit contract and an offline AI_SHADOW_1 validator. Missing/unknown/future evidence and invalid/unavailable responses cannot imply approval. All four focused tests pass, including preservation of an unreconciled portfolio BUY block; the preceding full suite passed 111 tests, and strategy build plus lint/boundary checks passed. No model service is enabled. The ticket remains In Progress pending actual audit logging and protective-monitor integration acceptance; the contract does not claim those unfinished capabilities.
 
-- KAN-76/77 now Coded: persisted candidate API verified against the full nested golden-pattern fixture.
-- KAN-31/34/49 now Coded: raw current schema, OHLCV quarantine, verified explicit calendar/finalization and immutable calendar lineage. Eight migrations applied. KAN-35 transaction/outbox works; replay delivery remains unfinished.
+108 unit/HTTP tests passed; the two Redis integration tests passed again with tracing enabled, plus PostgreSQL integration covering synchronization, immutable adjustments, correction delivery recovery and persistent authentication circuits, stale-lease rollback, window repair/retry exhaustion and coverage APIs. Nineteen migrations are applied to both local databases. Dependency build, strict workspace typecheck and lint passed. All 14 authenticated UI routes passed again on the isolated vcp_test database using web port 3002. The root README now documents first-run setup, owner login, three-process startup, test isolation, port overrides and troubleshooting. KAN-128 adds closed-schema JSON logging, async correlation, broker span/audit linkage and safe failure codes.
 
+CI is configured, but no remote CI run occurred because no Git remote is configured. Tests use synthetic data in isolated vcp_test; no synthetic financial records are inserted into the application database.
+
+Web preview: http://localhost:3002 (VCP_WEB_PORT=3002; port 3000 belongs to another project); API: loopback 3001. The current local worker runs through node scripts/local-server.mjs worker. Docker proxy: https://localhost:8443 with a local CA. The Docker image predates recent pipeline/portfolio work. PostgreSQL and Redis are bound to loopback ports 55432 and 56379.
+
+Ignored .runtime files hold local secrets. Login is owner; the password is in .runtime/owner-password and is never logged. Stop the API and worker before regenerating Prisma on Windows to release its native DLL. Restart preview processes after production builds.

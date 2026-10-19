@@ -3,7 +3,8 @@ import {randomUUID,createHash} from 'node:crypto';
 import {inspectCandleBatch,candleHash,verifiedCalendar} from '@vcp/market-data';
 import {canonical} from './indicators.js';
 type ImportInput=Parameters<typeof inspectCandleBatch>[0];
-export async function ingestCandles(db:PrismaClient,input:ImportInput){
+export interface IngestReport {state:string;calendarHash:string;expectedCount:number;actualResponseCount:number;missing:{session:string;reason:string}[];calendarReasons:string[];inserted:number;revised:number;unchanged:number;quarantined:number;watermark:string|null;changes:string[]}
+export async function ingestCandles(db:PrismaClient,input:ImportInput,onCommit?:(tx:Prisma.TransactionClient,report:IngestReport)=>Promise<void>){
  const inspected=inspectCandleBatch(input),checkedAt=new Date(input.asOf);
  for(let attempt=0;attempt<4;attempt++)try{return await db.$transaction(async tx=>{
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.listingId},0))`;
@@ -32,10 +33,11 @@ export async function ingestCandles(db:PrismaClient,input:ImportInput){
   const stored=await tx.$queryRaw<{session:Date}[]>`SELECT "session" FROM "RawDailyCandle" WHERE "listingId"=${input.listingId}::uuid AND "provider"=${input.provider} AND "session">=${new Date(start)} AND "session"<=${new Date(input.to)} AND "finalizedAt"<=${checkedAt}`;
   const dates=new Set(stored.map(row=>row.session.toISOString().slice(0,10)));let watermark=priorWatermark;
   if(calendar.state==='KNOWN')for(const day of calendar.sessions){if(!dates.has(day.date))break;watermark=new Date(day.date+'T00:00:00Z')}
-  const report={state:inspected.state,calendarHash,expectedCount:inspected.expectedCount,actualResponseCount:inspected.actualCount,missing:inspected.missing,calendarReasons:calendar.reasons,inserted,revised,unchanged,quarantined:inspected.quarantined.length,watermark:watermark?.toISOString().slice(0,10)??null,changes};
+  const report={state:inspected.state,from:input.from,to:input.to,calendarHash,expectedCount:inspected.expectedCount,actualResponseCount:inspected.actualCount,missing:inspected.missing,calendarReasons:calendar.reasons,inserted,revised,unchanged,quarantined:inspected.quarantined.length,watermark:watermark?.toISOString().slice(0,10)??null,changes};
   const evidence=canonical(report);await tx.$executeRaw`INSERT INTO "CandleCoverage" ("listingId","provider","fromSession","watermark","checkedAt","evidence") VALUES (${input.listingId}::uuid,${input.provider},${new Date(from)},${watermark},${checkedAt},${evidence}::jsonb) ON CONFLICT ("listingId","provider") DO UPDATE SET "fromSession"=EXCLUDED."fromSession","watermark"=EXCLUDED."watermark","checkedAt"=EXCLUDED."checkedAt","evidence"=EXCLUDED."evidence"`;
+  if(onCommit)await onCommit(tx,report);
   return report;
- },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable})}catch(error){
+ },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,timeout:60000})}catch(error){
   const retryable=error instanceof Prisma.PrismaClientKnownRequestError&&(error.code==='P2034'||error.code==='P2002'||(error.code==='P2010'&&['40001','40P01'].includes(String(error.meta?.['code']))));if(retryable&&attempt<3)continue;throw error;
  }
  throw new Error('CANDLE_TRANSACTION_RETRY_EXHAUSTED');

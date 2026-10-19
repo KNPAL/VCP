@@ -1,0 +1,9 @@
+# Corporate-action adjustments
+
+KAN-37 stores verified split/bonus adjustments separately from immutable raw CandleRevision rows. Each adjustment snapshot contains its source evidence, effective/known timestamps, scale session, as-of time, raw revision identities, exact cumulative price-factor numerator/denominator and applied action IDs. Corrected action sources or raw revisions produce a new snapshot; originals remain immutable.
+
+Ratios describe total shares after divided by shares before: a 1-for-2 bonus uses 3/2. Prior-session prices multiply by the inverse ratio, and volume by the ratio. The effective session itself stays in its current raw tradable scale. Chained actions multiply exact integer fractions; rounding occurs only at persistence (six decimal price places and eight adjusted-volume places, half-up). Fractional adjusted volume is accepted by indicator and VCP calculations. Raw turnover and actual fill quantities continue to use integer shares. Raw candles, current quotes and stops are never rewritten by adjustment storage.
+
+A source snapshot must explicitly verify action coverage from the first supplied candle through the scale session, including when it reports no actions. Missing, future-known or unverified evidence returns UNKNOWN, signalsAllowed=false and no adjusted candles. A source cannot include an action that was not known at its own knownAt time. Raw input must match an existing immutable RAW revision exactly before persistence. Unsupported actions and invalid/duplicate ratios fail with typed reason strings; overflow and price underflow also fail closed.
+
+The database stores blocked evidence as well as usable snapshots. PostgreSQL rejects updates/deletes of both snapshots and adjusted candles. No live action source is configured. Automatic correction replay/supersession through indicators, scans and signals remains KAN-35/60 work; callers must honor the UNKNOWN state and cannot substitute raw bars for adjusted input.

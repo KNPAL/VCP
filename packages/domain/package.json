@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./logging": {"types":"./dist/logging.d.ts","import":"./dist/logging.js"},
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

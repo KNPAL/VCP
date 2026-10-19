@@ -9,6 +9,8 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@vcp/database": "workspace:*",
+    "@vcp/market-data": "workspace:*",
     "@vcp/domain": "workspace:*",
     "bullmq": "^5.0.0"
   },

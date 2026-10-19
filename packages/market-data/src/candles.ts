@@ -37,11 +37,14 @@ export function validateCandle(bar:DailyCandle,asOf:string){
 export function candleHash(bar:DailyCandle){
  return createHash('sha256').update(JSON.stringify([bar.listingId,bar.session,bar.provider,...[bar.open,bar.high,bar.low,bar.close].map(value=>formatFixed(parseFixed(value))),BigInt(bar.volume).toString(),bar.finalizedAt,bar.zeroVolumeVerified])).digest('hex');
 }
-export function inspectCandleBatch(input:{bars:readonly DailyCandle[];calendar:readonly CalendarDay[]|null;from:string;to:string;asOf:string;listingId:string;provider:string}){
+export function inspectCandleBatch(input:{bars:readonly DailyCandle[];calendar:readonly CalendarDay[]|null;from:string;to:string;asOf:string;listingId:string;provider:string;requestedSessions?:readonly string[]}){
  const calendar=verifiedCalendar(input.calendar,input.from,input.to,input.asOf),groups=new Map<string,DailyCandle[]>(),quarantined:{bar:DailyCandle;reasons:string[]}[]=[];
+ const requested=input.requestedSessions?new Set(input.requestedSessions):null;
+ if(requested&&(requested.size!==input.requestedSessions!.length||[...requested].some(date=>!calendar.sessions.some(day=>day.date===date))))throw new Error('INVALID_REQUESTED_SESSIONS');
  for(const bar of input.bars){const check=validateCandle(bar,input.asOf);
   if(bar.listingId!==input.listingId||bar.provider!==input.provider)check.reasons.push('SOURCE_MISMATCH');
   if(bar.session<input.from||bar.session>input.to)check.reasons.push('OUTSIDE_REQUESTED_RANGE');
+  if(requested&&!requested.has(bar.session))check.reasons.push('OUTSIDE_REQUESTED_RANGE');
   if(check.reasons.length){quarantined.push({bar,reasons:check.reasons});continue}
   const group=groups.get(bar.session)??[];group.push(bar);groups.set(bar.session,group);
  }
@@ -54,6 +57,7 @@ export function inspectCandleBatch(input:{bars:readonly DailyCandle[];calendar:r
   accepted.push(bar);
  }
  accepted.sort((a,b)=>a.session.localeCompare(b.session));
- const missing=calendar.sessions.filter(day=>!accepted.some(bar=>bar.session===day.date)).map(day=>({session:day.date,reason:'DATA_INCOMPLETE'}));
- return {state:calendar.state==='UNKNOWN'?'UNKNOWN' as const:missing.length||quarantined.length?'INCOMPLETE' as const:'COMPLETE' as const,accepted,quarantined,missing,calendarReasons:calendar.reasons,expectedCount:calendar.sessions.length,actualCount:accepted.length};
+ const expected=calendar.sessions.filter(day=>!requested||requested.has(day.date));
+ const missing=expected.filter(day=>!accepted.some(bar=>bar.session===day.date)).map(day=>({session:day.date,reason:'DATA_INCOMPLETE'}));
+ return {state:calendar.state==='UNKNOWN'?'UNKNOWN' as const:missing.length||quarantined.length?'INCOMPLETE' as const:'COMPLETE' as const,accepted,quarantined,missing,calendarReasons:calendar.reasons,expectedCount:expected.length,actualCount:accepted.length};
 }
