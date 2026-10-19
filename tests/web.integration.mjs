@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 test('all UI shell routes enforce login and render after authentication',async()=>{
  const base=process.env.WEB_TEST_BASE_URL??'http://localhost:3000';
- const routes=['dashboard','universe','screener','inspector','buy','positions','sell','backtests','settings','operations','settings/broker/angel-one','data/historical/download','data/historical/downloads','data/historical/downloads/example'];
+ const routes=['dashboard','universe','screener','inspector','buy','positions','watchlists','sell','backtests','settings','operations','settings/broker/angel-one','data/historical/download','data/historical/downloads','data/historical/downloads/example'];
  for(const route of routes){const r=await fetch(base+'/'+route,{redirect:'manual'});assert.equal(r.status,307,route);assert.equal(r.headers.get('location'),'/login');}
  const password=process.env.WEB_TEST_PASSWORD??(await readFile('.runtime/owner-password','utf8')).trim();
  const login=await fetch(base+'/api/v1/auth/login',{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({login:process.env.WEB_TEST_LOGIN??'owner',password})});

@@ -1,13 +1,13 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
-import { Catch, Controller, Get, Post, Param, Query, Req, Res, HttpException, Module, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Catch, Controller, Get, Post, Delete, Param, Query, Req, Res, HttpException, Module, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { ArgumentsHost, ExceptionFilter, PipeTransform } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError } from '@vcp/domain';
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
-import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness,syncJobs,instrumentCoverage} from '@vcp/database';
+import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
@@ -41,6 +41,10 @@ export const openapi = {
   openapi: '3.1.0', info: { title: 'Study Trade VCP', version: '4.0.0' },
   components: { schemas: wireSchemas, securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: 'vcp_session' } } },
   paths: {
+    '/api/v1/watchlists':{get:{operationId:'savedWatchlists',security:[{session:[]}],responses:{'200':{description:'Owner lists, persisted query/exchange filters, saved timestamps and explicit UNKNOWN research status'}}},post:{operationId:'saveWatchlist',security:[{session:[]}],responses:{'201':{description:'Create a named list or replace its query/exchange filters; CSRF required'}}}},
+    '/api/v1/watchlists/instruments':{get:{operationId:'watchlistInstruments',security:[{session:[]}],responses:{'200':{description:'Current verified canonical cash-equity listings; missing mapping yields empty items with reason'}}}},
+    '/api/v1/watchlists/{id}/items':{post:{operationId:'addWatchlistItem',security:[{session:[]}],responses:{'201':{description:'Add canonical listingId once; CSRF required'},'404':{description:'List not owned by caller'},'422':{description:'Listing is not currently canonical'}}}},
+    '/api/v1/watchlists/{id}/items/{listingId}':{delete:{operationId:'removeWatchlistItem',security:[{session:[]}],responses:{'200':{description:'Idempotent removal; immutable audit retained; CSRF required'},'404':{description:'List not owned by caller'}}}},
     '/api/v1/sources/readiness':{get:{operationId:'sourceReadiness',security:[{session:[]}],responses:{'200':{description:'All G01–G10 proof statuses, source timestamps, expiry, blocked capabilities and exact failure policies'},'401':{description:'Authentication required'}}}},
     '/api/v1/portfolio':{get:{operationId:'portfolioJournal',security:[{session:[]}],responses:{'200':{description:'Actual signed cash, FIFO positions, immutable journal and explicit unknown valuation/reconciliation'}}}},
     '/api/v1/portfolio/cash':{post:{operationId:'recordCash',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',maxLength:128}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Verified cash event recorded once'},'409':{description:'Initial capital or idempotency conflict'},'422':{description:'Invalid cash evidence'}}}},
@@ -57,6 +61,8 @@ export const openapi = {
       ],responses:{'200':{description:'Rank-stable page from one immutable scan; decimal values remain strings and missing values null'},'400':{description:'Invalid query or cursor does not match scan/filter'},'401':{description:'Authentication required'},'404':{description:'Scan not found'}}},
     },
     '/api/v1/system/scans/{id}': {get:{operationId:'scanEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Immutable intended universe, per-listing reasons, coverage counts and ranked candidates'},'404':{description:'Scan not found'}}}},
+    '/api/v1/system/scan-jobs/{id}': {get:{operationId:'eodScanProgress',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Pinned EOD scan revision, completed checkpoints, queue failure state and final result'},'400':{description:'Invalid ID'},'401':{description:'Authentication required'},'404':{description:'Scan plan not found'}}}},
+    '/api/v1/system/daily-structure/{id}': {get:{operationId:'dailyStructureEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[0-9a-f]{64}$'}}],responses:{'200':{description:'Immutable source inputs, prior execution identity, breakout decision and subsequent detector result'},'400':{description:'Invalid ID'},'401':{description:'Authentication required'},'404':{description:'Execution not found'}}}},
     '/api/v1/system/data-gaps': {get:{operationId:'dataGaps',security:[{session:[]}],responses:{'200':{description:'Latest scan missing and excluded listings, or explicit NO_COMPLETED_SCAN UNKNOWN state'}}}},
     '/api/v1/system/jobs': {get:{operationId:'historicalSyncJobs',security:[{session:[]}],parameters:[{name:'runId',in:'query',schema:{type:'string',format:'uuid'}},{name:'after',in:'query',schema:{type:'string',format:'uuid'}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:200}}],responses:{'200':{description:'Persistent sync windows, attempts, exact response coverage and retry state'},'400':{description:'Invalid filters'}}}},
     '/api/v1/system/coverage/{listingId}': {get:{operationId:'instrumentCoverage',security:[{session:[]}],parameters:[{name:'listingId',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'provider',in:'query',required:true,schema:{type:'string'}}],responses:{'200':{description:'Source-specific final session, holes, revision, rejected candles and last successful window; missing evidence is UNKNOWN'},'400':{description:'Listing ID and provider required'}}}},
@@ -124,6 +130,17 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     for(const key of ['price','fees','brokerReference','occurredAt','sourceId'])if(typeof body[key]!=='string'||!body[key]||body[key].length>256)throw new BadRequestException('Invalid fill field: '+key);
     return {kind:'FILL' as const,isin:selectedIsin,side:body['side'] as 'BUY'|'SELL',quantity:body['quantity'],price:body['price'] as string,fees:body['fees'] as string,brokerReference:body['brokerReference'] as string,occurredAt:body['occurredAt'] as string,sourceId:body['sourceId'] as string};
   }
+  @Controller('watchlists')
+  class WatchlistController {
+    @Get() lists(@Req() request:AuthRequest){return readWatchlists(db,request.ownerId!)}
+    @Get('instruments') instruments(){return watchlistInstruments(db)}
+    async change(request:AuthRequest,command:Parameters<typeof changeWatchlist>[2]){
+      try{return await changeWatchlist(db,request.ownerId!,command)}catch(error){const message=error instanceof Error?error.message:'';if(message==='WATCHLIST_NOT_FOUND')throw new NotFoundException(message);if(message.startsWith('INVALID_'))throw new HttpException(message,422);throw error}
+    }
+    @Post() save(@Req() request:AuthRequest){const body=strictBody(request,['name','filters']);return this.change(request,{kind:'SAVE',name:body['name'] as string,filters:body['filters']})}
+    @Post(':id/items') add(@Param('id') id:string,@Req() request:AuthRequest){const body=strictBody(request,['listingId']);if(typeof body['listingId']!=='string')throw new BadRequestException('listingId required');return this.change(request,{kind:'ADD',id,listingId:body['listingId']})}
+    @Delete(':id/items/:listingId') remove(@Param('id') id:string,@Param('listingId') listingId:string,@Req() request:AuthRequest){return this.change(request,{kind:'REMOVE',id,listingId})}
+  }
   async function writeJournal(request:AuthRequest,command:JournalCommand){
     const key=request.headers['idempotency-key'];if(typeof key!=='string')throw new BadRequestException('Idempotency-Key required');
     try{return await appendPortfolio(db,request.ownerId!,key,command)}
@@ -165,6 +182,14 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('system')
   class ScanController {
+    @Get('daily-structure/:id') async dailyStructure(@Param('id') id:string){
+      if(!/^[0-9a-f]{64}$/.test(id))throw new BadRequestException('Invalid execution ID');
+      const result=await getDailyStructure(db,id);if(!result)throw new NotFoundException('Daily execution not found');return result;
+    }
+    @Get('scan-jobs/:id') async scanJob(@Param('id') id:string){
+      if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))throw new BadRequestException('Invalid scan ID');
+      const progress=await eodScanProgress(db,id);if(!progress)throw new NotFoundException('Scan job not found');return progress;
+    }
     @Get('jobs') jobs(@Query('runId') runId?:string,@Query('after') after?:string,@Query('limit') limit?:string){
       for(const id of [runId,after])if(id!==undefined&&(typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)))throw new BadRequestException('Invalid job filter');
       if(limit!==undefined&&(typeof limit!=='string'||!/^\d+$/.test(limit)||Number(limit)<1||Number(limit)>200))throw new BadRequestException('Invalid job limit');
@@ -184,7 +209,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:()=>db.$disconnect()}}]})
+  @Module({controllers:[SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:()=>db.$disconnect()}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   app.setGlobalPrefix('api/v1');

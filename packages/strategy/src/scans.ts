@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {rankCandidates,MARKET_STATE_ORDER} from './ranking.js';
 import type {RankInput,ScanEvidence,MarketState} from './ranking.js';
-export type ScanOutcome={instrumentId:string;status:'ANALYZED'|'MISSING'|'EXCLUDED';reasons:string[];candidate:RankInput|null};
+export type ScanOutcome={instrumentId:string;status:'ANALYZED'|'MISSING'|'EXCLUDED';reasons:string[];candidate:RankInput|null;dailyExecutionId?:string};
 export function completeScan(evidence:ScanEvidence,intended:readonly string[],outcomes:readonly ScanOutcome[]){
  if(new Set(intended).size!==intended.length||!intended.length)throw new Error('INVALID_INTENDED_UNIVERSE');
  const byId=new Map<string,ScanOutcome>();

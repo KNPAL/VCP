@@ -77,6 +77,37 @@ model PatternSnapshot {
   evidence Json
   @@unique([patternId,session,dataRevision])
 }
+model DailyStructureExecution {
+  id String @id
+  listingId String @db.Uuid
+  session DateTime @db.Date
+  configHash String @db.VarChar(64)
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([listingId,session])
+}
+model EodScanPlan {
+  id String @id @db.Uuid
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model EodScanItem {
+  id String @id
+  scanId String @db.Uuid
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@index([scanId], map: "EodScanItem_scanId")
+}
+model EodScanCheckpoint {
+  itemId String @id
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model EodScanDispatch {
+  itemId String @id
+  state String
+  checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}
 model PatternReplacement {
   oldId String @id @db.VarChar(64)
   replacedById String @db.VarChar(64)
@@ -429,4 +460,28 @@ model ReplayDependencyCheck {
  indicatorReceiptId String @id @db.VarChar(64)
  reason String?
  checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model Watchlist {
+ id String @id @db.Uuid
+ ownerId String @db.Uuid
+ name String
+ filters Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ updatedAt DateTime @default(now()) @db.Timestamptz(6)
+ @@unique([ownerId,name])
+}
+model WatchlistItem {
+ watchlistId String @db.Uuid
+ listingId String @db.Uuid
+ evidence Json
+ savedAt DateTime @default(now()) @db.Timestamptz(6)
+ @@id([watchlistId,listingId])
+}
+model WatchlistAudit {
+ id String @id @db.Uuid
+ ownerId String @db.Uuid
+ watchlistId String @db.Uuid
+ action String
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
 }

@@ -26,3 +26,6 @@ export * from './strength-replay-plan.js';
 export * from './strength-replay-plan.js';
 export * from './replay-context-discovery.js';
 export * from './replay-dependencies.js';
+export * from './watchlists.js';
+export * from './daily-structure.js';
+export * from './eod-scan.js';
