@@ -1,0 +1,4 @@
+CREATE TABLE "InitialPositionStop" ("id" TEXT PRIMARY KEY,"ownerId" UUID NOT NULL REFERENCES "Owner"("id"),"isin" TEXT NOT NULL,"episodeId" UUID NOT NULL,"evidence" JSONB NOT NULL,UNIQUE("ownerId","isin","episodeId"));
+CREATE TABLE "ProtectiveSignal" ("id" TEXT PRIMARY KEY,"ownerId" UUID NOT NULL REFERENCES "Owner"("id"),"stopId" TEXT NOT NULL REFERENCES "InitialPositionStop"("id"),"session" DATE NOT NULL,"recognizedAt" TIMESTAMPTZ(6) NOT NULL,"evidence" JSONB NOT NULL,UNIQUE("ownerId","stopId","session"));
+CREATE TRIGGER immutable_initial_position_stop BEFORE UPDATE OR DELETE ON "InitialPositionStop" FOR EACH ROW EXECUTE FUNCTION immutable_evidence();
+CREATE TRIGGER immutable_protective_signal BEFORE UPDATE OR DELETE ON "ProtectiveSignal" FOR EACH ROW EXECUTE FUNCTION immutable_evidence();

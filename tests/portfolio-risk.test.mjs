@@ -15,6 +15,16 @@ test('unknown marks, reconciliation and missing stops block plans without erasin
  }
  assert.equal(valuePortfolio({holdings:[],cash:'100',cashVerified:true,reconciled:false,asOf}).state,'UNKNOWN');
 });
+test('stale or unverified marks never masquerade as current numeric exposure',()=>{
+ for(const change of [{verified:false},{quoteAt:'2026-10-16T05:59:00Z'},{quoteAt:'2026-10-16T06:00:01Z'},{price:null}]){
+  const p=portfolio([mark(),mark(change)]);
+  assert.equal(p.equity,null);assert.equal(p.grossExposure,null);assert.equal(p.plannedOpenRisk,null);
+  assert.equal(p.companyExposure[isin],null);assert.equal(p.sectorExposure.TECH,null);assert.equal(p.positions[1].value,null);assert.equal(p.positionCount,1);
+ }
+ const noCash=valuePortfolio({holdings:[mark()],cash:'100000',cashVerified:false,reconciled:true,asOf});
+ assert.equal(noCash.cash,null);assert.equal(noCash.equity,null);assert.equal(noCash.grossExposure,'10000.000000');
+ assert.equal(portfolio([mark({quoteAt:'2026-10-16T05:59:00.001Z'})]).state,'KNOWN');
+});
 test('risk budget, regime multiplier, hard stops and market lots use exact downward rounding',()=>{
  assert.equal(plan().riskBudget,'400.000000');assert.equal(plan().quantity,80);
  assert.equal(plan({regime:'YELLOW'}).quantity,40);assert.equal(plan({regime:'RED'}).quantity,0);

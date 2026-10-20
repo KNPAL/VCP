@@ -23,3 +23,5 @@ test('live pattern transitions are atomic, exact and immutable across rescans an
   assert.equal((await patternHistory(db,'f'.repeat(64))).state,'UNKNOWN');
  }finally{await db.$disconnect()}
 });
+
+

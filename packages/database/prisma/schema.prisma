@@ -568,3 +568,51 @@ model WatchlistAudit {
  evidence Json
  createdAt DateTime @default(now()) @db.Timestamptz(6)
 }
+model PositionMonitor {
+ ownerId String @db.Uuid
+ isin String
+ asOf DateTime @db.Timestamptz(6)
+ evidence Json
+ @@id([ownerId,isin])
+}
+model PositionMonitorEvent {
+ id String @id
+ ownerId String @db.Uuid
+ isin String
+ eventAt DateTime @db.Timestamptz(6)
+ evidence Json
+ @@index([ownerId,eventAt,id],map: "position_monitor_history")
+}
+model PortfolioReconciliation {
+ id String @id
+ ownerId String @db.Uuid
+ asOf DateTime @db.Timestamptz(6)
+ decidedAt DateTime @db.Timestamptz(6)
+ journalHash String
+ evidence Json
+ @@index([ownerId,decidedAt,id],map: "portfolio_reconciliation_owner")
+}
+model PortfolioRiskSnapshot {
+ id String @id
+ ownerId String @db.Uuid
+ asOf DateTime @db.Timestamptz(6)
+ journalHash String
+ evidence Json
+}
+model InitialPositionStop {
+ id String @id
+ ownerId String @db.Uuid
+ isin String
+ episodeId String @db.Uuid
+ evidence Json
+ @@unique([ownerId,isin,episodeId])
+}
+model ProtectiveSignal {
+ id String @id
+ ownerId String @db.Uuid
+ stopId String
+ session DateTime @db.Date
+ recognizedAt DateTime @db.Timestamptz(6)
+ evidence Json
+ @@unique([ownerId,stopId,session])
+}

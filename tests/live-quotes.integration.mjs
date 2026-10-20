@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {queue,acquireLease,releaseLease} from '../apps/worker/dist/runtime.js';
+import {recordQuoteConnection,publishLiveTick,readLiveQuote} from '../apps/worker/dist/live-quotes.js';
+const listingId='00000000-0000-4000-8000-000000000002';
+const mapping={id:'master-test',knownAt:'2020-01-01T00:00:00Z',sourceReference:'fixture',rows:[{companyId:'00000000-0000-4000-8000-000000000001',isin:'INE000000001',listingId,exchange:'NSE',series:'EQ',symbol:'TEST',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]};
+test('live Redis quotes fence writers, retain replay watermarks and expire source freshness',async()=>{
+ process.env.REDIS_PORT='56379';const owner='quotes-test-'+randomUUID(),q=queue(owner),client=await q.client;
+ const date=new Date(Date.now()+19800000).toISOString().slice(0,10),midnight=Date.parse(date+'T00:00:00Z')-19800000;
+ // Synthetic verified all-day calendar is confined to this unique Redis test namespace.
+ const session={date,opensAt:new Date(midnight).toISOString(),closesAt:new Date(midnight+86399999).toISOString(),knownAt:new Date(midnight-86400000).toISOString(),verified:true};
+ const base=Date.now()-2000,tick={provider:'fixture',token:'123',exchange:'NSE',rawLtp:'10005',priceDecimals:2,sourceAt:new Date(base).toISOString(),sequence:'9007199254740993'};
+ const ks=['lease:'+owner,'fence:'+owner,'quotes:'+owner+':connection','quotes:'+owner+':'+listingId,'quotes:'+owner+':'+listingId+':watermark'];
+ client.defineCommand('quote_test_cleanup',{numberOfKeys:5,lua:'return redis.call("DEL",unpack(KEYS))'});
+ client.defineCommand('quote_test_expire',{numberOfKeys:1,lua:'return redis.call("PEXPIRE",KEYS[1],ARGV[1])'});
+ client.defineCommand('quote_test_age_heartbeat',{numberOfKeys:1,lua:'local c=cjson.decode(redis.call("GET",KEYS[1]));c.at=c.at-30001;redis.call("SET",KEYS[1],cjson.encode(c));return 1'});
+ try{
+ const fence=await acquireLease(q,owner);assert.ok(fence);
+ assert.equal((await publishLiveTick(q,owner,fence,tick,mapping,session)).reason,'FEED_DISCONNECTED');
+ assert.equal(await recordQuoteConnection(q,owner,fence,'CONNECTED'),true);
+ const parallel=await Promise.all(Array.from({length:8},()=>publishLiveTick(q,owner,fence,tick,mapping,session)));
+ assert.equal(parallel.filter(r=>r.state==='KNOWN').length,1);
+ assert.equal((await readLiveQuote(q,owner,listingId)).quote.ltp,'100.050000');
+ assert.equal((await publishLiveTick(q,owner,fence,{...tick,sequence:'9007199254740994'},mapping,session)).state,'KNOWN');
+ assert.equal((await publishLiveTick(q,owner,fence,{...tick,sequence:'9007199254740992'},mapping,session)).state,'UNKNOWN');
+ assert.equal((await publishLiveTick(q,owner,fence,{...tick,sourceAt:new Date(base-1).toISOString(),sequence:'9007199254740995'},mapping,session)).reason,'OUT_OF_ORDER');
+ await recordQuoteConnection(q,owner,fence,'DISCONNECTED');assert.equal((await readLiveQuote(q,owner,listingId)).state,'UNKNOWN');
+ assert.equal(await recordQuoteConnection(q,owner,fence,'CONNECTED'),false);
+ await releaseLease(q,owner,fence);const next=await acquireLease(q,owner);assert.ok(next);
+ assert.equal(await recordQuoteConnection(q,owner,fence,'CONNECTED'),false);await recordQuoteConnection(q,owner,next,'CONNECTED');
+ assert.equal((await readLiveQuote(q,owner,listingId)).state,'UNKNOWN');
+ assert.equal((await publishLiveTick(q,owner,next,{...tick,sequence:'1'},mapping,session)).reason,'RECONNECT_REPLAY');
+ assert.equal((await publishLiveTick(q,owner,next,{...tick,sourceAt:new Date(base+1).toISOString(),sequence:'1'},mapping,session)).state,'KNOWN');
+ await client.runCommand('quote_test_expire',[ks[3],1]);await new Promise(r=>setTimeout(r,15));
+ assert.equal((await readLiveQuote(q,owner,listingId)).reason,'QUOTE_UNAVAILABLE');
+ assert.equal((await publishLiveTick(q,owner,next,{...tick,sourceAt:new Date(base+1).toISOString(),sequence:'1'},mapping,session)).state,'UNKNOWN');
+ const closing={...session,closesAt:new Date(Date.now()+200).toISOString()};
+ assert.equal((await publishLiveTick(q,owner,next,{...tick,sourceAt:new Date(base+2).toISOString(),sequence:'2'},mapping,closing)).state,'KNOWN');
+ await new Promise(r=>setTimeout(r,220));
+ assert.equal((await readLiveQuote(q,owner,listingId)).reason,'QUOTE_UNAVAILABLE');
+ await client.runCommand('quote_test_age_heartbeat',[ks[2]]);
+ assert.equal((await readLiveQuote(q,owner,listingId)).reason,'MONITOR_DEGRADED');
+ assert.equal(await recordQuoteConnection(q,owner,next,'CONNECTED'),false);
+ assert.equal((await publishLiveTick(q,owner,next,{...tick,sequence:'3'},mapping,session)).reason,'FEED_DISCONNECTED');
+ await client.runCommand('quote_test_expire',[ks[0],1]);await new Promise(r=>setTimeout(r,15));
+ assert.equal((await readLiveQuote(q,owner,listingId)).reason,'MONITOR_DEGRADED');
+ assert.equal((await publishLiveTick(q,owner,next,{...tick,sequence:'2'},mapping,session)).reason,'LEASE_LOST');
+ }finally{await client.runCommand('quote_test_cleanup',ks);await q.close()}
+});

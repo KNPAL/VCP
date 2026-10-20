@@ -1,5 +1,7 @@
 import {parseFixed,formatFixed,integerShares,utcInstant} from '@vcp/domain';
 export * from './ledger.js';
+export * from './reconciliation.js';
+export * from './protective-stop.js';
 const money=(s:string)=>parseFixed(s);
 const positive=(s:string)=>{const n=money(s);if(n<=0n)throw new Error('INVALID_POSITIVE_AMOUNT');return n};
 const maxZero=(n:bigint)=>n>0n?n:0n;
@@ -8,7 +10,8 @@ export function valuePortfolio(input:{cash:string|null;cashVerified:boolean;reco
  const now=utcInstant(input.asOf).valueOf(),reasons:string[]=[];
  if(input.cash===null||!input.cashVerified)reasons.push('CASH_UNKNOWN');
  if(!input.reconciled)reasons.push('PORTFOLIO_UNRECONCILED');
- const cash=input.cash===null?null:money(input.cash),companies:Record<string,bigint>=Object.create(null),sectors:Record<string,bigint>=Object.create(null);
+ const cash=input.cash===null||!input.cashVerified?null:money(input.cash),companies:Record<string,bigint>=Object.create(null),sectors:Record<string,bigint>=Object.create(null);
+ const unknownCompanies=new Set<string>(),unknownSectors=new Set<string>();
  let gross=0n,plannedRisk=0n;
  const openCompanies=new Set<string>(),companySectors=new Map<string,string>();
  const positions=input.holdings.map(holding=>{
@@ -16,11 +19,12 @@ export function valuePortfolio(input:{cash:string|null;cashVerified:boolean;reco
   if(qty===0)return {...holding,markAgeMs:null,value:'0.000000',plannedDownside:'0.000000'};
   openCompanies.add(holding.isin);
   const age=holding.quoteAt===null?null:now-utcInstant(holding.quoteAt).valueOf();
-  if(!holding.verified||age===null||age<0||age>60000||holding.price===null)reasons.push('MARK_UNVERIFIED:'+holding.isin);
+  const current=holding.verified&&age!==null&&age>=0&&age<60000&&holding.price!==null;
+  if(!current){reasons.push('MARK_UNVERIFIED:'+holding.isin);unknownCompanies.add(holding.isin);if(holding.sector)unknownSectors.add(holding.sector)}
   if(!holding.sector)reasons.push('SECTOR_UNKNOWN:'+holding.isin);
   else {const prior=companySectors.get(holding.isin);if(prior&&prior!==holding.sector)reasons.push('SECTOR_CONFLICT:'+holding.isin);companySectors.set(holding.isin,holding.sector)}
   if(holding.stop===null)reasons.push('STOP_UNKNOWN:'+holding.isin);
-  const mark=holding.price===null?null:positive(holding.price),stop=holding.stop===null?null:positive(holding.stop);
+  const mark=!current?null:positive(holding.price!),stop=holding.stop===null?null:positive(holding.stop);
   const value=mark===null?null:mark*BigInt(qty),downside=mark===null||stop===null?null:maxZero(mark-stop)*BigInt(qty);
   if(value!==null){gross+=value;companies[holding.isin]=(companies[holding.isin]??0n)+value;if(holding.sector)sectors[holding.sector]=(sectors[holding.sector]??0n)+value}
   if(downside!==null)plannedRisk+=downside;
@@ -28,7 +32,7 @@ export function valuePortfolio(input:{cash:string|null;cashVerified:boolean;reco
  });
  const missingPrices=positions.some(x=>x.quantity>0&&x.value===null),missingStops=positions.some(x=>x.quantity>0&&x.plannedDownside===null);
  return {state:reasons.length?'UNKNOWN' as const:'KNOWN' as const,reasons:[...new Set(reasons)],asOf:input.asOf,cash:cash===null?null:formatFixed(cash),equity:cash===null||missingPrices?null:formatFixed(cash+gross),grossExposure:missingPrices?null:formatFixed(gross),plannedOpenRisk:missingStops?null:formatFixed(plannedRisk),
-  positionCount:openCompanies.size,companyExposure:Object.fromEntries(Object.entries(companies).sort().map(([k,v])=>[k,formatFixed(v)])),sectorExposure:Object.fromEntries(Object.entries(sectors).sort().map(([k,v])=>[k,formatFixed(v)])),positions,reconciled:input.reconciled};
+  positionCount:openCompanies.size,companyExposure:Object.fromEntries([...new Set([...Object.keys(companies),...unknownCompanies])].sort().map(k=>[k,unknownCompanies.has(k)?null:formatFixed(companies[k]!)])),sectorExposure:Object.fromEntries([...new Set([...Object.keys(sectors),...unknownSectors])].sort().map(k=>[k,unknownSectors.has(k)?null:formatFixed(sectors[k]!)])),positions,reconciled:input.reconciled};
 }
 export type PortfolioValue=ReturnType<typeof valuePortfolio>;
 export function sizeEntry(input:{portfolio:PortfolioValue;isin:string;sector:string|null;entry:string;stop:string;regime:'GREEN'|'YELLOW'|'RED'|'UNKNOWN';lotSize:number;estimatedFees:string;lossStreakPass:boolean|null}){

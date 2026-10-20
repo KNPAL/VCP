@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {normalizeLiveTick} from '../packages/market-data/dist/index.js';
+export const listingId='00000000-0000-4000-8000-000000000002';
+export const mapping={id:'master-test',knownAt:'2020-01-01T00:00:00Z',sourceReference:'fixture',rows:[{companyId:'00000000-0000-4000-8000-000000000001',isin:'INE000000001',listingId,exchange:'NSE',series:'EQ',symbol:'TEST',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]};
+const time='2026-10-20T06:00:00Z',tick={provider:'fixture',token:'123',exchange:'NSE',rawLtp:'10005',priceDecimals:2,sourceAt:time,sequence:'9007199254740993'},session={date:'2026-10-20',opensAt:'2026-10-20T03:45:00Z',closesAt:'2026-10-20T10:00:00Z',knownAt:'2026-10-19T00:00:00Z',verified:true};
+test('quotes preserve exact units and effective token identity; invalid context fails closed',()=>{
+ const normalize=(t={},m=mapping,s=session,received=time,connected=true)=>normalizeLiveTick({...tick,...t},m,s,received,connected);
+ assert.equal(normalize().quote.ltp,'100.050000');assert.equal(normalize().quote.executable,false);
+ for(const [rawLtp,priceDecimals] of [['100',0],['10000',2],['100000000',6]])assert.equal(normalize({rawLtp,priceDecimals}).quote.ltp,'100.000000');
+ for(const t of [{rawLtp:'10001'},{rawLtp:'-1'},{sequence:'01'},{token:'456'},{sourceAt:'2026-10-20T06:00:01Z'},{sourceAt:'2026-10-20T05:58:59Z'}])assert.equal(normalize(t).state,'UNKNOWN');
+ assert.equal(normalize({},mapping,session,time,false).reason,'FEED_DISCONNECTED');
+ assert.equal(normalize({},null).state,'UNKNOWN');assert.equal(normalize({},mapping,null).state,'UNKNOWN');
+ assert.equal(normalize({},mapping,{...session,verified:false}).state,'UNKNOWN');
+ assert.equal(normalize({},mapping,{...session,closesAt:'2026-10-20T05:59:59Z'}).state,'UNKNOWN');
+ assert.equal(normalize({},mapping,{...session,opensAt:'2026-10-19T03:45:00Z'}).state,'UNKNOWN');
+ assert.equal(normalize({},mapping,session,'2026-10-21T06:00:00Z').state,'UNKNOWN');
+ const rolled={...mapping,rows:[{...mapping.rows[0],validTo:'2026-10-20'},{...mapping.rows[0],token:'456',validFrom:'2026-10-20'}]};
+ assert.equal(normalize({},rolled).state,'UNKNOWN');assert.equal(normalize({token:'456'},rolled).quote.listingId,listingId);
+});

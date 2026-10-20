@@ -199,3 +199,11 @@ Use **Settings** to inspect ST_VCP_4_0 rules, immutable configuration hashes and
 Migration 30 adds a [transactional alert outbox](docs/alert-outbox.md). The worker delivers local in-app records with bounded retries and crash recovery. External email/browser delivery adapters remain separate work; no broker orders are submitted.
 
 Migration 31 adds [immutable pattern lifecycle history](docs/pattern-lifecycle.md), including WATCH/READY transitions and deduplicated local alerts. Historical corrections preserve the original live observations.
+
+The worker now provides a [validated live quote cache](docs/live-quotes.md) with exact prices, source freshness, session expiration and fenced reconnects. Live broker subscription and per-position monitor wiring remain separate work.
+
+Migration 32 enables [held-position monitoring](docs/position-monitor.md) automatically in the worker. **My positions** shows feed outages and retained recovery gaps. Set `VCP_STREAM_OWNER` only when the matching live stream owner is provisioned; absent sources remain explicitly degraded.
+
+Migration 33 adds [manual broker-statement reconciliation](docs/reconciliation.md) in **My positions**. Compare all outside holdings, fills and cash with the journal. Matches are timestamped evidence and are invalidated by journal changes; other trading readiness and risk gates still apply.
+
+Migration 34 adds [initial protective stops and SELL observations](docs/protective-stops.md). Actual BUY entries retain the known structural stop; verified fresh ticks can create durable alerts, while fills remain manual. Missing pre-BUY structure or current corporate-action coverage remains UNKNOWN.

@@ -34,7 +34,7 @@ export async function claimAlert(db:PrismaClient,leaseMs=30000,outboxId?:string)
  if(outboxId!==undefined&&!/^[a-f0-9]{64}$/.test(outboxId))throw new Error('INVALID_OUTBOX_ID');
  return db.$transaction(async tx=>{
   await tx.$executeRaw`UPDATE "NotificationDelivery" SET "state"='FAILED',"reason"='ATTEMPTS_EXHAUSTED',"updatedAt"=clock_timestamp() WHERE "attempts">=4 AND "state"='DELIVERING' AND "leaseUntil"<=clock_timestamp()`;
-  const rows=await tx.$queryRaw<{id:string;ownerId:string;eventId:string;channel:AlertChannel;event:AlertEvidence;attempts:number}[]>`SELECT o."id",o."ownerId",o."eventId",o."channel",e."evidence" AS "event",d."attempts" FROM "NotificationDelivery" d JOIN "NotificationOutbox" o ON o."id"=d."outboxId" JOIN "AlertEvent" e ON e."id"=o."eventId" WHERE (${outboxId??null}::text IS NULL OR o."id"=${outboxId??null}) AND d."attempts"<4 AND ((d."state"='PENDING' AND d."nextAttemptAt"<=clock_timestamp()) OR (d."state"='DELIVERING' AND d."leaseUntil"<=clock_timestamp())) ORDER BY d."nextAttemptAt",o."id" FOR UPDATE OF d SKIP LOCKED LIMIT 1`;
+  const rows=await tx.$queryRaw<{id:string;ownerId:string;eventId:string;channel:AlertChannel;event:AlertEvidence;attempts:number}[]>`SELECT o."id",o."ownerId",o."eventId",o."channel",e."evidence" AS "event",d."attempts" FROM "NotificationDelivery" d JOIN "NotificationOutbox" o ON o."id"=d."outboxId" JOIN "AlertEvent" e ON e."id"=o."eventId" WHERE (${outboxId??null}::text IS NULL OR o."id"=${outboxId??null}) AND d."attempts"<4 AND ((d."state"='PENDING' AND d."nextAttemptAt"<=clock_timestamp()) OR (d."state"='DELIVERING' AND d."leaseUntil"<=clock_timestamp())) ORDER BY CASE WHEN e."evidence"->>'kind'='SELL' THEN 0 WHEN e."evidence"->>'kind'='MONITOR_DEGRADED' THEN 1 ELSE 2 END,d."nextAttemptAt",o."id" FOR UPDATE OF d SKIP LOCKED LIMIT 1`;
   const row=rows[0];if(!row)return null;const token=randomUUID(),attempt=row.attempts+1;
   await tx.$executeRaw`UPDATE "NotificationDelivery" SET "state"='DELIVERING',"attempts"=${attempt},"leaseToken"=${token}::uuid,"leaseUntil"=clock_timestamp()+${leaseMs}*interval '1 millisecond',"updatedAt"=clock_timestamp() WHERE "outboxId"=${row.id}`;
   await tx.$executeRaw`INSERT INTO "NotificationAttempt" ("id","outboxId","attempt","stage") VALUES (${randomUUID()}::uuid,${row.id},${attempt},'STARTED')`;
@@ -61,3 +61,4 @@ export async function deliverAlert(db:PrismaClient,adapter?:(delivery:AlertDeliv
  }catch{/* External error bodies are never persisted or logged. */}
  const accepted=await finishAlert(db,claim,delivered);return {state:accepted?(delivered?'DELIVERED':'RETRY_OR_FAILED'):'LEASE_LOST',id:claim.id};
 }
+

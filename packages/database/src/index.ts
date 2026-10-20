@@ -32,3 +32,7 @@ export * from './eod-scan.js';
 export * from './scheduler.js';
 export * from './alerts.js';
 export * from './lifecycle.js';
+export * from './position-monitor.js';
+export * from './reconciliation.js';
+export * from './protective-stops.js';
+export * from './portfolio-risk.js';

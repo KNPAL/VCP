@@ -7,10 +7,10 @@ import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError } from '@vcp/doma
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
-import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
+import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
-import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory} from '@vcp/database';
+import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
 
 export class StrictObjectPipe implements PipeTransform {
@@ -42,12 +42,15 @@ export const openapi = {
   openapi: '3.1.0', info: { title: 'Study Trade VCP', version: '4.0.0' },
   components: { schemas: wireSchemas, securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: 'vcp_session' } } },
   paths: {
+    '/api/v1/positions/stops':{get:{operationId:'protectiveStopEvidence',security:[{session:[]}],responses:{'200':{description:'Own current holding episodes, immutable initial stops and protective SELL observations; no execution implied'},'401':{description:'Authentication required'}}}},
     '/api/v1/watchlists':{get:{operationId:'savedWatchlists',security:[{session:[]}],responses:{'200':{description:'Owner lists, persisted query/exchange filters, saved timestamps and explicit UNKNOWN research status'}}},post:{operationId:'saveWatchlist',security:[{session:[]}],responses:{'201':{description:'Create a named list or replace its query/exchange filters; CSRF required'}}}},
     '/api/v1/watchlists/instruments':{get:{operationId:'watchlistInstruments',security:[{session:[]}],responses:{'200':{description:'Current verified canonical cash-equity listings; missing mapping yields empty items with reason'}}}},
     '/api/v1/watchlists/{id}/items':{post:{operationId:'addWatchlistItem',security:[{session:[]}],responses:{'201':{description:'Add canonical listingId once; CSRF required'},'404':{description:'List not owned by caller'},'422':{description:'Listing is not currently canonical'}}}},
     '/api/v1/watchlists/{id}/items/{listingId}':{delete:{operationId:'removeWatchlistItem',security:[{session:[]}],responses:{'200':{description:'Idempotent removal; immutable audit retained; CSRF required'},'404':{description:'List not owned by caller'}}}},
     '/api/v1/sources/readiness':{get:{operationId:'sourceReadiness',security:[{session:[]}],responses:{'200':{description:'All G01–G10 proof statuses, source timestamps, expiry, blocked capabilities and exact failure policies'},'401':{description:'Authentication required'}}}},
-    '/api/v1/portfolio':{get:{operationId:'portfolioJournal',security:[{session:[]}],responses:{'200':{description:'Actual signed cash, FIFO positions, immutable journal and explicit unknown valuation/reconciliation'}}}},
+    '/api/v1/portfolio':{get:{operationId:'portfolioJournal',security:[{session:[]}],responses:{'200':{description:'Actual signed cash, FIFO positions, immutable journal, feed monitoring, reconciliation and current verified valuation or explicit unknowns'}}}},
+    '/api/v1/portfolio/risk':{get:{operationId:'portfolioRisk',security:[{session:[]}],responses:{'200':{description:'Journal-bound valuation, mark ages, company/sector exposure, planned downside, snapshot deadline and separate blocked entry-plan reasons'}}}},
+    '/api/v1/portfolio/reconciliation':{get:{operationId:'portfolioReconciliation',security:[{session:[]}],responses:{'200':{description:'Owner statement history and journal-hash-bound reconciliation state'}}},post:{operationId:'recordPortfolioReconciliation',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Immutable statement comparison recorded; no holdings or orders changed'},'409':{description:'Conflicting request or older statement'},'422':{description:'Invalid statement evidence'}}}},
     '/api/v1/portfolio/cash':{post:{operationId:'recordCash',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',maxLength:128}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Verified cash event recorded once'},'409':{description:'Initial capital or idempotency conflict'},'422':{description:'Invalid cash evidence'}}}},
     '/api/v1/positions':{get:{operationId:'actualPositions',security:[{session:[]}],responses:{'200':{description:'Per-ISIN actual holdings and FIFO lots'}}},post:{operationId:'recordActualBuy',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Actual manual fill recorded atomically; no brokerage order'},'409':{description:'Duplicate source or idempotency conflict'}}}},
     '/api/v1/positions/{id}/fills':{post:{operationId:'recordActualFill',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',description:'Canonical company ISIN'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Actual BUY or SELL fact recorded, with FIFO fee allocation'},'409':{description:'Oversell, duplicate source or idempotency conflict'}}}},
@@ -170,6 +173,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('positions')
   class PositionController {
+    @Get('stops') stops(@Req() request:AuthRequest){return readPositionStops(db,request.ownerId!)}
     @Get() async positions(@Req() request:AuthRequest){const p=await readPortfolio(db,request.ownerId!);return {items:Object.entries(p.holdings).map(([isin,quantity])=>({id:isin,isin,quantity,lots:p.lots.filter(lot=>lot.isin===isin&&lot.remainingQty>0)})),asOf:p.asOf,cash:p.cash,realizedPnl:p.realizedPnl}}
     @Post() async open(@Req() request:AuthRequest){
       const body=strictBody(request,['isin','side','quantity','price','fees','brokerReference','occurredAt','sourceId']);
@@ -185,7 +189,15 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('portfolio')
   class PortfolioController {
-    @Get() async portfolio(@Req() request:AuthRequest){const journal=await readPortfolio(db,request.ownerId!);return {...journal,equity:null,reconciliation:'UNKNOWN',reasons:[...journal.reasons,'VERIFIED_MARKS_REQUIRED','RECONCILIATION_REQUIRED']}}
+    @Get() async portfolio(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.journal,monitor:await readPositionMonitor(db,request.ownerId!),equity:risk.valuation.equity,risk,reconciliation:risk.reconciliation.state,reconciliationEvidence:risk.reconciliation,reasons:risk.reasons}}
+    @Get('risk') risk(@Req() request:AuthRequest){return readPortfolioRisk(db,request.ownerId!)}
+    @Get('reconciliation') reconciliation(@Req() request:AuthRequest){return readReconciliation(db,request.ownerId!)}
+    @Post('reconciliation') async reconcile(@Req() request:AuthRequest){
+      const body=strictBody(request,['asOf','sourceReference','cash','holdings','fillReferences','allOutsideActivityIncluded']),key=request.headers['idempotency-key'];
+      if(typeof key!=='string'||typeof body['asOf']!=='string'||typeof body['sourceReference']!=='string'||typeof body['cash']!=='string'||typeof body['allOutsideActivityIncluded']!=='boolean'||!Array.isArray(body['holdings'])||!Array.isArray(body['fillReferences']))throw new BadRequestException('Complete statement and Idempotency-Key required');
+      for(const item of body['holdings']){const row=strictBody({...request,body:item},['isin','quantity']);if(typeof row['isin']!=='string'||typeof row['quantity']!=='number')throw new BadRequestException('Invalid statement holding')}
+      try{return await recordReconciliation(db,request.ownerId!,key,body as unknown as Parameters<typeof recordReconciliation>[3])}catch(error){throw new HttpException({code:error instanceof Error&&error.message==='STALE_CONFLICT'?'STALE_CONFLICT':'INVALID_INPUT',message:error instanceof Error&&error.message==='STALE_CONFLICT'?'Statement or request conflicts with newer evidence':'Invalid reconciliation statement'},error instanceof Error&&error.message==='STALE_CONFLICT'?409:422)}
+    }
     @Post('cash') cash(@Req() request:AuthRequest){
       const body=strictBody(request,['kind','amount','verified','occurredAt','sourceId']);
       if(!['INITIAL_CAPITAL','DEPOSIT','WITHDRAWAL','FEE','DIVIDEND','CORPORATE_CREDIT','CORPORATE_DEBIT'].includes(String(body['kind']))||typeof body['amount']!=='string'||typeof body['occurredAt']!=='string'||typeof body['sourceId']!=='string'||body['verified']!==true)throw new BadRequestException('Verified cash flow required');
@@ -253,3 +265,4 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   app.enableShutdownHooks();
   return app;
 }
+

@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-69 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–77, KAN-79–81, KAN-83, KAN-85, KAN-87–91, KAN-109, KAN-119, KAN-126, KAN-128.
+74 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–91, KAN-95, KAN-97, KAN-106–107, KAN-109, KAN-119, KAN-126, KAN-128.
 
-67 tickets remain, including epics. In Progress: KAN-4–11, KAN-41, KAN-44–45, KAN-47, KAN-78, KAN-82, KAN-84, KAN-92–94, KAN-122–123, KAN-139. Working status never implies verified completion.
+62 tickets remain, including epics. In Progress: KAN-4–11, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-92–94, KAN-122–123, KAN-139. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -31,6 +31,8 @@ KAN-37 implements immutable split/bonus adjustment snapshots, separate adjusted 
 KAN-35 now delivers candle changes through BullMQ into immutable PostgreSQL replay requests, including duplicate and lost-queue recovery. Original requests remain immutable; KAN-60 records stage execution in separate immutable receipts and results. New EOD scan materialization is implemented in KAN-73; retrospective replay preserves live scans. KAN-30 provides shared Redis request ceilings, and KAN-38 adds the bounded read-only historical transport, retry policy, durable auth circuit and sanitized attempt evidence. KAN-29 now validates lossless daily responses, compares overlapping historical windows and persists immutable account-probe evidence; synthetic verification passed. KAN-28 now implements bounded login/profile authentication, verified account identity, AES-GCM reference storage, atomic session restoration, configured key files and worker credential resolution. Synthetic authentication and circuit-failure integration passed. KAN-32 now persists resumable windows, immutable attempts and atomic candle/checkpoint commits; KAN-39 exposes authenticated job and source-specific coverage APIs. KAN-33 has tested five-year planning, 400-day segmentation and shrinking to a seven-day floor, and now integrates normalized broker responses with transactional checkpoints. Shared-budget deferrals preserve retry delays without consuming the four-failure limit. KAN-33 now has immutable run bindings, a registered production handler and SQL-driven Redis delivery recovery. Live deployment requires genuine provisioned credentials and verified source/calendar/mapping evidence. Entry integration, live risk, exits, notifications, backtesting, remaining UI and operational launch work remain open. No broker connection, verified live market data, production readiness or completed trading workflow is claimed.
 
 ## Verification and runtime
+
+2026-10-20: KAN-78 is Coded. Migration 31 adds immutable live pattern observations, state-change events and transactional deduplicated alerts, plus authenticated audit history linking separate breakout events. Corrections and out-of-order writes cannot rewrite live history. Delayed observations of finalized sessions retain their actual as-of timestamp. Three lifecycle/database/EOD suites, 135 unit/API tests, API/worker builds and lint passed. Migration 31 is applied to both databases. KAN-106 quote normalization is In Progress. See pattern-lifecycle.md.
 
 2026-10-20: KAN-109 is Coded. Migration 30 atomically commits market events and deduplicated alert outbox records, with fenced delivery leases, immutable attempts, four bounded retries and idempotent local inbox insertion. Tests exposed and fixed a concurrent market-event unique-index race. Alert/database and alert/EOD integration suites passed, as did 134 unit/API tests, builds and lint. Crash-after-inbox insertion, stale leases, rollback, exhausted adapters and immutable SELL evidence are covered. Migration 30 is applied to both databases. External adapters remain KAN-110; no messages were sent. KAN-78 lifecycle transitions are now In Progress. See alert-outbox.md.
 
@@ -59,3 +61,15 @@ CI is configured, but no remote CI run occurred because no Git remote is configu
 Web preview: http://localhost:3002 (VCP_WEB_PORT=3002; port 3000 belongs to another project); API: loopback 3001. The current local worker runs through node scripts/local-server.mjs worker; the independent scheduler runs through node scripts/local-server.mjs scheduler. Docker proxy: https://localhost:8443 with a local CA. The Docker image predates recent pipeline/portfolio work. PostgreSQL and Redis are bound to loopback ports 55432 and 56379.
 
 Ignored .runtime files hold local secrets. Login is owner; the password is in .runtime/owner-password and is never logged. Stop the API and worker before regenerating Prisma on Windows to release its native DLL. Restart preview processes after production builds.
+
+
+KAN-106 is Coded: exact quote normalization, Redis source/session TTLs, fenced heartbeat/reconnects and persistent replay watermarks passed focused Redis integration, all 136 unit/API tests, builds and lint. KAN-107 per-position monitoring is In Progress. See live-quotes.md.
+
+
+KAN-107 is Coded: per-position degraded-feed alerts, durable outage/recovery gaps, worker-priority polling and authenticated Positions monitoring passed 137 unit/API tests, three integration suites, browser outage/recovery/failure/mobile checks, builds and lint. Migration 32 is applied to both databases and API/web/worker are running the verified code. KAN-95 reconciliation is In Progress. See position-monitor.md.
+
+
+KAN-95 is Coded: immutable broker-statement reconciliation compares exact cash, all holdings and effective fill references, retains mismatch reasons and invalidates matches after any journal change. Authenticated API/CSRF/idempotency and owner-lock concurrency checks passed, as did 138 unit/API tests, two browser suites, builds and lint. Migration 33 is applied to both databases; API and web are running the verified code. See reconciliation.md.
+
+
+KAN-97 is Coded: actual BUY transactions freeze initial structural stops, current verified quotes trigger deduplicated protective SELL observations, and corporate-action basis changes or expired heartbeat/lease evidence block evaluation. Quote validity is rechecked after the owner lock. Tests preserve holdings after alerts and retain exact gap prices. Migration 34 is applied to both databases. All 140 unit/API tests, stop/monitor/database/Redis integration, three browser suites, builds and lint passed; API/web/worker run the updated code. See protective-stops.md. Portfolio exposure/risk integration (KAN-92–94/96), trailing exits and remaining work are still open.

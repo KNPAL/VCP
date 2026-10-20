@@ -112,7 +112,20 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   assert.equal((await send('/positions',{method:'POST',headers:fillHeaders,body:JSON.stringify({...manualBody,quantity:99})})).status,409);
   assert.equal((await send('/positions',{method:'POST',headers:{...fillHeaders,'idempotency-key':randomUUID()},body:JSON.stringify({...manualBody,quantity:0})})).status,400);
   assert.equal((await send('/positions',{headers:{cookie}})).status,200);
-  assert.equal((await send('/portfolio',{headers:{cookie}})).status,200);
+  assert.equal((await send('/positions/stops')).status,401);
+  const stopResponse=await send('/positions/stops',{headers:{cookie}});assert.equal(stopResponse.status,200);assert.ok(Array.isArray((await stopResponse.json()).items));
+  const portfolioResponse=await send('/portfolio',{headers:{cookie}});assert.equal(portfolioResponse.status,200);assert.ok(Array.isArray((await portfolioResponse.json()).monitor.items));assert.equal((await send('/portfolio')).status,401);
+  assert.equal((await send('/portfolio/reconciliation')).status,401);
+  assert.equal((await send('/portfolio/risk')).status,401);
+  const riskResponse=await send('/portfolio/risk',{headers:{cookie}});assert.equal(riskResponse.status,200);
+  const riskBody=await riskResponse.json();assert.equal(riskBody.plan.state,'BUY_BLOCKED');assert.equal(riskBody.executable,false);assert.ok(Array.isArray(riskBody.journal.events));assert.ok(riskBody.valuation.positionCount>=0);
+  assert.equal((await send('/portfolio/reconciliation',{headers:{cookie}})).status,200);
+  const reconciliationBody={asOf:new Date().toISOString(),sourceReference:'api-test',cash:'0',holdings:[],fillReferences:[],allOutsideActivityIncluded:true};
+  assert.equal((await send('/portfolio/reconciliation',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify(reconciliationBody)})).status,403);
+  const reconciliationHeaders={...fillHeaders,'idempotency-key':randomUUID()};
+  const recordedStatement=await send('/portfolio/reconciliation',{method:'POST',headers:reconciliationHeaders,body:JSON.stringify(reconciliationBody)});assert.equal(recordedStatement.status,201);assert.equal((await recordedStatement.json()).result.state,'PORTFOLIO_UNRECONCILED');
+  assert.equal((await send('/portfolio/reconciliation',{method:'POST',headers:reconciliationHeaders,body:JSON.stringify({...reconciliationBody,cash:'1'})})).status,409);
+  assert.equal((await send('/portfolio/reconciliation',{method:'POST',headers:{...reconciliationHeaders,'idempotency-key':randomUUID()},body:JSON.stringify({...reconciliationBody,holdings:[{isin:manualIsin,quantity:1,unexpected:true}]})})).status,400);
   const scanProfile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0);
   const scanEvidence={scanId:randomUUID(),asOf:new Date().toISOString(),configHash:scanProfile.id,dataRevision:'synthetic-r1'};
   const listing=randomUUID(),missingListing=randomUUID();
@@ -469,3 +482,4 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   await assert.rejects(db.$executeRaw`DELETE FROM "HistoricalProbe" WHERE "id"=${probeId}::uuid`);
  } finally {await app.close();await db.$disconnect();}
 });
+
