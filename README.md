@@ -200,10 +200,15 @@ Migration 30 adds a [transactional alert outbox](docs/alert-outbox.md). The work
 
 Migration 31 adds [immutable pattern lifecycle history](docs/pattern-lifecycle.md), including WATCH/READY transitions and deduplicated local alerts. Historical corrections preserve the original live observations.
 
-The worker now provides a [validated live quote cache](docs/live-quotes.md) with exact prices, source freshness, session expiration and fenced reconnects. Live broker subscription and per-position monitor wiring remain separate work.
+The worker now provides a [validated live quote cache](docs/live-quotes.md) with exact prices, source freshness, session expiration and fenced reconnects. Held-position monitoring uses this cache as described below; the live broker subscription transport remains separate work.
 
 Migration 32 enables [held-position monitoring](docs/position-monitor.md) automatically in the worker. **My positions** shows feed outages and retained recovery gaps. Set `VCP_STREAM_OWNER` only when the matching live stream owner is provisioned; absent sources remain explicitly degraded.
 
 Migration 33 adds [manual broker-statement reconciliation](docs/reconciliation.md) in **My positions**. Compare all outside holdings, fills and cash with the journal. Matches are timestamped evidence and are invalidated by journal changes; other trading readiness and risk gates still apply.
 
 Migration 34 adds [initial protective stops and SELL observations](docs/protective-stops.md). Actual BUY entries retain the known structural stop; verified fresh ticks can create durable alerts, while fills remain manual. Missing pre-BUY structure or current corporate-action coverage remains UNKNOWN.
+
+Migration 35 adds [portfolio valuation snapshots](docs/portfolio-risk.md) and the authenticated `/api/v1/portfolio/risk` endpoint. **My positions** shows current verified exposure, stop-level downside and missing-input reasons. Apply migrations and restart API, worker and web after building. Snapshots expire within 30 seconds and are invalidated by journal changes; entry plans remain blocked pending their remaining evidence integrations.
+
+Migration 36 adds the [entry-plan audit API](docs/portfolio-risk.md#entry-plan-audit-api). Requests select existing market events and valuation snapshots; the server retains available cap calculations and explicit blocking reasons. Plans remain blocked while regime, loss-streak and live candidate evidence integrations are unfinished. Apply migrations and rebuild/restart API and worker to load this backend update.
+

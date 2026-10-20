@@ -117,6 +117,12 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   const portfolioResponse=await send('/portfolio',{headers:{cookie}});assert.equal(portfolioResponse.status,200);assert.ok(Array.isArray((await portfolioResponse.json()).monitor.items));assert.equal((await send('/portfolio')).status,401);
   assert.equal((await send('/portfolio/reconciliation')).status,401);
   assert.equal((await send('/portfolio/risk')).status,401);
+  assert.equal((await send('/portfolio/risk/plans')).status,401);
+  assert.equal((await send('/portfolio/risk/plans',{headers:{cookie}})).status,200);
+  const planRequest={marketEventId:'a'.repeat(64),snapshotId:'b'.repeat(64),estimatedFees:'0'};
+  assert.equal((await send('/portfolio/risk/plans',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify(planRequest)})).status,403);
+  assert.equal((await send('/portfolio/risk/plans',{method:'POST',headers:fillHeaders,body:JSON.stringify({...planRequest,regime:'GREEN'})})).status,400);
+  assert.equal((await send('/portfolio/risk/plans',{method:'POST',headers:fillHeaders,body:JSON.stringify(planRequest)})).status,422);
   const riskResponse=await send('/portfolio/risk',{headers:{cookie}});assert.equal(riskResponse.status,200);
   const riskBody=await riskResponse.json();assert.equal(riskBody.plan.state,'BUY_BLOCKED');assert.equal(riskBody.executable,false);assert.ok(Array.isArray(riskBody.journal.events));assert.ok(riskBody.valuation.positionCount>=0);
   assert.equal((await send('/portfolio/reconciliation',{headers:{cookie}})).status,200);

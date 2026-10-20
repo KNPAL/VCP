@@ -1,9 +1,10 @@
 import {Prisma,PrismaClient} from '@prisma/client';
 import {createHash,randomUUID} from 'node:crypto';
-import {projectPortfolio} from '@vcp/portfolio';
+import {projectPortfolio,positionEpisodes} from '@vcp/portfolio';
 import type {PortfolioEvent,FundingKind} from '@vcp/portfolio';
 import {canonical} from './indicators.js';
 import {initializePositionStops} from './protective-stops.js';
+import {cashAllocations} from './cash-allocation.js';
 export type JournalCommand={kind:FundingKind;amount:string;verified:boolean;occurredAt:string;sourceId:string}|
  {kind:'FILL';isin:string;side:'BUY'|'SELL';quantity:number;price:string;fees:string;brokerReference:string;occurredAt:string;sourceId:string}|
  {kind:'CORRECTION';targetId:string;reason:string;replacement:{isin:string;side:'BUY'|'SELL';quantity:number;price:string;fees:string;brokerReference:string;occurredAt:string;sourceId:string}};
@@ -27,6 +28,7 @@ export async function appendPortfolio(db:PrismaClient,ownerId:string,idempotency
    added.push({...command.replacement,id:randomUUID(),sequence,kind:'FILL',replacementOf:command.targetId,recordedAt:now,author:ownerId});
   }else added.push({...command,id:randomUUID(),sequence,recordedAt:now,author:ownerId});
   const projection=projectPortfolio([...events,...added],now);
+  positionEpisodes([...events,...added],now,await cashAllocations(tx,ownerId));
   for(const event of added){const json=canonical(event);await tx.$executeRaw`INSERT INTO "PortfolioJournal" ("id","ownerId","sequence","kind","occurredAt","recordedAt","evidence") VALUES (${event.id}::uuid,${ownerId}::uuid,${event.sequence},${event.kind},${new Date(event.occurredAt)},${new Date(event.recordedAt)},${json}::jsonb)`}
   await initializePositionStops(tx,ownerId,[...events,...added],now,added.flatMap(event=>event.kind==='FILL'?[event.isin]:[]));
   const response=JSON.parse(canonical({eventIds:added.map(event=>event.id),portfolio:projection})) as Prisma.InputJsonValue;

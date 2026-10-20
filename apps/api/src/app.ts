@@ -9,6 +9,7 @@ import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
 import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
+import {recordEntryRisk,readEntryRisk,recordCashAllocation} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
 import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
@@ -50,6 +51,7 @@ export const openapi = {
     '/api/v1/sources/readiness':{get:{operationId:'sourceReadiness',security:[{session:[]}],responses:{'200':{description:'All G01–G10 proof statuses, source timestamps, expiry, blocked capabilities and exact failure policies'},'401':{description:'Authentication required'}}}},
     '/api/v1/portfolio':{get:{operationId:'portfolioJournal',security:[{session:[]}],responses:{'200':{description:'Actual signed cash, FIFO positions, immutable journal, feed monitoring, reconciliation and current verified valuation or explicit unknowns'}}}},
     '/api/v1/portfolio/risk':{get:{operationId:'portfolioRisk',security:[{session:[]}],responses:{'200':{description:'Journal-bound valuation, mark ages, company/sector exposure, planned downside, snapshot deadline and separate blocked entry-plan reasons'}}}},
+    '/api/v1/portfolio/risk/plans':{get:{operationId:'entryRiskHistory',security:[{session:[]}],responses:{'200':{description:'Owner-scoped immutable plan evidence with expiry and journal invalidation'}}},post:{operationId:'recordEntryRisk',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Blocked entry-plan evidence recorded without a fill or order'},'409':{description:'Stale snapshot, changed journal or conflicting retry'},'422':{description:'Invalid source event or request'}}}},
     '/api/v1/portfolio/reconciliation':{get:{operationId:'portfolioReconciliation',security:[{session:[]}],responses:{'200':{description:'Owner statement history and journal-hash-bound reconciliation state'}}},post:{operationId:'recordPortfolioReconciliation',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Immutable statement comparison recorded; no holdings or orders changed'},'409':{description:'Conflicting request or older statement'},'422':{description:'Invalid statement evidence'}}}},
     '/api/v1/portfolio/cash':{post:{operationId:'recordCash',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string',maxLength:128}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Verified cash event recorded once'},'409':{description:'Initial capital or idempotency conflict'},'422':{description:'Invalid cash evidence'}}}},
     '/api/v1/positions':{get:{operationId:'actualPositions',security:[{session:[]}],responses:{'200':{description:'Per-ISIN actual holdings and FIFO lots'}}},post:{operationId:'recordActualBuy',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Actual manual fill recorded atomically; no brokerage order'},'409':{description:'Duplicate source or idempotency conflict'}}}},
@@ -191,6 +193,20 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   class PortfolioController {
     @Get() async portfolio(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.journal,monitor:await readPositionMonitor(db,request.ownerId!),equity:risk.valuation.equity,risk,reconciliation:risk.reconciliation.state,reconciliationEvidence:risk.reconciliation,reasons:risk.reasons}}
     @Get('risk') risk(@Req() request:AuthRequest){return readPortfolioRisk(db,request.ownerId!)}
+    @Get('loss-streak') async lossStreak(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.lossStreak,journalHash:risk.journalHash,cashAllocationRevision:risk.cashAllocationRevision}}
+    @Post('cash-allocations') async allocateCash(@Req() request:AuthRequest){
+      const body=strictBody(request,['cashEventId','episodeId','reason']),key=request.headers['idempotency-key'];
+      if(typeof key!=='string'||typeof body['cashEventId']!=='string'||typeof body['episodeId']!=='string'||typeof body['reason']!=='string')throw new BadRequestException('Cash event, position episode, reason and Idempotency-Key required');
+      try{return await recordCashAllocation(db,request.ownerId!,key,body as unknown as Parameters<typeof recordCashAllocation>[3])}
+      catch(error){if(!(error instanceof Error)||!['STALE_CONFLICT','INVALID_CASH_ALLOCATION'].includes(error.message))throw error;throw new HttpException({code:error.message==='STALE_CONFLICT'?'STALE_CONFLICT':'INVALID_INPUT',message:'Cash allocation is invalid or conflicts with an existing request'},error.message==='STALE_CONFLICT'?409:422)}
+    }
+    @Get('risk/plans') plans(@Req() request:AuthRequest){return readEntryRisk(db,request.ownerId!)}
+    @Post('risk/plans') async plan(@Req() request:AuthRequest){
+      const body=strictBody(request,['marketEventId','snapshotId','estimatedFees']),key=request.headers['idempotency-key'];
+      if(typeof key!=='string'||typeof body['marketEventId']!=='string'||typeof body['snapshotId']!=='string'||typeof body['estimatedFees']!=='string')throw new BadRequestException('Market event, snapshot, estimated fees and Idempotency-Key required');
+      try{return await recordEntryRisk(db,request.ownerId!,key,body as unknown as Parameters<typeof recordEntryRisk>[3])}
+      catch(error){const conflict=error instanceof Error&&error.message==='STALE_CONFLICT';if(!conflict&&!(error instanceof InputError)&&!(error instanceof Error&&['INVALID_ENTRY_PLAN','MARKET_EVENT_UNAVAILABLE'].includes(error.message)))throw error;throw new HttpException({code:conflict?'STALE_CONFLICT':'INVALID_INPUT',message:conflict?'Snapshot or idempotency key no longer matches current evidence':'Entry-plan source is missing or invalid'},conflict?409:422)}
+    }
     @Get('reconciliation') reconciliation(@Req() request:AuthRequest){return readReconciliation(db,request.ownerId!)}
     @Post('reconciliation') async reconcile(@Req() request:AuthRequest){
       const body=strictBody(request,['asOf','sourceReference','cash','holdings','fillReferences','allOutsideActivityIncluded']),key=request.headers['idempotency-key'];

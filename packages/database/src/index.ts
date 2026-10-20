@@ -36,3 +36,5 @@ export * from './position-monitor.js';
 export * from './reconciliation.js';
 export * from './protective-stops.js';
 export * from './portfolio-risk.js';
+export * from './entry-risk.js';
+export * from './cash-allocation.js';

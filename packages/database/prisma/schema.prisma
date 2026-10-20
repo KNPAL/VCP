@@ -598,6 +598,26 @@ model PortfolioRiskSnapshot {
  asOf DateTime @db.Timestamptz(6)
  journalHash String
  evidence Json
+ @@index([ownerId, asOf(sort: Desc)], map: "portfolio_risk_owner_time")
+}
+model EntryRiskPlan {
+ id String @id
+ ownerId String @db.Uuid
+ marketEventId String
+ asOf DateTime @db.Timestamptz(6)
+ expiresAt DateTime @db.Timestamptz(6)
+ journalHash String
+ evidence Json
+ @@index([ownerId, asOf(sort: Desc)], map: "entry_risk_owner_time")
+}
+model PortfolioCashAllocation {
+ id String @id
+ sequence BigInt @unique @default(autoincrement())
+ ownerId String @db.Uuid
+ cashEventId String @db.Uuid
+ episodeId String @db.Uuid
+ evidence Json
+ @@index([ownerId, cashEventId, sequence(sort: Desc)], map: "portfolio_cash_allocation_owner")
 }
 model InitialPositionStop {
  id String @id

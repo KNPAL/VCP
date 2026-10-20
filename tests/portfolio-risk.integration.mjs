@@ -11,6 +11,8 @@ test('risk evidence preserves actual fills, expires marks and serializes with jo
   const calendar=[{date,kind:'SPECIAL',opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:new Date(date+'T23:59:59+05:30').toISOString(),finalizedAt:null,knownAt:before,source:'synthetic-risk-test',verified:true}],calendarId=hash(randomUUID());
   await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
   await persistSectors(db,[{isin,sector:'RISK_TEST',validFrom:'2020-01-01',validTo:null,knownAt:before,sourceReference:'synthetic-sector'}],new Date().toISOString());
+  const adjustmentId=hash(randomUUID()),actionSource={id:adjustmentId,listingId,knownAt:before,verified:true,sourceReference:'synthetic-risk-actions',coverageFrom:'2020-01-01',coverageThrough:date,actions:[]};
+  await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${adjustmentId},${listingId}::uuid,${new Date(date)},${new Date(before)},'KNOWN',${JSON.stringify({source:actionSource})}::jsonb)`;
   const buy={kind:'FILL',isin,side:'BUY',quantity:10,price:'100',fees:'0.01',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-risk'};
   await appendPortfolio(db,owner.id,randomUUID(),buy);
   const quote=()=>({listingId,provider:'fixture',token:'123',mappingRevision:mapping.id,rawLtp:'11000',priceDecimals:2,ltp:'110.000000',sourceAt:new Date().toISOString(),receivedAt:new Date().toISOString(),decidedAt:new Date().toISOString(),session:date,sequence:'1',quality:'FRESH',connection:'CONNECTED',executable:false,validUntil:new Date(Date.now()+20000).toISOString()});
@@ -34,6 +36,9 @@ test('risk evidence preserves actual fills, expires marks and serializes with jo
   });
   const expired=await waiting;assert.equal(expired.valuation.companyExposure[isin],null);assert.equal(expired.journal.holdings[isin],7);
   const missing=await recordPortfolioRisk(db,owner.id,{});assert.equal(missing.valuation.companyExposure[isin],null);
+  const splitId=hash(randomUUID()),split={...actionSource,id:splitId,actions:[{id:'split',listingId,kind:'SPLIT',effectiveAt:before,knownAt:before,sharesAfter:'2',sharesBefore:'1',verified:true,sourceReference:'synthetic-split'}]};
+  await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${splitId},${listingId}::uuid,${new Date(date)},${new Date()},'KNOWN',${JSON.stringify({source:split})}::jsonb)`;
+  const quarantined=await recordPortfolioRisk(db,owner.id,{[isin]:quote()});assert.equal(quarantined.valuation.companyExposure[isin],null);assert.ok(quarantined.reasons.includes('POSITION_PRICE_SCALE_UNVERIFIED:'+isin));
   assert.equal((await readPortfolio(db,owner.id)).holdings[isin],7);
   await assert.rejects(db.$executeRaw`UPDATE "PortfolioRiskSnapshot" SET "journalHash"='changed' WHERE "id"=${first.id}`);
   await assert.rejects(db.$executeRaw`DELETE FROM "PortfolioRiskSnapshot" WHERE "id"=${first.id}`);

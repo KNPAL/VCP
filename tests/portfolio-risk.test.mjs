@@ -42,3 +42,15 @@ test('all concentration, cash and open-risk caps limit final shares',()=>{
  assert.equal(plan({portfolio:five}).reasons.includes('POSITION_CAP'),false);
  assert.deepEqual(plan(),plan());
 });
+test('unknown inputs retain independent caps and top-ups do not consume a sixth slot',()=>{
+ const incomplete=portfolio([mark({stop:null})],'90000'),sized=plan({portfolio:incomplete});
+ assert.equal(sized.quantity,0);assert.equal(sized.caps.cash,'900');assert.equal(sized.caps.stock,'50');assert.equal(sized.caps.risk,'80');assert.equal(sized.caps.openRisk,null);
+ assert.ok(sized.reasons.includes('OPEN_RISK_CAP_UNKNOWN'));
+ const noMarks=portfolio([mark({verified:false})],'90000'),blocked=plan({portfolio:noMarks});
+ assert.equal(blocked.caps.cash,'900');assert.equal(blocked.caps.stock,null);assert.equal(blocked.riskBudget,null);
+ const five=portfolio(Array.from({length:5},(_,i)=>mark({isin:'INE00000000'+(i+1),quantity:1,verified:false})),'99500');
+ assert.equal(plan({portfolio:five}).reasons.includes('POSITION_CAP'),false);
+ assert.equal(plan({portfolio:five,isin:'INE000000009'}).reasons.includes('POSITION_CAP'),true);
+ const wrongStop=plan({stop:'100'});assert.equal(wrongStop.quantity,0);assert.equal(wrongStop.caps.risk,null);assert.equal(wrongStop.caps.cash,'1000');
+});
+

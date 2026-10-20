@@ -2,6 +2,7 @@ import {parseFixed,formatFixed,integerShares,utcInstant} from '@vcp/domain';
 export * from './ledger.js';
 export * from './reconciliation.js';
 export * from './protective-stop.js';
+export * from './loss-streak.js';
 const money=(s:string)=>parseFixed(s);
 const positive=(s:string)=>{const n=money(s);if(n<=0n)throw new Error('INVALID_POSITIVE_AMOUNT');return n};
 const maxZero=(n:bigint)=>n>0n?n:0n;
@@ -45,19 +46,23 @@ export function sizeEntry(input:{portfolio:PortfolioValue;isin:string;sector:str
  if(!input.sector)reasons.push('SECTOR_UNKNOWN');
  if(input.regime==='RED'||input.regime==='UNKNOWN')reasons.push('REGIME_'+input.regime);
  const risk=entry-stop;if(risk<=0n)reasons.push('STOP_NOT_BELOW_ENTRY');else if(risk*100n>entry*8n)reasons.push('STOP_WIDER_THAN_8_PERCENT');
- const existing=money(p.companyExposure[input.isin]??'0');
- if(p.positionCount>=5&&existing===0n)reasons.push('POSITION_CAP');
- if(p.state!=='KNOWN'||p.equity===null||p.cash===null||p.grossExposure===null||p.plannedOpenRisk===null||risk<=0n)return {state:'BUY_BLOCKED' as const,reasons:[...new Set(reasons)],quantity:0,caps:null,riskBudget:null,asOf:p.asOf};
- const equity=money(p.equity),cash=money(p.cash);if(equity<=0n)reasons.push('EQUITY_NOT_POSITIVE');
+ const existing=p.companyExposure[input.isin]===null?null:money(p.companyExposure[input.isin]??'0');
+ if(p.positionCount>=5&&!p.positions.some(position=>position.isin===input.isin&&position.quantity>0))reasons.push('POSITION_CAP');
+ if(p.state!=='KNOWN')reasons.push('PORTFOLIO_UNKNOWN');
+ const equity=p.equity===null?null:money(p.equity),cash=p.cash===null?null:money(p.cash);if(equity!==null&&equity<=0n)reasons.push('EQUITY_NOT_POSITIVE');
  const multiplier=input.regime==='GREEN'?2n:input.regime==='YELLOW'?1n:0n;
- const budget=maxZero(equity*4n*multiplier/2000n),hard=maxZero(equity*5n/1000n),riskBudget=budget<hard?budget:hard;
+ const budget=equity===null?null:maxZero(equity*4n*multiplier/2000n),hard=equity===null?null:maxZero(equity*5n/1000n),riskBudget=budget===null||hard===null?null:budget<hard?budget:hard;
  const cap=(amount:bigint,denominator:bigint)=>maxZero(amount)/denominator;
- const caps={risk:cap(riskBudget,risk),cash:cap(cash-fees,entry),stock:cap(equity*15n/100n-existing,entry),
-  sector:cap(equity*30n/100n-money(p.sectorExposure[input.sector??'']??'0'),entry),
-  gross:cap(equity*(input.regime==='GREEN'?75n:input.regime==='YELLOW'?35n:0n)/100n-money(p.grossExposure),entry),
-  openRisk:cap(equity*2n/100n-money(p.plannedOpenRisk),risk)};
- let quantity=Object.values(caps).reduce((a,b)=>a<b?a:b);quantity=quantity/BigInt(input.lotSize)*BigInt(input.lotSize);
+ const sectorKnown=!!input.sector&&!p.reasons.some(reason=>reason.startsWith('SECTOR_UNKNOWN')||reason.startsWith('SECTOR_CONFLICT'))&&p.sectorExposure[input.sector]!==null;
+ const caps={risk:riskBudget===null||risk<=0n?null:cap(riskBudget,risk),cash:cash===null?null:cap(cash-fees,entry),stock:equity===null||existing===null?null:cap(equity*15n/100n-existing,entry),
+  sector:equity===null||!sectorKnown?null:cap(equity*30n/100n-money(p.sectorExposure[input.sector!]??'0'),entry),
+  gross:equity===null||p.grossExposure===null?null:cap(equity*(input.regime==='GREEN'?75n:input.regime==='YELLOW'?35n:0n)/100n-money(p.grossExposure),entry),
+  openRisk:equity===null||p.plannedOpenRisk===null||risk<=0n?null:cap(equity*2n/100n-money(p.plannedOpenRisk),risk)};
+ for(const [name,value] of Object.entries(caps))if(value===null)reasons.push((name==='openRisk'?'OPEN_RISK':name.toUpperCase())+'_CAP_UNKNOWN');
+ const values=Object.values(caps),known=values.filter((v):v is bigint=>v!==null);
+ let quantity=known.length!==values.length?0n:known.reduce((a,b)=>a<b?a:b);quantity=quantity/BigInt(input.lotSize)*BigInt(input.lotSize);
  if(quantity>BigInt(Number.MAX_SAFE_INTEGER))throw new Error('QUANTITY_OVERFLOW');
- if(quantity===0n)for(const [name,value] of Object.entries(caps))if(value<BigInt(input.lotSize))reasons.push(name.toUpperCase()+'_CAP');
- return {state:reasons.length?'BUY_BLOCKED' as const:'BUY_ELIGIBLE' as const,reasons:[...new Set(reasons)],quantity:reasons.length?0:Number(quantity),caps:Object.fromEntries(Object.entries(caps).map(([k,v])=>[k,v.toString()])),riskBudget:formatFixed(riskBudget),asOf:p.asOf};
+ if(quantity===0n)for(const [name,value] of Object.entries(caps))if(value!==null&&value<BigInt(input.lotSize))reasons.push((name==='openRisk'?'OPEN_RISK':name.toUpperCase())+'_CAP');
+ return {state:reasons.length?'BUY_BLOCKED' as const:'BUY_ELIGIBLE' as const,reasons:[...new Set(reasons)],quantity:reasons.length?0:Number(quantity),caps:Object.fromEntries(Object.entries(caps).map(([k,v])=>[k,v===null?null:v.toString()])),riskBudget:riskBudget===null?null:formatFixed(riskBudget),asOf:p.asOf};
 }
+
