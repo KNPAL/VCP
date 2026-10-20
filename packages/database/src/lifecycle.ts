@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
-import type {Pattern} from '@vcp/vcp';
+import type {RankInput} from '@vcp/strategy';
+type Pattern=NonNullable<RankInput['patternEvidence']>['patterns'][number];
 import {utcInstant,sessionDate,exchangeDate} from '@vcp/domain';
 import {canonical} from './indicators.js';
 import {appendAlert} from './alerts.js';
@@ -13,7 +14,7 @@ export function lifecycleState(pattern:Pattern){
 /** Internal live-detector boundary. Correction replay never calls this function. */
 export async function observePattern(tx:Prisma.TransactionClient,pattern:Pattern,session:string,configHash:string){
  sessionDate(session);const asOf=utcInstant(pattern.asOf),decidedAt=utcInstant(pattern.decidedAt),state=lifecycleState(pattern);
- if(!/^[a-f0-9]{64}$/.test(pattern.id)||!/^[a-f0-9]{64}$/.test(configHash)||asOf>decidedAt||decidedAt>new Date()||exchangeDate(asOf.toISOString())!==session)throw new Error('INVALID_LIFECYCLE_CONTEXT');
+ if(!/^[a-f0-9]{64}$/.test(pattern.id)||!/^[a-f0-9]{64}$/.test(configHash)||asOf>decidedAt||decidedAt>new Date()||exchangeDate(asOf.toISOString())<session)throw new Error('INVALID_LIFECYCLE_CONTEXT');
  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${pattern.id+'|'+configHash},0))::text`;
  const id=hash([pattern.id,session,configHash]),evidence={id,patternId:pattern.id,listingId:pattern.listingId,session,configHash,state,pattern};
  const existing=await tx.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "PatternLifecycle" WHERE "id"=${id}`;

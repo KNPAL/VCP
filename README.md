@@ -197,3 +197,5 @@ The **VCP screener** now displays stored ranked scans, state filters, contractio
 Use **Settings** to inspect ST_VCP_4_0 rules, immutable configuration hashes and activation history, or save a new draft version. Saving never changes the active strategy or historic scans. See [strategy settings](docs/strategy-settings.md) for supported execution versus draft versions.
 
 Migration 30 adds a [transactional alert outbox](docs/alert-outbox.md). The worker delivers local in-app records with bounded retries and crash recovery. External email/browser delivery adapters remain separate work; no broker orders are submitted.
+
+Migration 31 adds [immutable pattern lifecycle history](docs/pattern-lifecycle.md), including WATCH/READY transitions and deduplicated local alerts. Historical corrections preserve the original live observations.

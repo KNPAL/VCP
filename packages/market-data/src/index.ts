@@ -10,3 +10,4 @@ export * from './historical-response.js';
 export * from './historical-probe.js';
 export * from './broker-credentials.js';
 export * from './broker-auth.js';
+export * from './live-quotes.js';

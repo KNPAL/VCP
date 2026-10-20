@@ -15,4 +15,4 @@ if(mode==='test'){
  if(requested.some(name=>!suites.includes(name)))throw new Error('Unknown integration suite');
  run(['--test','--test-concurrency=1',...(requested.length?requested:suites).map(name=>'tests/'+name+'.integration.mjs')]);
 }
-if(mode==='test-web')run(['scripts/ci-web-t
+if(mode==='test-web')run(['scripts/ci-web-test.mjs']);
