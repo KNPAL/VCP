@@ -12,7 +12,7 @@ test('entry plan retries are immutable, owner scoped and never manufacture quote
   const plans=await Promise.all([1,2,3].map(()=>recordEntryRisk(db,owner.id,key,request)));
   assert.deepEqual(plans[0],plans[1]);assert.deepEqual(plans[0],plans[2]);
   const plan=plans[0];assert.equal(plan.state,'BUY_BLOCKED');assert.equal(plan.quantity,0);assert.equal(plan.entry,null);assert.equal(plan.caps,null);
-  assert.ok(plan.reasons.includes('QUOTE_UNKNOWN'));assert.ok(plan.reasons.includes('REGIME_EVIDENCE_REQUIRED'));assert.ok(plan.reasons.includes('LOSS_STREAK_EVIDENCE_REQUIRED'));assert.equal(plan.executable,false);
+  assert.ok(plan.reasons.includes('QUOTE_UNKNOWN'));assert.ok(plan.reasons.includes('REGIME_EVIDENCE_REQUIRED'));assert.equal(plan.lossStreak.source,'REAL');assert.equal(plan.executable,false);
   assert.ok(Date.parse(plan.expiresAt)-Date.parse(plan.asOf)<=30000);
   assert.deepEqual((await readPortfolio(db,owner.id)).events,before.events);
   await assert.rejects(recordEntryRisk(db,owner.id,key,{...request,estimatedFees:'2'}),/STALE_CONFLICT/);
@@ -35,3 +35,4 @@ test('entry plan retries are immutable, owner scoped and never manufacture quote
   else assert.match(String(results[0].reason),/STALE_CONFLICT/);
  }finally{await db.$disconnect()}
 });
+

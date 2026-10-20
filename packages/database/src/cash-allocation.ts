@@ -6,6 +6,10 @@ export async function cashAllocations(tx:Prisma.TransactionClient,ownerId:string
  const rows=await tx.$queryRaw<{evidence:CashAllocation}[]>`SELECT DISTINCT ON ("cashEventId") "evidence" FROM "PortfolioCashAllocation" WHERE "ownerId"=${ownerId}::uuid ORDER BY "cashEventId","sequence" DESC`;
  return rows.map(r=>r.evidence);
 }
+export async function cashAllocationHistory(db:PrismaClient,ownerId:string){
+ const rows=await db.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "PortfolioCashAllocation" WHERE "ownerId"=${ownerId}::uuid ORDER BY "sequence" DESC LIMIT 50`;
+ return rows.map(r=>r.evidence);
+}
 export async function recordCashAllocation(db:PrismaClient,ownerId:string,key:string,input:{cashEventId:string;episodeId:string;reason:string}){
  if(!/^[A-Za-z0-9._:-]{1,128}$/.test(key)||![input.cashEventId,input.episodeId].every(s=>/^[0-9a-f-]{36}$/.test(s))||!input.reason.trim()||input.reason.length>1000)throw new Error('INVALID_CASH_ALLOCATION');
  const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');

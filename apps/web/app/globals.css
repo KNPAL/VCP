@@ -10,3 +10,4 @@
 .profile-json{display:block;width:100%;max-width:100%;margin-top:8px;padding:12px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;font:13px monospace}.profile-json:focus-visible{outline:2px solid var(--accent);outline-offset:4px}.grid>section{min-width:0}
 .field textarea{display:block;width:100%;max-width:100%;margin-top:8px;padding:12px;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:7px;font:inherit;resize:vertical}.field textarea:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 .riskvaluation .cards{grid-template-columns:repeat(2,minmax(0,1fr))}.riskvaluation .card{min-width:0;overflow-wrap:anywhere}.riskvaluation .value{display:block}.riskvaluation li{overflow-wrap:anywhere}@media(max-width:520px){.riskvaluation .cards{grid-template-columns:1fr}}
+.allocationhistory{overflow-wrap:anywhere}.field select{min-width:0;max-width:100%}

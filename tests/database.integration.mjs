@@ -118,6 +118,12 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   assert.equal((await send('/portfolio/reconciliation')).status,401);
   assert.equal((await send('/portfolio/risk')).status,401);
   assert.equal((await send('/portfolio/risk/plans')).status,401);
+  assert.equal((await send('/portfolio/loss-streak')).status,401);
+  const streakResponse=await send('/portfolio/loss-streak',{headers:{cookie}});assert.equal(streakResponse.status,200);assert.equal((await streakResponse.json()).source,'REAL');
+  const allocationRequest={cashEventId:randomUUID(),episodeId:randomUUID(),reason:'test'};
+  assert.equal((await send('/portfolio/cash-allocations',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify(allocationRequest)})).status,403);
+  assert.equal((await send('/portfolio/cash-allocations',{method:'POST',headers:fillHeaders,body:JSON.stringify({...allocationRequest,source:'PAPER'})})).status,400);
+  assert.equal((await send('/portfolio/cash-allocations',{method:'POST',headers:fillHeaders,body:JSON.stringify(allocationRequest)})).status,422);
   assert.equal((await send('/portfolio/risk/plans',{headers:{cookie}})).status,200);
   const planRequest={marketEventId:'a'.repeat(64),snapshotId:'b'.repeat(64),estimatedFees:'0'};
   assert.equal((await send('/portfolio/risk/plans',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify(planRequest)})).status,403);

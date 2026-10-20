@@ -12,7 +12,7 @@ Snapshot creation and reads hold the same owner row lock as journal writes. Evid
 
 **My positions** displays exposures and explicit reasons, refreshes every five seconds, and hides current valuation when its deadline passes even if polling fails. Actual holdings remain visible.
 
-Entry plans remain `BUY_BLOCKED`: durable market-regime, loss-streak, broker/readiness and candidate-quote integrations are still pending under KAN-93/94/96 and their dependencies. A valuation does not approve a BUY, guarantee a stop execution or create an actual fill.
+Entry plans remain `BUY_BLOCKED`: durable market-regime, broker/readiness and candidate-quote integrations are still pending under KAN-93/94/96 and their dependencies. A valuation does not approve a BUY, guarantee a stop execution or create an actual fill.
 
 ## Entry-plan audit API
 
@@ -35,3 +35,6 @@ pnpm lint
 The integration suite uses only `vcp_test`. It checks partial sales, corrections, concurrent snapshots/fills, deadline expiry while waiting on the owner lock, changed price scales, immutable history and owner isolation. `tests/portfolio-risk.browser.mjs` covers deadline expiry and mobile layout with synthetic HTTP responses; it does not insert application financial records.
 
 Entry-plan integration also covers concurrent duplicate requests, conflicting retries, stale journal rejection, immutable evidence, owner isolation, and unchanged actual holdings after plan creation. API checks cover authentication, CSRF and rejection of client-supplied regime fields.
+
+Migration 37 connects the [actual loss-streak gate](loss-streak.md), including corporate-cash allocation and verified-session cooldowns. Entry plans retain its result and allocation revision; corrected allocations invalidate old plan evidence.
+

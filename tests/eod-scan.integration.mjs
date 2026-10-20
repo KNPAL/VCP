@@ -7,9 +7,11 @@ import {exchangeDate} from '../packages/domain/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
 import {queue,createWorker} from '../apps/worker/dist/runtime.js';
 import {eodScanHandler,dispatchEodScans} from '../apps/worker/dist/eod-scan.js';
+import {readCurrentRegime} from '../packages/database/dist/index.js';
 process.env.REDIS_PORT??='56379';
 const db=new PrismaClient();
 test('EOD scan pins revisions, resumes lost queue jobs and accounts for every intended member',async()=>{
+ assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
  let q,worker;
  try{
   const now=new Date(),date=exchangeDate(now.toISOString()),golden=goldenSeries();
@@ -35,6 +37,11 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   const request={scanId:randomUUID(),session:date,asOf:new Date().toISOString(),calendarId:target.ingested.calendarHash};
   const plan=await prepareEodScan(db,request);assert.equal(plan.items.length,2);assert.equal(plan.benchmarkAdjustmentId,benchmark.adjusted.revision);
   assert.equal(plan.items.find(i=>i.isin===isin).rs,null); // only 50% comparable: missing member remains in denominator
+  assert.equal(plan.regime.result.regime,'UNKNOWN');
+  assert.equal(plan.regime.intended.length,2);
+  assert.equal(plan.regime.members.find(m=>m.isin===missing).sma50,null);
+  assert.equal(plan.regime.benchmark.adjustmentId,benchmark.adjusted.revision);
+  assert.equal(plan.regime.benchmark.sma200,'50.00000000');
   assert.deepEqual(await prepareEodScan(db,request),plan);
   await assert.rejects(prepareEodScan(db,{...request,calendarId:'a'.repeat(64)}),/SCAN_REQUEST_CONFLICT/);
   await assert.rejects(prepareEodScan(db,{...request,scanId:randomUUID(),asOf:'2099-01-01T00:00:00Z'}),/SCAN_FUTURE_REQUEST/);
@@ -50,6 +57,7 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   const result=await getScan(db,request.scanId);assert.ok(result);assert.equal(result.status,'PARTIAL');assert.equal(result.counts.intended,2);assert.equal(result.counts.analyzed,1);assert.equal(result.counts.missing,1);
   assert.ok(result.entries.some(e=>e.reasons.includes('INSTRUMENT_MAPPING_MISSING')));assert.equal(result.candidates[0].marketState,'BLOCKED_DATA');
   const progress=await eodScanProgress(db,request.scanId);assert.equal(progress.completed,2);
+  assert.deepEqual(progress.regime,plan.regime);
   const daily=await db.$queryRaw`SELECT "evidence" FROM "DailyStructureExecution" WHERE "listingId"=${target.listingId}::uuid`;
   assert.equal(daily.length,1);assert.equal(daily[0].evidence.input.adjustmentRevision,target.adjusted.revision);
   const item=plan.items.find(i=>i.isin===isin);await Promise.all([processEodScanItem(db,item.id),processEodScanItem(db,item.id)]);assert.deepEqual(await getScan(db,request.scanId),result);
@@ -62,6 +70,14 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-complete-eod',rows:[{companyId:randomUUID(),listingId:peer.listingId,isin:peerIsin,exchange:'NSE',series:'EQ',symbol:'SYNTH-PEER',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:peer.provider,token:'2',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
   await persistUniverse(db,{universe:'NIFTY_500',knownAt:new Date().toISOString(),effectiveFrom:'2020-01-01',effectiveTo:null,sourceReference:'synthetic-complete-eod',historicalConstituentsVerified:true,isins:[peerIsin]});
   const complete=await prepareEodScan(db,{...request,scanId:randomUUID(),asOf:new Date().toISOString()});assert.equal(complete.items[0].rs,'50.00000000');
+  assert.equal(complete.regime.result.regime,'RED');
+  assert.equal(complete.regime.result.score,'0.00000000');
+  assert.equal(complete.regime.result.breadth,'0.00000000');
+  assert.equal(complete.regime.members[0].adjustmentId,peer.adjusted.revision);
+  const current=await db.$transaction(tx=>readCurrentRegime(tx,new Date().toISOString()));
+  assert.equal(current.regime,'RED',JSON.stringify(current.reasons));
+  assert.equal(current.revision,complete.dataRevision);
+  assert.ok(Date.parse(current.validUntil)>Date.parse(current.asOf));
   const first=await processEodScanItem(db,complete.items[0].id);assert.equal(first.scanComplete,true);
   const completeResult=await getScan(db,complete.request.scanId);assert.equal(completeResult.status,'COMPLETE');
   const peerDaily=await db.$queryRaw`SELECT "id" FROM "DailyStructureExecution" WHERE "listingId"=${peer.listingId}::uuid`;
@@ -71,6 +87,21 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   assert.deepEqual(conflicted.outcome.reasons,['DAILY_SESSION_ALREADY_FROZEN_REPLAY_REQUIRED']);
   assert.equal((await getScan(db,changedCutoff.request.scanId)).status,'ERROR');
   assert.deepEqual(await getScan(db,complete.request.scanId),completeResult);
+  await persistAdjustment(db,{...peer.input,asOf:new Date().toISOString(),source:{...peer.input.source,verified:false}});
+  const superseded=await db.$transaction(tx=>readCurrentRegime(tx,new Date().toISOString()));
+  assert.equal(superseded.regime,'UNKNOWN');
+  assert.ok(superseded.reasons.includes('REGIME_SOURCE_SUPERSEDED'));
+  const tomorrow=new Date(Date.now()+86400000).toISOString();
+  const stale=await db.$transaction(tx=>readCurrentRegime(tx,tomorrow));
+  assert.equal(stale.regime,'UNKNOWN');
+  assert.ok(stale.reasons.includes('REGIME_SESSION_STALE'));
+  const failedAt=new Date().toISOString();
+  await persistReadiness(db,{gate:'G04',status:'FAIL',probeAt:failedAt,sourceAt:failedAt,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic-failed-benchmark',reason:'BENCHMARK_UNAVAILABLE',details:{}});
+  const unavailable=await prepareEodScan(db,{...request,scanId:randomUUID(),asOf:new Date().toISOString()});
+  assert.equal(unavailable.regime.result.regime,'UNKNOWN');
+  assert.equal(unavailable.regime.benchmark.close,null);
+  assert.equal((await db.$transaction(tx=>readCurrentRegime(tx,new Date().toISOString()))).regime,'UNKNOWN');
+  assert.deepEqual(await prepareEodScan(db,complete.request),complete);
   // Checkpoints survive deletion of all test queue jobs; completed scan needs no recompute.
   await worker.close();worker=null;await q.obliterate({force:true});await dispatchEodScans(db,q);
   assert.equal((await q.getJobs(['waiting'])).some(j=>complete.items.some(i=>i.id===j.data.itemId)),false);

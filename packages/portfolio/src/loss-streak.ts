@@ -57,7 +57,7 @@ export function lossStreak(input:{events:readonly PortfolioEvent[];allocations?:
   knownAt=Math.max(knownAt,at(episode.knownAt));
   if(cooldown){
    if(!cooldown.resetAt||at(episode.closedAt!)<at(cooldown.resetAt)){transitions.push({episodeId:episode.id,kind:'CLOSED_DURING_COOLDOWN',at:episode.knownAt});continue}
-   streak=0;cooldown=null;
+   transitions.push({episodeId:cooldown.triggerEpisodeId,kind:'COOLDOWN_COMPLETED',at:cooldown.resetAt});streak=0;cooldown=null;
   }
   streak=parseFixed(episode.netPnl!)<0n?streak+1:0;
   transitions.push({episodeId:episode.id,kind:streak?'CLOSED_NET_LOSS':'NON_LOSS_RESET',at:episode.knownAt});

@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {utcInstant,sessionDate,exchangeDate} from '@vcp/domain';
 import {verifiedCalendar,readiness,type CalendarDay,type ActionSnapshot,type GateProof} from '@vcp/market-data';
-import {validateSeries,relativeStrength,percentiles,adv20,snapshot,type Series} from '@vcp/indicators';
+import {validateSeries,relativeStrength,percentiles,adv20,snapshot,sma,marketRegime,type Series} from '@vcp/indicators';
 import {companyCandidate,configurationHash,ST_VCP_4_0,type DailyStructureInput,type ScanOutcome} from '@vcp/strategy';
 import {canonical,persistIndicator} from './indicators.js';
 import {pinScanUniverse} from './instruments.js';
@@ -13,7 +13,8 @@ const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 const uuid=(v:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
 export interface EodScanRequest {scanId:string;session:string;asOf:string;calendarId:string}
 interface Item {id:string;isin:string;instrumentId:string;adjustmentId:string|null;tick:string|null;reason:string|null;rs:string|null;rsRevision:string}
-interface Plan {request:EodScanRequest;configHash:string;dataRevision:string;universe:Awaited<ReturnType<typeof pinScanUniverse>>;benchmarkAdjustmentId:string|null;benchmarkProofId:string|null;items:Item[]}
+export interface RegimeEvidence {session:string;asOf:string;calendarId:string;benchmark:{adjustmentId:string|null;proofId:string|null;close:string|null;sma50:string|null;sma200:string|null};members:{isin:string;adjustmentId:string|null;close:string|null;sma50:string|null}[];intended:string[];result:ReturnType<typeof marketRegime>}
+export interface Plan {request:EodScanRequest;configHash:string;dataRevision:string;universe:Awaited<ReturnType<typeof pinScanUniverse>>;benchmarkAdjustmentId:string|null;benchmarkProofId:string|null;regime?:RegimeEvidence;items:Item[]}
 interface AdjustmentRow {id:string;listingId:string;asOf:Date;createdAt:Date;scaleSession:Date;state:string;evidence:{source:ActionSnapshot;result:{bars:(Series['bars'][number]&{rawRevisionId:string})[]}}}
 class MissingInput extends Error {}
 /** Reconstruct only the pinned revision, and reject future or incomplete evidence. */
@@ -56,21 +57,26 @@ export async function prepareEodScan(db:PrismaClient,request:EodScanRequest){
  if(proof&&readiness([proof.evidence],request.asOf).items.find(g=>g.gate==='G04')?.status==='PASS'&&details?.identifier==='NIFTY_500_PRICE'&&details.adjustmentId){
   try{benchmark=await loadSeries(db,details.adjustmentId,request);benchmarkAdjustmentId=details.adjustmentId}catch(e){if(!(e instanceof MissingInput))throw e}
  }
- const rawStrength:{isin:string;value:string|null}[]=[],items:Item[]=[];
+ const rawStrength:{isin:string;value:string|null}[]=[],items:Item[]=[],breadth:RegimeEvidence['members']=[];
  for(const member of universe.listings){
-  const listing=member.primary;let adjustmentId:string|null=null,reason=member.reason,value:string|null=null;
+  const listing=member.primary;let adjustmentId:string|null=null,reason=member.reason,value:string|null=null,close:string|null=null,average:string|null=null;
   if(listing){
    const adjustments=await db.$queryRaw<{id:string}[]>`SELECT "id" FROM "AdjustmentSnapshot" WHERE "listingId"=${listing.listingId}::uuid AND "asOf"<=${at} AND "createdAt"<=${at} ORDER BY "asOf" DESC,"createdAt" DESC,"id" LIMIT 1`;
    adjustmentId=adjustments[0]?.id??null;
    if(!adjustmentId)reason='ADJUSTMENT_UNAVAILABLE';
-   else try{const loaded=await loadSeries(db,adjustmentId,request);if(benchmark){const rs=relativeStrength(loaded.series,benchmark.series);value=rs.state==='KNOWN'?rs.value!.raw:null}}catch(e){if(!(e instanceof MissingInput))throw e;reason=e.message;adjustmentId=null}
+   else try{const loaded=await loadSeries(db,adjustmentId,request);if(loaded.listingId!==listing.listingId)throw new MissingInput('SCAN_LISTING_MISMATCH');close=loaded.series.bars.at(-1)!.close;average=sma(loaded.series,50).value;if(benchmark){const rs=relativeStrength(loaded.series,benchmark.series);value=rs.state==='KNOWN'?rs.value!.raw:null}}catch(e){if(!(e instanceof MissingInput))throw e;reason=e.message;adjustmentId=null}
   }
   rawStrength.push({isin:member.isin,value});
+  breadth.push({isin:member.isin,adjustmentId,close,sma50:average});
   items.push({id:hash([request.scanId,member.isin]),isin:member.isin,instrumentId:listing?.listingId??'isin:'+member.isin,adjustmentId,tick:listing?.tick??null,reason,rs:null,rsRevision:''});
  }
  const ranks=percentiles(universe.universe.members,rawStrength),rsRevision=hash({benchmarkAdjustmentId,proofId:proof?.id??null,rawStrength,ranks});
  for(const item of items){item.rs=ranks.state==='KNOWN'?ranks.values[item.isin]??null:null;item.rsRevision=rsRevision}
- const base={request,configHash:profile.id,universe,benchmarkAdjustmentId,benchmarkProofId:proof?.id??null,items},plan:Plan={...base,dataRevision:hash(base)};
+ const benchmarkInputs={adjustmentId:benchmarkAdjustmentId,proofId:proof?.id??null,close:benchmark?.series.bars.at(-1)?.close??null,sma50:benchmark?sma(benchmark.series,50).value:null,sma200:benchmark?sma(benchmark.series,200).value:null};
+ // Store the full intended denominator, including missing members, with pinned source revisions.
+ // This is historical EOD evidence; live entry consumers must separately verify freshness.
+ const regime:RegimeEvidence={session:request.session,asOf:request.asOf,calendarId:request.calendarId,benchmark:benchmarkInputs,members:breadth,intended:universe.universe.members,result:marketRegime(benchmarkInputs.close,benchmarkInputs.sma50,benchmarkInputs.sma200,universe.universe.members,breadth)};
+ const base={request,configHash:profile.id,universe,benchmarkAdjustmentId,benchmarkProofId:proof?.id??null,regime,items},plan:Plan={...base,dataRevision:hash(base)};
  await db.$transaction(async tx=>{
   await tx.$executeRaw`INSERT INTO "EodScanPlan" ("id","evidence") VALUES (${request.scanId}::uuid,${canonical(plan)}::jsonb) ON CONFLICT DO NOTHING`;
   const saved=await tx.$queryRaw<{evidence:Plan}[]>`SELECT "evidence" FROM "EodScanPlan" WHERE "id"=${request.scanId}::uuid`;
@@ -116,5 +122,6 @@ export async function recordEodScanDispatch(db:PrismaClient,id:string,state:stri
 export async function eodScanProgress(db:PrismaClient,scanId:string){
  const plans=await db.$queryRaw<{evidence:Plan}[]>`SELECT "evidence" FROM "EodScanPlan" WHERE "id"=${scanId}::uuid`;if(!plans[0])return null;
  const items=await db.$queryRaw<{id:string;checkpoint:unknown;dispatchState:string|null}[]>`SELECT i."id",c."evidence" AS checkpoint,d."state" AS "dispatchState" FROM "EodScanItem" i LEFT JOIN "EodScanCheckpoint" c ON c."itemId"=i."id" LEFT JOIN "EodScanDispatch" d ON d."itemId"=i."id" WHERE i."scanId"=${scanId}::uuid ORDER BY i."id"`;
- return {scanId,request:plans[0].evidence.request,dataRevision:plans[0].evidence.dataRevision,intended:items.length,completed:items.filter(i=>i.checkpoint!==null).length,items,result:await getScan(db,scanId)};
+ return {scanId,request:plans[0].evidence.request,dataRevision:plans[0].evidence.dataRevision,regime:plans[0].evidence.regime??null,intended:items.length,completed:items.filter(i=>i.checkpoint!==null).length,items,result:await getScan(db,scanId)};
 }
+

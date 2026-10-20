@@ -7,6 +7,7 @@ import {assessHeldQuote,canonicalListings,sectorAt,verifiedCalendar,type Instrum
 import {canonical} from './indicators.js';
 import {readPortfolioRiskTransaction,type PortfolioQuotes} from './portfolio-risk.js';
 import {actionScale} from './protective-stops.js';
+import {readCurrentRegime} from './current-regime.js';
 const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 export type EntryRiskRequest={marketEventId:string;snapshotId:string;estimatedFees:string};
 /** User selects an existing event and observation. No user-supplied quote or PASS gate is accepted. */
@@ -28,9 +29,11 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
   const mapping=mappings[0]?.evidence??null,isin=mapping?.rows.find(r=>r.listingId===event.listingId)?.isin??null;
   const before=new Date().toISOString(),listing=isin?canonicalListings(mapping?[mapping]:[],[isin],before)[0]?.primary:null;
   const scale=listing?await actionScale(tx,listing.listingId,before):null;
+  const regimeEvidence=await readCurrentRegime(tx,before);
   // Last read is the owner-locked, journal-bound valuation; it checks quote deadlines again.
   const risk=await readPortfolioRiskTransaction(tx,ownerId);
   if(risk.snapshotId!==request.snapshotId||risk.reasons.includes('JOURNAL_CHANGED_SINCE_RISK_SNAPSHOT')||Date.parse(risk.validUntil)<=Date.parse(risk.asOf))throw new Error('STALE_CONFLICT');
+  const regime=Date.parse(regimeEvidence.validUntil)>Date.parse(risk.asOf)?regimeEvidence.regime:'UNKNOWN';
   const quote=isin?snapshots[0].evidence.quotes[isin]:null;
   const feed=isin?assessHeldQuote(isin,risk.asOf,calendars[0]?.evidence??null,mapping,quote?{state:'KNOWN',quote}:{state:'UNKNOWN',reason:'QUOTE_UNAVAILABLE'}):null;
   const sourceMatches=!!scale&&scale===structures[0]?.evidence.input.scaleRevision;
@@ -41,14 +44,14 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
   const decision=evaluateEntry({event,now:risk.asOf,calendar,continuousMarket:feed?.state==='FEED_FRESH'?'PASS':'UNKNOWN',
    quote:currentQuote?{price:currentQuote.ltp,at:currentQuote.sourceAt}:null,
    heartbeatAt:null,brokerConnected:'UNKNOWN',sessionValid:feed?.state==='FEED_FRESH'?'PASS':'UNKNOWN',tokenValid:listing?.listingId===event.listingId?'PASS':'UNKNOWN',brokerSettled:'UNKNOWN',
-   gates:{G04:'UNKNOWN',G05:'UNKNOWN',G06:'UNKNOWN',G08:'UNKNOWN'},riskGates:{LOSS_STREAK:risk.lossStreak.pass===null?'UNKNOWN':risk.lossStreak.pass?'PASS':'FAIL'},regime:'UNKNOWN',tick:listing?.tick??'0.05'});
+   gates:{G04:'UNKNOWN',G05:'UNKNOWN',G06:'UNKNOWN',G08:'UNKNOWN'},riskGates:{LOSS_STREAK:risk.lossStreak.pass===null?'UNKNOWN':risk.lossStreak.pass?'PASS':'FAIL'},regime,tick:listing?.tick??'0.05'});
   const sector=isin?sectorAt(sectors[0]?.evidence.mappings??[],isin,risk.asOf).sector:null;
-  const sizing=currentQuote&&decision.stop&&parseFixed(decision.stop)>0n&&isin&&listing?sizeEntry({portfolio:risk.valuation,isin,sector,entry:currentQuote.ltp,stop:decision.stop,regime:'UNKNOWN',lotSize:listing.lot,estimatedFees:request.estimatedFees,lossStreakPass:risk.lossStreak.pass}):null;
-  const reasons=[...new Set([...risk.reasons,...decision.reasons,...(sizing?.reasons??['CAP_INPUTS_UNAVAILABLE']),...(!sourceMatches?['ENTRY_PRICE_SCALE_UNVERIFIED']:[]),'REGIME_EVIDENCE_REQUIRED'])];
-  const expiresAt=new Date(Math.min(Date.parse(decision.expiresAt),Date.parse(risk.validUntil),...(currentQuote?[Date.parse(currentQuote.validUntil)]:[]))).toISOString();
+  const sizing=currentQuote&&decision.stop&&parseFixed(decision.stop)>0n&&isin&&listing?sizeEntry({portfolio:risk.valuation,isin,sector,entry:currentQuote.ltp,stop:decision.stop,regime,lotSize:listing.lot,estimatedFees:request.estimatedFees,lossStreakPass:risk.lossStreak.pass}):null;
+  const reasons=[...new Set([...risk.reasons,...decision.reasons,...(sizing?.reasons??['CAP_INPUTS_UNAVAILABLE']),...(!sourceMatches?['ENTRY_PRICE_SCALE_UNVERIFIED']:[]),...regimeEvidence.reasons,...(regime==='UNKNOWN'?['REGIME_EVIDENCE_REQUIRED']:[])])];
+  const expiresAt=new Date(Math.min(Date.parse(decision.expiresAt),Date.parse(risk.validUntil),...(regime!=='UNKNOWN'?[Date.parse(regimeEvidence.validUntil)]:[]),...(currentQuote?[Date.parse(currentQuote.validUntil)]:[]))).toISOString();
   const id=hash([ownerId,key,requestHash,risk.journalHash,risk.asOf]),evidence={id,ownerId,request,marketEventId:event.id,snapshotId:risk.snapshotId,journalHash:risk.journalHash,asOf:risk.asOf,expiresAt,isin,state:'BUY_BLOCKED',reasons,
    quantity:0,entry:currentQuote?.ltp??null,stop:decision.stop,estimatedFees:request.estimatedFees,riskBudget:sizing?.riskBudget??null,caps:sizing?.caps??null,
-   valuation:risk.valuation,lossStreak:risk.lossStreak,cashAllocationRevision:risk.cashAllocationRevision,entryEvidence:decision,sizing,executable:false};
+   regimeEvidence,valuation:risk.valuation,lossStreak:risk.lossStreak,cashAllocationRevision:risk.cashAllocationRevision,entryEvidence:decision,sizing,executable:false};
   await tx.$executeRaw`INSERT INTO "EntryRiskPlan" ("id","ownerId","marketEventId","asOf","expiresAt","journalHash","evidence") VALUES (${id},${ownerId}::uuid,${event.id},${new Date(risk.asOf)},${new Date(expiresAt)},${risk.journalHash},${canonical(evidence)}::jsonb)`;
   const response=JSON.parse(canonical(evidence)) as Prisma.InputJsonValue;
   await tx.idempotencyRecord.create({data:{ownerId,key:identity,requestHash,response}});return response;
@@ -57,11 +60,13 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
 export async function readEntryRisk(db:PrismaClient,ownerId:string){
  return db.$transaction(async tx=>{
   const risk=await readPortfolioRiskTransaction(tx,ownerId);
-  const plans=await tx.$queryRaw<{evidence:{id:string;journalHash:string;expiresAt:string;cashAllocationRevision?:string}}[]>`SELECT "evidence" FROM "EntryRiskPlan" WHERE "ownerId"=${ownerId}::uuid ORDER BY "asOf" DESC,"id" LIMIT 50`;
+  const regime=await readCurrentRegime(tx,risk.asOf);
+  const plans=await tx.$queryRaw<{evidence:{id:string;journalHash:string;expiresAt:string;cashAllocationRevision?:string;regimeEvidence?:{revision:string|null}}}[]>`SELECT "evidence" FROM "EntryRiskPlan" WHERE "ownerId"=${ownerId}::uuid ORDER BY "asOf" DESC,"id" LIMIT 50`;
   return {items:plans.map(r=>{
-   const reasons=[...(r.evidence.journalHash!==risk.journalHash?['JOURNAL_CHANGED_SINCE_PLAN']:[]),...(Date.parse(r.evidence.expiresAt)<=Date.now()?['PLAN_EXPIRED']:[]),...(r.evidence.cashAllocationRevision!==risk.cashAllocationRevision?['CASH_ALLOCATION_CHANGED_SINCE_PLAN']:[]),...risk.reasons];
+   const reasons=[...(r.evidence.journalHash!==risk.journalHash?['JOURNAL_CHANGED_SINCE_PLAN']:[]),...(Date.parse(r.evidence.expiresAt)<=Date.now()?['PLAN_EXPIRED']:[]),...(r.evidence.cashAllocationRevision!==risk.cashAllocationRevision?['CASH_ALLOCATION_CHANGED_SINCE_PLAN']:[]),...(regime.regime==='UNKNOWN'||r.evidence.regimeEvidence?.revision!==regime.revision?['REGIME_CHANGED_OR_UNAVAILABLE']:[]),...risk.reasons];
    return {evidence:r.evidence,current:reasons.length===0,validityReasons:[...new Set(reasons)],executable:false};
   }),asOf:risk.asOf,executable:false};
  },{timeout:15000});
 }
+
 

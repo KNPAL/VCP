@@ -38,3 +38,4 @@ export * from './protective-stops.js';
 export * from './portfolio-risk.js';
 export * from './entry-risk.js';
 export * from './cash-allocation.js';
+export * from './current-regime.js';
