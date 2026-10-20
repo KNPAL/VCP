@@ -42,6 +42,7 @@ services:
     command: [node, scripts/container-start.mjs, worker]
     environment:
       REDIS_HOST: redis
+      VCP_ENABLE_EOD_SCHEDULER: ${VCP_ENABLE_EOD_SCHEDULER:-false}
     secrets: [database_password]
     depends_on:
       migrate: {condition: service_completed_successfully}

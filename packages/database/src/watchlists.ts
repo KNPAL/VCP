@@ -1,15 +1,15 @@
 import {randomUUID} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
 import {canonicalListings,type InstrumentSnapshot} from '@vcp/market-data';
-import {ST_VCP_4_0,configurationHash} from '@vcp/strategy';
+import {ST_VCP_4_0,configurationHash,MARKET_STATE_ORDER} from '@vcp/strategy';
 import {canonical} from './indicators.js';
 type DB=PrismaClient|Prisma.TransactionClient;
 const uuid=(s:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s);
 export function watchlistFilters(value:unknown){
  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('INVALID_WATCHLIST_FILTERS');
  const row=value as Record<string,unknown>;
- if(Object.keys(row).some(k=>!['query','exchange'].includes(k))||(row['query']!==undefined&&(typeof row['query']!=='string'||row['query'].length>80))||(row['exchange']!==undefined&&!['ALL','NSE','BSE'].includes(String(row['exchange']))))throw new Error('INVALID_WATCHLIST_FILTERS');
- return {query:typeof row['query']==='string'?row['query'].trim():'',exchange:(row['exchange']??'ALL') as 'ALL'|'NSE'|'BSE'};
+ if(Object.keys(row).some(k=>!['query','exchange','state'].includes(k))||(row['query']!==undefined&&(typeof row['query']!=='string'||row['query'].length>80))||(row['exchange']!==undefined&&!['ALL','NSE','BSE'].includes(String(row['exchange'])))||(row['state']!==undefined&&(typeof row['state']!=='string'||!['',...MARKET_STATE_ORDER].includes(row['state']))))throw new Error('INVALID_WATCHLIST_FILTERS');
+ return {query:typeof row['query']==='string'?row['query'].trim():'',exchange:(row['exchange']??'ALL') as 'ALL'|'NSE'|'BSE',...(row['state']!==undefined?{state:row['state'] as string}:{})};
 }
 async function instruments(db:DB){
  const at=new Date().toISOString();

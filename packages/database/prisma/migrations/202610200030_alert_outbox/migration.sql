@@ -1,0 +1,10 @@
+CREATE TABLE "AlertEvent" ("id" TEXT PRIMARY KEY,"evidence" JSONB NOT NULL,"createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "NotificationOutbox" ("id" TEXT PRIMARY KEY,"ownerId" UUID NOT NULL REFERENCES "Owner"("id"),"eventId" TEXT NOT NULL REFERENCES "AlertEvent"("id"),"channel" TEXT NOT NULL CHECK ("channel" IN ('IN_APP','EMAIL','BROWSER')),"ruleVersion" TEXT NOT NULL,"createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE("ownerId","eventId","channel","ruleVersion"));
+CREATE TABLE "NotificationDelivery" ("outboxId" TEXT PRIMARY KEY REFERENCES "NotificationOutbox"("id"),"state" TEXT NOT NULL DEFAULT 'PENDING' CHECK ("state" IN ('PENDING','DELIVERING','DELIVERED','FAILED')),"attempts" INTEGER NOT NULL DEFAULT 0,"nextAttemptAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,"leaseToken" UUID,"leaseUntil" TIMESTAMPTZ(6),"reason" TEXT,"updatedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "NotificationAttempt" ("id" UUID PRIMARY KEY,"outboxId" TEXT NOT NULL REFERENCES "NotificationOutbox"("id"),"attempt" INTEGER NOT NULL,"stage" TEXT NOT NULL,"reason" TEXT,"recordedAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,UNIQUE("outboxId","attempt","stage"));
+CREATE TABLE "InboxNotification" ("id" TEXT PRIMARY KEY REFERENCES "NotificationOutbox"("id"),"ownerId" UUID NOT NULL REFERENCES "Owner"("id"),"eventId" TEXT NOT NULL REFERENCES "AlertEvent"("id"),"createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX notification_delivery_due ON "NotificationDelivery" ("state","nextAttemptAt");
+CREATE TRIGGER immutable_alert_event BEFORE UPDATE OR DELETE ON "AlertEvent" FOR EACH ROW EXECUTE FUNCTION immutable_evidence();
+CREATE TRIGGER immutable_notification_outbox BEFORE UPDATE OR DELETE ON "NotificationOutbox" FOR EACH ROW EXECUTE FUNCTION immutable_evidence();
+CREATE TRIGGER immutable_notification_attempt BEFORE UPDATE OR DELETE ON "NotificationAttempt" FOR EACH ROW EXECUTE FUNCTION immutable_evidence();
+CREATE TRIGGER immutable_inbox_notification BEFORE UPDATE OR DELETE ON "InboxNotification" FOR EACH ROW EXECUTE FUNCTION immutable_evidence();

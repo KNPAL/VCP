@@ -7,9 +7,10 @@ import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError } from '@vcp/doma
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
-import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure} from '@vcp/database';
+import {getScan,latestScan,appendPortfolio,readPortfolio,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
+import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
 
 export class StrictObjectPipe implements PipeTransform {
@@ -51,6 +52,9 @@ export const openapi = {
     '/api/v1/positions':{get:{operationId:'actualPositions',security:[{session:[]}],responses:{'200':{description:'Per-ISIN actual holdings and FIFO lots'}}},post:{operationId:'recordActualBuy',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Actual manual fill recorded atomically; no brokerage order'},'409':{description:'Duplicate source or idempotency conflict'}}}},
     '/api/v1/positions/{id}/fills':{post:{operationId:'recordActualFill',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',description:'Canonical company ISIN'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Actual BUY or SELL fact recorded, with FIFO fee allocation'},'409':{description:'Oversell, duplicate source or idempotency conflict'}}}},
     '/api/v1/positions/fills/{id}/correct':{post:{operationId:'correctActualFill',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Linked reversal and replacement appended atomically, original retained'},'422':{description:'Invalid correction target or chronology'}}}},
+    '/api/v1/vcp/lifecycle/{id}':{get:{operationId:'patternLifecycle',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[a-f0-9]{64}$'}}],responses:{'200':{description:'Immutable pattern observations, transitions and separate market breakouts; explicit UNKNOWN if absent'},'400':{description:'Invalid pattern identity'},'401':{description:'Authentication required'}}}},
+    '/api/v1/vcp/profiles':{get:{operationId:'strategyHistory',security:[{session:[]}],responses:{'200':{description:'Immutable versions, activation history and supported execution hash'}}},post:{operationId:'saveStrategyVersion',security:[{session:[]}],responses:{'201':{description:'Idempotently registered version; activation unchanged'},'409':{description:'Immutable version conflict'},'422':{description:'Invalid configuration or unsupported authority'}}}},
+    '/api/v1/vcp/latest-scan':{get:{operationId:'latestScanSummary',security:[{session:[]}],responses:{'200':{description:'Latest stored scan identity and coverage, or explicit UNKNOWN when absent'},'401':{description:'Authentication required'}}}},
     '/api/v1/vcp/candidates': {
       get: {operationId:'vcpCandidates',security:[{session:[]}],parameters:[
         {name:'scanId',in:'query',required:true,schema:{type:'string',format:'uuid'}},
@@ -61,6 +65,7 @@ export const openapi = {
       ],responses:{'200':{description:'Rank-stable page from one immutable scan; decimal values remain strings and missing values null'},'400':{description:'Invalid query or cursor does not match scan/filter'},'401':{description:'Authentication required'},'404':{description:'Scan not found'}}},
     },
     '/api/v1/system/scans/{id}': {get:{operationId:'scanEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Immutable intended universe, per-listing reasons, coverage counts and ranked candidates'},'404':{description:'Scan not found'}}}},
+    '/api/v1/system/scheduler': {get:{operationId:'schedulerStatus',security:[{session:[]}],responses:{'200':{description:'Last fenced calendar observation, typed waiting reason and recent scheduled preparation states'},'401':{description:'Authentication required'}}}},
     '/api/v1/system/scan-jobs/{id}': {get:{operationId:'eodScanProgress',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Pinned EOD scan revision, completed checkpoints, queue failure state and final result'},'400':{description:'Invalid ID'},'401':{description:'Authentication required'},'404':{description:'Scan plan not found'}}}},
     '/api/v1/system/daily-structure/{id}': {get:{operationId:'dailyStructureEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[0-9a-f]{64}$'}}],responses:{'200':{description:'Immutable source inputs, prior execution identity, breakout decision and subsequent detector result'},'400':{description:'Invalid ID'},'401':{description:'Authentication required'},'404':{description:'Execution not found'}}}},
     '/api/v1/system/data-gaps': {get:{operationId:'dataGaps',security:[{session:[]}],responses:{'200':{description:'Latest scan missing and excluded listings, or explicit NO_COMPLETED_SCAN UNKNOWN state'}}}},
@@ -112,6 +117,17 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('vcp')
   class CandidateController {
+    @Get('lifecycle/:id') async lifecycle(@Param('id') id:string){if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid pattern ID');return patternHistory(db,id)}
+    @Get('profiles') profiles(){return readProfileHistory(db)}
+    @Post('profiles') async profile(@Req() request:AuthRequest){
+      const body=strictBody(request,['version','configuration']);
+      try{const validated=validateProfileVersion(body['version'],body['configuration']);const saved=await registerProfile(db,validated.version,validated.configuration);return {id:saved.id,version:saved.version,createdAt:saved.createdAt,activationChanged:false}}
+      catch(error){const message=error instanceof Error?error.message:'';if(message.startsWith('IMMUTABLE_'))throw new HttpException(message,409);if(/^(INVALID_|UNSUPPORTED_|PROFILE_VERSION_)/.test(message))throw new HttpException(message,422);throw error}
+    }
+    @Get('latest-scan') async latest(){
+      const scan=await latestScan(db);
+      return scan?{scanId:scan.scanId,asOf:scan.asOf,dataRevision:scan.dataRevision,status:scan.status,counts:scan.counts}:{scanId:null,status:'UNKNOWN',reason:'NO_COMPLETED_SCAN'};
+    }
     @Get('candidates') async candidates(@Query() query:Record<string,string>){
       if(Object.keys(query).some(key=>!['state','scanId','cursor','sort','limit'].includes(key))||Object.values(query).some(value=>typeof value!=='string'))throw new BadRequestException('Invalid query');
       if(!query['scanId']||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(query['scanId']))throw new BadRequestException('A scanId UUID is required');
@@ -182,6 +198,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('system')
   class ScanController {
+    @Get('scheduler') scheduler(){return schedulerStatus(db)}
     @Get('daily-structure/:id') async dailyStructure(@Param('id') id:string){
       if(!/^[0-9a-f]{64}$/.test(id))throw new BadRequestException('Invalid execution ID');
       const result=await getDailyStructure(db,id);if(!result)throw new NotFoundException('Daily execution not found');return result;

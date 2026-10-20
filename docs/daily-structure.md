@@ -10,7 +10,7 @@ Missing yesterday's primary, mismatched sessions/listings, changed configuration
 
 ## Remaining integration
 
-The [EOD scanner](eod-scans.md) now selects verified calendar sessions, canonical listings, pinned adjusted candles and point-in-time RS evidence from storage. It derives the price basis from effective corporate actions, checkpoints intended members, delivers jobs through BullMQ and materializes the completed scan. `GET /api/v1/system/daily-structure/{id}` exposes immutable daily evidence to authenticated callers. Calendar-driven automatic preparation remains KAN-21 work. Calling the internal coordinator with arbitrary client-provided financial payloads is not supported.
+The [EOD scanner](eod-scans.md) now selects verified calendar sessions, canonical listings, pinned adjusted candles and point-in-time RS evidence from storage. It derives the price basis from effective corporate actions, checkpoints intended members, delivers jobs through BullMQ and materializes the completed scan. `GET /api/v1/system/daily-structure/{id}` exposes immutable daily evidence to authenticated callers. Optional [calendar-driven preparation](scheduler.md) is available with migration 29. Calling the internal coordinator with arbitrary client-provided financial payloads is not supported.
 
 ## Verification
 

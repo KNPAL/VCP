@@ -32,5 +32,5 @@ export function candidatePage(scan:CompletedScan,query:{state?:string;cursor?:st
  }catch{throw new Error('INVALID_SCAN_CURSOR')}}
  const rows=scan.candidates.filter(x=>x.rank>after&&(!query.state||x.marketState===query.state));
  const items=rows.slice(0,limit);const nextCursor=rows.length>limit?Buffer.from(JSON.stringify({identity,after:items.at(-1)!.rank})).toString('base64url'):null;
- return {items,nextCursor,asOf:scan.asOf,dataRevision:scan.dataRevision,scanId:scan.scanId,configHash:scan.configHash};
+ return {items,nextCursor,asOf:scan.asOf,dataRevision:scan.dataRevision,scanId:scan.scanId,configHash:scan.configHash,status:scan.status,counts:scan.counts};
 }

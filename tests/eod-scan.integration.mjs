@@ -63,9 +63,14 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   await persistUniverse(db,{universe:'NIFTY_500',knownAt:new Date().toISOString(),effectiveFrom:'2020-01-01',effectiveTo:null,sourceReference:'synthetic-complete-eod',historicalConstituentsVerified:true,isins:[peerIsin]});
   const complete=await prepareEodScan(db,{...request,scanId:randomUUID(),asOf:new Date().toISOString()});assert.equal(complete.items[0].rs,'50.00000000');
   const first=await processEodScanItem(db,complete.items[0].id);assert.equal(first.scanComplete,true);
-  assert.equal((await getScan(db,complete.request.scanId)).status,'COMPLETE');
+  const completeResult=await getScan(db,complete.request.scanId);assert.equal(completeResult.status,'COMPLETE');
   const peerDaily=await db.$queryRaw`SELECT "id" FROM "DailyStructureExecution" WHERE "listingId"=${peer.listingId}::uuid`;
   assert.equal(peerDaily.length,1);
+  const changedCutoff=await prepareEodScan(db,{...request,scanId:randomUUID(),asOf:new Date().toISOString()});
+  const conflicted=await processEodScanItem(db,changedCutoff.items[0].id);
+  assert.deepEqual(conflicted.outcome.reasons,['DAILY_SESSION_ALREADY_FROZEN_REPLAY_REQUIRED']);
+  assert.equal((await getScan(db,changedCutoff.request.scanId)).status,'ERROR');
+  assert.deepEqual(await getScan(db,complete.request.scanId),completeResult);
   // Checkpoints survive deletion of all test queue jobs; completed scan needs no recompute.
   await worker.close();worker=null;await q.obliterate({force:true});await dispatchEodScans(db,q);
   assert.equal((await q.getJobs(['waiting'])).some(j=>complete.items.some(i=>i.id===j.data.itemId)),false);

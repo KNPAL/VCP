@@ -18,7 +18,7 @@ Prepare today's finalized session using the stored calendar SHA256:
 node scripts/database-command.mjs scan YYYY-MM-DD CALENDAR_SHA256
 ```
 
-The command prints the scan UUID, intended count and data revision. Supply that UUID as the final argument to inspect/resume the same request without changing its cutoff. It uses the application database credentials internally without printing them. The normal worker polls stored plans every five seconds and delivers up to 25 pending item IDs per poll. Calendar-driven automatic preparation belongs to KAN-21; the preparation command currently requires the target session to match the cutoff's IST date. Historical correction replay remains separate.
+The command prints the scan UUID, intended count and data revision. Supply that UUID as the final argument to inspect/resume the same request without changing its cutoff. It uses the application database credentials internally without printing them. The normal worker polls stored plans every five seconds and delivers up to 25 pending item IDs per poll. Migration 29 adds optional [calendar-driven preparation](scheduler.md); both preparation modes require the target session to match the cutoff's IST date. Historical correction replay remains separate.
 
 ## Persistence and recovery
 
@@ -26,7 +26,7 @@ Plans pin the universe, mapping, calendar, profile, benchmark proof, adjustment 
 
 Each valid member runs the daily coordinator, which evaluates the previous frozen primary before today's detector. Indicator evidence, candidate evidence and a member checkpoint are stored. Candidates include RS and raw turnover availability reasons; they do not imply user BUY permission. Unmapped members use `isin:<ISIN>` as a missing-outcome key, never a fabricated listing UUID. The final immutable scan preserves all intended outcomes and reports COMPLETE, PARTIAL or ERROR according to missing coverage.
 
-Queue loss is repaired from SQL. A completed Redis job with missing durable completion is redelivered with the same identity. Four exhausted attempts remain failed for inspection rather than being restarted indefinitely. If a process stops after the last checkpoint but before final scan materialization, a subsequent delivery materializes the scan without recomputing completed members. Changing an already frozen daily session's inputs raises `DAILY_SESSION_ALREADY_FROZEN`; use the correction replay workflow rather than replacing live evidence.
+Queue loss is repaired from SQL. A completed Redis job with missing durable completion is redelivered with the same identity. Four exhausted attempts remain failed for inspection rather than being restarted indefinitely. If a process stops after the last checkpoint but before final scan materialization, a subsequent delivery materializes the scan without recomputing completed members. Changing an already frozen daily session's inputs records `DAILY_SESSION_ALREADY_FROZEN_REPLAY_REQUIRED` as a missing outcome, allowing the new scan to finish explicitly PARTIAL or ERROR. Use the correction replay workflow rather than replacing live evidence.
 
 Authenticated read endpoints:
 

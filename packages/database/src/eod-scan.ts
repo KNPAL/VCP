@@ -91,11 +91,17 @@ export async function processEodScanItem(db:PrismaClient,id:string){
    const loaded=await loadSeries(db,item.adjustmentId,plan.request);
    if(loaded.listingId!==item.instrumentId)throw new Error('SCAN_LISTING_MISMATCH');
    const input:DailyStructureInput={listingId:item.instrumentId,series:loaded.series,tick:item.tick,adjustmentRevision:item.adjustmentId,scaleRevision:loaded.scaleRevision,configHash:plan.configHash,decidedAt:plan.request.asOf,strength:item.rs===null?null:{value:item.rs,revision:item.rsRevision,knownAt:plan.request.asOf}};
-   const daily=await processDailyStructure(db,input);
+   const daily=await processDailyStructure(db,input).catch((error:unknown)=>{
+    if(error instanceof Error&&error.message==='DAILY_SESSION_ALREADY_FROZEN')return null;
+    throw error;
+   });
+   if(!daily)outcome={instrumentId:item.instrumentId,status:'MISSING',reasons:['DAILY_SESSION_ALREADY_FROZEN_REPLAY_REQUIRED'],candidate:null};
+   else {
    await persistIndicator(db,{listingId:item.instrumentId,session:plan.request.session,dataRevision:hash([item.adjustmentId,item.rsRevision]),asOf:plan.request.asOf,evidence:JSON.parse(canonical(snapshot(loaded.series,item.rs)))});
    const reasons=[...(item.rs===null?['RS_UNAVAILABLE']:[]),...(loaded.adv.state!=='KNOWN'?['ADV_UNAVAILABLE']:!loaded.adv.value!.eligible?['TURNOVER_BELOW_MINIMUM']:[])];
    const candidate=companyCandidate({listingId:item.instrumentId,patterns:daily.detector.structure.patterns,close:loaded.series.bars.at(-1)!.close,rsPercentile:item.rs,adv20Median:loaded.adv.value?.median??null,dataReasons:reasons,confirmedMarketEventId:daily.breakout.state==='BREAKOUT_CONFIRMED'?daily.breakout.event!.id:null});
    outcome={instrumentId:item.instrumentId,status:'ANALYZED',reasons,candidate,dailyExecutionId:daily.id};
+   }
   }
   await db.$executeRaw`INSERT INTO "EodScanCheckpoint" ("itemId","evidence") VALUES (${id},${canonical(outcome)}::jsonb) ON CONFLICT DO NOTHING`;
   const saved=await db.$queryRaw<{evidence:ScanOutcome}[]>`SELECT "evidence" FROM "EodScanCheckpoint" WHERE "itemId"=${id}`;

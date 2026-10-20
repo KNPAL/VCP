@@ -62,6 +62,8 @@ Open **[http://localhost:3000/login](http://localhost:3000/login)**. Sign in as 
 
 The API health check is [http://127.0.0.1:3001/api/v1/system/health](http://127.0.0.1:3001/api/v1/system/health). `UP` confirms HTTP process liveness, not broker/data/trading readiness. The web app proxies `/api/v1` to the API.
 
+Automatic EOD preparation is optional. After configuring verified calendar/readiness evidence, set `$env:VCP_ENABLE_EOD_SCHEDULER='true'` before starting the worker in PowerShell, or run `node scripts/local-server.mjs scheduler` in a fourth terminal alongside the worker. The [scheduler guide](docs/scheduler.md) explains lease fencing, waiting reasons and deployment modes. Authenticated status is available at `/api/v1/system/scheduler`.
+
 If another project owns port 3000, set `VCP_WEB_PORT=3002` in **all three startup terminals** before launching these commands, then open `http://localhost:3002/login`. PowerShell: `$env:VCP_WEB_PORT='3002'`. POSIX shells: `export VCP_WEB_PORT=3002`. The API keeps port 3001 and its allowed browser origin follows the selected web port. Do not stop unrelated applications just to free port 3000.
 
 ## Stop, restart and update
@@ -107,6 +109,8 @@ node --test tests/worker.integration.mjs
 ```
 
 The first command migrates `vcp_test` and runs PostgreSQL integration checks; the second verifies Redis behavior. Fixtures are synthetic. Never run integration tests against your application or production database.
+
+For a focused rerun, append one or more suite names: `node scripts/database-command.mjs test database scheduler`. Supported names are `database`, `eod-scan`, `indicator-replay`, `rs-replay`, and `scheduler`; the database remains isolated as `vcp_test`.
 
 For web verification, complete the database test first and **stop the normal API/web processes** to free ports 3000/3001:
 
@@ -182,8 +186,14 @@ AI is not required to run V1. The optional future [AI shadow-review contract](do
 
 After provisioning verified data sources and broker access, use the [incremental synchronization guide](docs/incremental-sync.md) to submit missing-session and three-session-overlap refreshes to the worker.
 
-The worker can also execute [durable correction replay](docs/indicator-replay.md) from stored evidence. Historical RS preparation pins a verified universe, benchmark, member adjustments and strategy profile; the worker then automatically delivers chronological VCP/breakout replay. Migrations 23–25 add context reuse, initial discovery and propagation of peer/benchmark corrections. Missing evidence remains explicitly pending. The linked guide documents setup and recovery. Whole-universe scan materialization remains KAN-73 work.
+The worker can also execute [durable correction replay](docs/indicator-replay.md) from stored evidence. Historical RS preparation pins a verified universe, benchmark, member adjustments and strategy profile; the worker then automatically delivers chronological VCP/breakout replay. Migrations 23–25 add context reuse, initial discovery and propagation of peer/benchmark corrections. Missing evidence remains explicitly pending. The linked guide documents setup and recovery. The EOD scanner described below materializes new daily scans; retrospective replay does not overwrite live scans.
 
 After migration 26, use **My watchlists** to save canonical instruments and persist symbol/ISIN and exchange filters. [Watchlist setup and API](docs/watchlists.md) explains timestamps, audit records and missing-data status. A verified instrument snapshot is required before instruments appear in the selector; saving a symbol does not alter scanner or trading state.
 
-Migrations 27–28 add the [daily structure coordinator](docs/daily-structure.md) and [EOD scanner](docs/eod-scans.md). After verified inputs and an active strategy profile are present, prepare a finalized scan with `node scripts/database-command.mjs scan YYYY-MM-DD CALENDAR_SHA256`. The running worker dispatches its members and persists checkpoints and results. The scanner guide covers prerequisites, progress endpoints and retry recovery. Calendar-driven automatic scan preparation remains under development.
+Migrations 27–29 add the [daily structure coordinator](docs/daily-structure.md), [EOD scanner](docs/eod-scans.md), and optional [calendar scheduler](docs/scheduler.md). After verified inputs and an active strategy profile are present, prepare a finalized scan manually with `node scripts/database-command.mjs scan YYYY-MM-DD CALENDAR_SHA256` or enable the scheduler. The running worker dispatches preparation/member jobs and persists checkpoints and results. The guides cover prerequisites, progress endpoints and retry recovery.
+
+The **VCP screener** now displays stored ranked scans, state filters, contraction evidence, coverage and immutable cursor pagination. It supports saving instruments and state filters to research watchlists. See [screener usage and verification](docs/screener.md). Without a stored scan, the screen explicitly shows UNKNOWN; it never inserts demo financial data.
+
+Use **Settings** to inspect ST_VCP_4_0 rules, immutable configuration hashes and activation history, or save a new draft version. Saving never changes the active strategy or historic scans. See [strategy settings](docs/strategy-settings.md) for supported execution versus draft versions.
+
+Migration 30 adds a [transactional alert outbox](docs/alert-outbox.md). The worker delivers local in-app records with bounded retries and crash recovery. External email/browser delivery adapters remain separate work; no broker orders are submitted.

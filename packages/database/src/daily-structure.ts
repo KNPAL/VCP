@@ -3,6 +3,8 @@ import type {PrismaClient} from '@prisma/client';
 import {dailyBreakout,detectDailyStructure,ST_VCP_4_0,configurationHash,type DailyStructureInput,type FrozenDailyStructure} from '@vcp/strategy';
 import {sessionDate,utcInstant} from '@vcp/domain';
 import {canonical} from './indicators.js';
+import {appendMarketAlert} from './alerts.js';
+import {observePattern} from './lifecycle.js';
 
 export interface DailyStructureResult {id:string;input:DailyStructureInput;previousId:string|null;breakout:ReturnType<typeof dailyBreakout>;detector:ReturnType<typeof detectDailyStructure>}
 export async function getDailyStructure(db:PrismaClient,id:string){
@@ -28,13 +30,15 @@ export async function processDailyStructure(db:PrismaClient,input:DailyStructure
   const breakout=dailyBreakout(input,rows[0]?.evidence.detector.frozen??null);
   if(breakout.event){
    const e=breakout.event;
-   await tx.$executeRaw`INSERT INTO "MarketEvent" ("id","logicalId","listingId","session","type","configHash","dataRevision","occurredAt","observedAt","decidedAt","evidence") VALUES (${e.id},${e.logicalId},${e.listingId}::uuid,${new Date(session)},${e.type},${e.configHash},${e.dataRevision},${utcInstant(e.occurredAt)},${utcInstant(e.observedAt)},${decidedAt},${canonical(e)}::jsonb) ON CONFLICT ("id") DO NOTHING`;
+   await tx.$executeRaw`INSERT INTO "MarketEvent" ("id","logicalId","listingId","session","type","configHash","dataRevision","occurredAt","observedAt","decidedAt","evidence") VALUES (${e.id},${e.logicalId},${e.listingId}::uuid,${new Date(session)},${e.type},${e.configHash},${e.dataRevision},${utcInstant(e.occurredAt)},${utcInstant(e.observedAt)},${decidedAt},${canonical(e)}::jsonb) ON CONFLICT DO NOTHING`;
    const stored=await tx.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "MarketEvent" WHERE "id"=${e.id}`;
    if(canonical(stored[0]?.evidence)!==canonical(e))throw new Error('DAILY_EVENT_CONFLICT');
+   await appendMarketAlert(tx,e);
   }
   // Deliberately after the frozen-state check and event INSERT. Failure rolls both back.
   const detector=detectDailyStructure(input);
   for(const p of detector.structure.patterns){
+   await observePattern(tx,p,session,input.configHash);
    const data={patternId:p.id,listingId:input.listingId,session:new Date(session),dataRevision:input.series.dataRevision,adjustmentRevision:input.adjustmentRevision,asOf:utcInstant(input.series.asOf),decidedAt,evidence:JSON.parse(canonical(p))};
    const prior=await tx.patternSnapshot.findUnique({where:{patternId_session_dataRevision:{patternId:p.id,session:data.session,dataRevision:data.dataRevision}}});
    if(prior){if(canonical(prior.evidence)!==canonical(p))throw new Error('DAILY_PATTERN_CONFLICT')}else await tx.patternSnapshot.create({data});

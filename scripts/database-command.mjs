@@ -10,5 +10,9 @@ function run(args){const r=spawnSync(process.execPath,args,{env,stdio:'inherit'}
 if(mode==='migrate'||mode==='test')run([prisma,'migrate','deploy','--schema','packages/database/prisma/schema.prisma']);
 if(mode==='seed')run(['packages/database/dist/seed.js']);
 if(mode==='scan')run(['scripts/prepare-eod-scan.mjs',...process.argv.slice(3)]);
-if(mode==='test')run(['--test','--test-concurrency=1','tests/database.integration.mjs','tests/eod-scan.integration.mjs','tests/indicator-replay.integration.mjs','tests/rs-replay.integration.mjs']);
-if(mode==='test-web')run(['scripts/ci-web-test.mjs']);
+if(mode==='test'){
+ const suites=['database','eod-scan','indicator-replay','rs-replay','scheduler','alerts','lifecycle'],requested=process.argv.slice(3);
+ if(requested.some(name=>!suites.includes(name)))throw new Error('Unknown integration suite');
+ run(['--test','--test-concurrency=1',...(requested.length?requested:suites).map(name=>'tests/'+name+'.integration.mjs')]);
+}
+if(mode==='test-web')run(['scripts/ci-web-t

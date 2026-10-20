@@ -11,13 +11,11 @@
     "typecheck": "pnpm -r typecheck",
     "test": "node --test tests/*.test.mjs",
     "lint": "eslint apps packages scripts tests fixtures && node scripts/check-boundaries.mjs",
-    "test:integration": "node --test --test-concurrency=1 tests/database.integration.mjs tests/eod-scan.integration.mjs tests/indicator-replay.integration.mjs tests/rs-replay.integration.mjs tests/worker.integration.mjs",
+    "test:integration": "node --test --test-concurrency=1 tests/database.integration.mjs tests/eod-scan.integration.mjs tests/indicator-replay.integration.mjs tests/rs-replay.integration.mjs tests/scheduler.integration.mjs tests/alerts.integration.mjs tests/lifecycle.integration.mjs tests/worker.integration.mjs",
     "test:web": "node scripts/ci-web-test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
-    "typescript-eslint": "^8.71.2"
-  }
-}
+    "type

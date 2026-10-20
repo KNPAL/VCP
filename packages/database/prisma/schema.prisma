@@ -28,6 +28,64 @@ model StrategyProfile {
   configuration Json
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 }
+model AlertEvent {
+ id String @id
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model PatternLifecycle {
+ id String @id
+ patternId String
+ listingId String @db.Uuid
+ session DateTime @db.Date
+ configHash String
+ state String
+ asOf DateTime @db.Timestamptz(6)
+ evidence Json
+ @@unique([patternId,session,configHash])
+ @@index([patternId,session],map:"pattern_lifecycle_history")
+}
+model PatternTransition {
+ id String @id
+ observationId String @unique
+ patternId String
+ evidence Json
+}
+model NotificationOutbox {
+ id String @id
+ ownerId String @db.Uuid
+ eventId String
+ channel String
+ ruleVersion String
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ @@unique([ownerId,eventId,channel,ruleVersion])
+}
+model NotificationDelivery {
+ outboxId String @id
+ state String @default("PENDING")
+ attempts Int @default(0)
+ nextAttemptAt DateTime @default(now()) @db.Timestamptz(6)
+ leaseToken String? @db.Uuid
+ leaseUntil DateTime? @db.Timestamptz(6)
+ reason String?
+ updatedAt DateTime @default(now()) @db.Timestamptz(6)
+ @@index([state,nextAttemptAt],map:"notification_delivery_due")
+}
+model NotificationAttempt {
+ id String @id @db.Uuid
+ outboxId String
+ attempt Int
+ stage String
+ reason String?
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ @@unique([outboxId,attempt,stage])
+}
+model InboxNotification {
+ id String @id
+ ownerId String @db.Uuid
+ eventId String
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
 model CandleRevision {
   id String @id @default(uuid()) @db.Uuid
   listingId String @db.Uuid
@@ -85,6 +143,31 @@ model DailyStructureExecution {
   evidence Json
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   @@unique([listingId,session])
+}
+model SchedulerLease {
+  scope String @id
+  ownerId String @db.Uuid
+  fence BigInt
+  expiresAt DateTime @db.Timestamptz(6)
+}
+model SchedulerStatus {
+  scope String @id
+  evidence Json
+  checkedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model ScheduledScanRequest {
+  id String @id @db.Uuid
+  scope String
+  session DateTime @db.Date
+  evidence Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  @@unique([scope,session])
+}
+model ScheduledScanDispatch {
+  scanId String @id @db.Uuid
+  state String
+  reason String?
+  checkedAt DateTime @default(now()) @db.Timestamptz(6)
 }
 model EodScanPlan {
   id String @id @db.Uuid

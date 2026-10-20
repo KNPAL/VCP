@@ -1,0 +1,13 @@
+# Transactional alert outbox
+
+Migration 30 introduces immutable alert evidence, notification outbox identities, delivery attempt records and an idempotent in-app inbox. Both standalone market-event persistence and the daily breakout transaction append notifications in the same transaction as the signal. A detector failure or invalid alert chronology rolls the entire transaction back.
+
+Outbox identity is SHA-256 of owner, source alert event, channel and strategy rule version, backed by a unique database constraint. Retries cannot create another business signal. Notification timestamps distinguish source, occurrence, decision and effectiveness; all use UTC and retain configuration/data revisions. Every event is explicitly non-executable. The outbox is downstream of deterministic signal validation and cannot turn stale ticks or unfinished candles into signals.
+
+The worker polls PostgreSQL for due deliveries before its Redis work. Row locks with SKIP LOCKED claim one due record; an expiring UUID lease fences completion. A crash consumes an attempt and allows another worker to reclaim it after expiry. Each claim and terminal attempt outcome is appended immutably. Delivery is bounded to four attempts with exponential 1/2/4-second retry delays; exhausted records remain FAILED. Raw provider errors are replaced by ADAPTER_UNAVAILABLE.
+
+The default adapter only writes the local in-app inbox. A crash after inbox insertion and before completion does not duplicate the inbox record. EMAIL and BROWSER adapter wiring remains separate KAN-110 work; absent adapters fail explicitly. External providers must receive the stable outbox identity as their idempotency key where supported. Exactly-once external email is not guaranteed: a provider may accept a message before a worker loses its lease. Delivery failure never deletes the alert or market event, including a SELL alert.
+
+Only newly persisted events are automatically enqueued. Migration does not manufacture notifications for historical records. No public API accepts arbitrary financial signal events. No external messages or broker orders are sent by this implementation.
+
+Run `node scripts/database-command.mjs test alerts database` against isolated vcp_test. Integration covers concurrent signal commits, atomic rollback, duplicate subscription/channel identity, competing workers, retry delay, expired owner rejection, crash after inbox insertion, four failed attempts, immutable evidence and redacted provider errors. Existing signal tests cover incomplete/future bar refusal and stale quote BUY rejection. The worker requires migration 30 before restart.
