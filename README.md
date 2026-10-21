@@ -192,7 +192,7 @@ After migration 26, use **My watchlists** to save canonical instruments and pers
 
 Migrations 27–29 add the [daily structure coordinator](docs/daily-structure.md), [EOD scanner](docs/eod-scans.md), and optional [calendar scheduler](docs/scheduler.md). After verified inputs and an active strategy profile are present, prepare a finalized scan manually with `node scripts/database-command.mjs scan YYYY-MM-DD CALENDAR_SHA256` or enable the scheduler. The running worker dispatches preparation/member jobs and persists checkpoints and results. The guides cover prerequisites, progress endpoints and retry recovery.
 
-New EOD plans include durable market-regime evidence with benchmark and breadth source revisions. Rebuild/restart API and worker to load this update; no additional migration is required. Existing plans remain unchanged and return no regime evidence. The scan-job progress endpoint exposes the historical result; current entry-plan freshness integration remains unfinished.
+New EOD plans include durable market-regime evidence with benchmark and breadth source revisions. Rebuild/restart API and worker to load this update; no additional migration is required. Existing plans remain unchanged and return no regime evidence. The scan-job progress endpoint exposes the historical result; entry-plan sizing now verifies current sessions and source revisions before consuming it.
 
 The **VCP screener** now displays stored ranked scans, state filters, contraction evidence, coverage and immutable cursor pagination. It supports saving instruments and state filters to research watchlists. See [screener usage and verification](docs/screener.md). Without a stored scan, the screen explicitly shows UNKNOWN; it never inserts demo financial data.
 
@@ -212,8 +212,16 @@ Migration 34 adds [initial protective stops and SELL observations](docs/protecti
 
 Migration 35 adds [portfolio valuation snapshots](docs/portfolio-risk.md) and the authenticated `/api/v1/portfolio/risk` endpoint. **My positions** shows current verified exposure, stop-level downside and missing-input reasons. Apply migrations and restart API, worker and web after building. Snapshots expire within 30 seconds and are invalidated by journal changes; entry plans remain blocked pending their remaining evidence integrations.
 
-Migration 36 adds the [entry-plan audit API](docs/portfolio-risk.md#entry-plan-audit-api). Requests select existing market events and valuation snapshots; the server retains available cap calculations and explicit blocking reasons. Plans remain blocked while regime, broker/readiness and live candidate evidence integrations are unfinished. Apply migrations and rebuild/restart API and worker to load this backend update.
+Migration 36 adds the [entry-plan audit API](docs/portfolio-risk.md#entry-plan-audit-api). Requests select existing market events and valuation snapshots; the server retains available cap calculations and explicit blocking reasons. Plans remain blocked while broker/readiness and live candidate evidence integrations are unfinished. Apply migrations and rebuild/restart API and worker to load this backend update.
 
-Migration 37 connects [three-loss cooldown protection](docs/loss-streak.md) to risk and entry-plan evaluation. **My positions** now supports attributing fees and corporate-action cash to actual position episodes, with immutable allocation history. Apply migrations and rebuild/restart API, worker and web. The loss-streak gate is implemented; overall BUY eligibility still awaits the remaining regime, broker/readiness and candidate quote integrations.
+Migration 37 connects [three-loss cooldown protection](docs/loss-streak.md) to risk and entry-plan evaluation. **My positions** now supports attributing fees and corporate-action cash to actual position episodes, with immutable allocation history. Apply migrations and rebuild/restart API, worker and web. The loss-streak gate is implemented; overall BUY eligibility still awaits the remaining broker/readiness and candidate quote integrations.
 
 
+
+Entry-plan audit records now include source-backed benchmark, sector, reconciliation and quantity-limit gates. Rebuild/restart the API after updating the portfolio and database packages; no new migration is required. Missing broker, surveillance, heartbeat and candidate quote integrations continue to block BUY approval.
+Migration 38 adds an isolated, append-only offline AI shadow audit. Apply migrations with the documented database command and rebuild the database/API/worker packages. No AI credentials, provider, public endpoint or monitoring dependency is introduced. See [AI shadow review](docs/ai-shadow-review.md).
+Migration 39 adds [EMA21 trailing stops](docs/position-trailing.md). Apply migrations before starting the rebuilt API/worker. Current stops remain active until next-session updates become effective; no alert creates a fill. The worker evaluates protective stops before EOD work.
+
+Migrations 40–41 add [breakout-failure and partial-profit evidence](docs/position-exits.md), including owner dismissal and actual-fill resolution. Run the documented migration command before starting the updated application. Integration tests require Docker Desktop's Linux engine and the PostgreSQL container to be running; a stopped engine can surface as a Prisma schema-engine error.
+
+Migration 42 adds primary exit decisions and actual-closure resolutions. [Manual top-ups](docs/manual-topups.md) use remaining FIFO lots and retain actual risk-breach evidence; proposal validation does not execute trades.

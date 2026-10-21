@@ -1,10 +1,12 @@
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
-import {openEpisode,projectPortfolio,valuePortfolio,lossStreak,type PortfolioEvent,type BrokerStatement,reconcileStatement} from '@vcp/portfolio';
+import {openEpisode,projectPortfolio,valuePortfolio,lossStreak,actualRisk,type PortfolioEvent,type BrokerStatement,reconcileStatement} from '@vcp/portfolio';
 import {assessHeldQuote,canonicalListings,sectorAt,type CalendarDay,type InstrumentSnapshot,type SectorMapping,type NormalizedQuote} from '@vcp/market-data';
 import {canonical} from './indicators.js';
 import {actionScale,type InitialStop} from './protective-stops.js';
+import {effectivePositionStop} from './trail-state.js';
 import {cashAllocations} from './cash-allocation.js';
+import {readCurrentRegime} from './current-regime.js';
 const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 export type PortfolioQuotes=Record<string,NormalizedQuote&{validUntil:string}>;
 type Reconciliation={id:string;journalHash:string;statement:BrokerStatement;result:ReturnType<typeof reconcileStatement>};
@@ -27,22 +29,24 @@ async function calculate(tx:Prisma.TransactionClient,ownerId:string,quotes:Portf
   const episode=openEpisode(events,isin,at)!,record=stops.find(r=>r.evidence.isin===isin&&r.evidence.episodeId===episode.identity)?.evidence;
   const listing=canonicalListings(mapping?[mapping]:[],[isin],at)[0]?.primary;
   const scale=listing?await actionScale(tx,listing.listingId,at):null;
-  const currentStop=record?.fillId===episode.first.id&&record.stop?.listingId===listing?.listingId&&record.stop&&scale===record.stop.scaleRevision?record.stop:null;
+  const currentStop=record?.fillId===episode.first.id&&record.stop?.listingId===listing?.listingId&&record.stop&&scale===record.stop.scaleRevision?await effectivePositionStop(tx,record,at):null;
   // Until corporate-action quantity reconciliation is recorded, changed share scales
   // cannot multiply an old journal quantity by a new raw price.
   const quantityScaleVerified=scale!==null&&(scale===hash([])||currentStop!==null);
   return {isin,quantity,sector:sectorAt(sectors[0]?.evidence.mappings??[],isin,at).sector,stop:currentStop?.activeStop??null,quantityScaleVerified};
  }));
  // Recheck quote deadlines after all reads and any lock wait.
+ const regimeEvidence=await readCurrentRegime(tx,new Date().toISOString());
  const asOf=new Date().toISOString();
  if(snapshotDeadline&&Date.parse(snapshotDeadline)<=Date.parse(asOf)){quotes={};extraReasons.push('RISK_SNAPSHOT_EXPIRED')}
  const holdings=prepared.map(p=>{const quote=quotes[p.isin],assessment=assessHeldQuote(p.isin,asOf,calendars[0]?.evidence??null,mapping,quote?{state:'KNOWN',quote}:{state:'UNKNOWN',reason:'QUOTE_UNAVAILABLE'});
   return {...p,price:quote?.ltp??null,quoteAt:quote?.sourceAt??null,verified:assessment.state==='FEED_FRESH'&&p.quantityScaleVerified,quoteReason:assessment.reason};
  });
  const valuation=valuePortfolio({cash:journalView.cash,cashVerified:journalView.state==='KNOWN',reconciled:matched,holdings,asOf});
+ const actual=actualRisk(valuation,Date.parse(regimeEvidence.validUntil)>Date.parse(asOf)?regimeEvidence.regime:'UNKNOWN');
  const streak=lossStreak({events,allocations,calendar:calendars[0]?.evidence??null,asOf,source:'REAL'});
  const validUntil=new Date(Math.min(Date.parse(asOf)+30000,...(snapshotDeadline?[Date.parse(snapshotDeadline)]:[]),...holdings.filter(h=>h.verified).flatMap(h=>[Date.parse(quotes[h.isin]!.validUntil),Date.parse(quotes[h.isin]!.sourceAt)+60000]))).toISOString();
- return {journal:{...journalView,events:events.filter(e=>e.recordedAt<=at)},journalHash,valuation,reconciliation,lossStreak:streak,cashAllocationRevision:hash(allocations),asOf,validUntil,
+ return {journal:{...journalView,events:events.filter(e=>e.recordedAt<=at)},journalHash,valuation,actualRisk:{...actual,regimeEvidence},reconciliation,lossStreak:streak,cashAllocationRevision:hash(allocations),asOf,validUntil,
   sources:{mappingId:mapping?.id??null,calendarId:calendars[0]?.id??null,sectorId:sectors[0]?.id??null,stopIds:stops.map(r=>r.evidence.id)},
   reasons:[...new Set([...journalView.reasons,...valuation.reasons,...reconciliation.reasons,...streak.reasons,...holdings.filter(h=>!h.quantityScaleVerified).map(h=>'POSITION_PRICE_SCALE_UNVERIFIED:'+h.isin),...extraReasons])],
   // Entry sizing must be tied to a specific server-validated candidate and regime.
@@ -69,3 +73,4 @@ export async function readPortfolioRiskTransaction(tx:Prisma.TransactionClient,o
   const result=await calculate(tx,ownerId,reasons.length?{}:saved!.quotes,reasons,saved?.validUntil);
   return {...result,snapshotId:saved?.id??null,snapshotAsOf:saved?.asOf??null,snapshotValidUntil:saved?.validUntil??null};
 }
+

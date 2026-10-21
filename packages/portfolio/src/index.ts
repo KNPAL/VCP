@@ -1,11 +1,30 @@
 import {parseFixed,formatFixed,integerShares,utcInstant} from '@vcp/domain';
+import {remainingWeightedEntry} from './actual-risk.js';
+import type {Lot} from './ledger.js';
 export * from './ledger.js';
 export * from './reconciliation.js';
 export * from './protective-stop.js';
 export * from './loss-streak.js';
+export * from './trailing-stop.js';
+export * from './breakout-failure.js';
+export * from './partial-profit.js';
+export * from './exit-precedence.js';
+export * from './actual-risk.js';
 const money=(s:string)=>parseFixed(s);
 const positive=(s:string)=>{const n=money(s);if(n<=0n)throw new Error('INVALID_POSITIVE_AMOUNT');return n};
 const maxZero=(n:bigint)=>n>0n?n:0n;
+/** Translate independently calculated limits into evidence gates without hiding unknown caps. */
+export function entrySizingGates(sizing:ReturnType<typeof sizeEntry>|null,lotSize:number,lossStreakPass:boolean|null){
+ if(!Number.isSafeInteger(lotSize)||lotSize<=0)throw new Error('INVALID_LOT_SIZE');
+ type Gate='PASS'|'FAIL'|'UNKNOWN';
+ const cap=(name:string):Gate=>{const value=sizing?.caps[name];return value===null||value===undefined?'UNKNOWN':BigInt(value)>=BigInt(lotSize)?'PASS':'FAIL'};
+ const reasons=sizing?.reasons??[];
+ return {POSITION_CAP:(!sizing?'UNKNOWN':reasons.includes('POSITION_CAP')?'FAIL':'PASS') as Gate,
+  CASH:cap('cash'),STOCK_CAP:cap('stock'),SECTOR_CAP:cap('sector'),OPEN_RISK_CAP:cap('openRisk'),
+  GROSS_CAP:(reasons.includes('REGIME_UNKNOWN')?'UNKNOWN':cap('gross')) as Gate,
+  PER_TRADE_RISK:(reasons.some(r=>r==='STOP_NOT_BELOW_ENTRY'||r==='STOP_WIDER_THAN_8_PERCENT')?'FAIL':reasons.includes('REGIME_UNKNOWN')?'UNKNOWN':cap('risk')) as Gate,
+  LOSS_STREAK:(lossStreakPass===null?'UNKNOWN':lossStreakPass?'PASS':'FAIL') as Gate};
+}
 export interface HoldingMark {isin:string;sector:string|null;quantity:number;price:string|null;quoteAt:string|null;verified:boolean;stop:string|null}
 export function valuePortfolio(input:{cash:string|null;cashVerified:boolean;reconciled:boolean;holdings:readonly HoldingMark[];asOf:string}){
  const now=utcInstant(input.asOf).valueOf(),reasons:string[]=[];
@@ -49,7 +68,7 @@ export function sizeEntry(input:{portfolio:PortfolioValue;isin:string;sector:str
  const existing=p.companyExposure[input.isin]===null?null:money(p.companyExposure[input.isin]??'0');
  if(p.positionCount>=5&&!p.positions.some(position=>position.isin===input.isin&&position.quantity>0))reasons.push('POSITION_CAP');
  if(p.state!=='KNOWN')reasons.push('PORTFOLIO_UNKNOWN');
- const equity=p.equity===null?null:money(p.equity),cash=p.cash===null?null:money(p.cash);if(equity!==null&&equity<=0n)reasons.push('EQUITY_NOT_POSITIVE');
+ const equity=p.equity===null?null:money(p.equity)-fees,cash=p.cash===null?null:money(p.cash);if(equity!==null&&equity<=0n)reasons.push('EQUITY_NOT_POSITIVE');
  const multiplier=input.regime==='GREEN'?2n:input.regime==='YELLOW'?1n:0n;
  const budget=equity===null?null:maxZero(equity*4n*multiplier/2000n),hard=equity===null?null:maxZero(equity*5n/1000n),riskBudget=budget===null||hard===null?null:budget<hard?budget:hard;
  const cap=(amount:bigint,denominator:bigint)=>maxZero(amount)/denominator;
@@ -64,5 +83,20 @@ export function sizeEntry(input:{portfolio:PortfolioValue;isin:string;sector:str
  if(quantity>BigInt(Number.MAX_SAFE_INTEGER))throw new Error('QUANTITY_OVERFLOW');
  if(quantity===0n)for(const [name,value] of Object.entries(caps))if(value!==null&&value<BigInt(input.lotSize))reasons.push((name==='openRisk'?'OPEN_RISK':name.toUpperCase())+'_CAP');
  return {state:reasons.length?'BUY_BLOCKED' as const:'BUY_ELIGIBLE' as const,reasons:[...new Set(reasons)],quantity:reasons.length?0:Number(quantity),caps:Object.fromEntries(Object.entries(caps).map(([k,v])=>[k,v===null?null:v.toString()])),riskBudget:riskBudget===null?null:formatFixed(riskBudget),asOf:p.asOf};
+}
+/** Explicit manual proposal only; never an automated ADD event. */
+export function sizeTopUp(input:Parameters<typeof sizeEntry>[0]&{lots:readonly Lot[];requestedQuantity:number}){
+ if(!Number.isSafeInteger(input.requestedQuantity)||input.requestedQuantity<=0)throw new Error('INVALID_TOPUP_QUANTITY');
+ const base=sizeEntry(input),remaining=remainingWeightedEntry(input.lots,input.isin),reasons=base.reasons.filter(r=>r!=='STOP_WIDER_THAN_8_PERCENT');
+ const openQuantity=input.portfolio.positions.filter(p=>p.isin===input.isin).reduce((n,p)=>n+p.quantity,0);
+ if(!remaining||remaining.quantity!==openQuantity)reasons.push('OPEN_FIFO_POSITION_REQUIRED');
+ if(input.requestedQuantity%input.lotSize!==0)reasons.push('MARKET_LOT');
+ for(const [name,limit] of Object.entries(base.caps))if(limit===null||BigInt(input.requestedQuantity)>BigInt(limit))reasons.push('TOPUP_'+name.toUpperCase()+'_CAP');
+ const qty=BigInt(input.requestedQuantity),oldQty=BigInt(remaining?.quantity??0),priceCost=input.lots.filter(l=>l.isin===input.isin&&l.remainingQty>0).reduce((n,l)=>n+money(l.price)*BigInt(l.remainingQty),0n)+money(input.entry)*qty;
+ const total=oldQty+qty,weighted=priceCost/total,stop=money(input.stop);
+ if(weighted<=stop)reasons.push('STOP_NOT_BELOW_WEIGHTED_ENTRY');
+ else if((priceCost-stop*total)*100n>priceCost*8n)reasons.push('STOP_WIDER_THAN_8_PERCENT');
+ const fees=input.lots.filter(l=>l.isin===input.isin&&l.remainingQty>0).reduce((n,l)=>n+money(l.remainingFees),0n)+money(input.estimatedFees);
+ return {...base,state:reasons.length?'BUY_BLOCKED' as const:'BUY_ELIGIBLE' as const,reasons:[...new Set(reasons)],quantity:reasons.length?0:input.requestedQuantity,requestedQuantity:input.requestedQuantity,remaining,weightedEntry:formatFixed(weighted),costPerShareAfterFees:formatFixed((priceCost+fees)/total),automatedAdd:false as const};
 }
 

@@ -1,3 +1,5 @@
+import {recordExitDecisions} from './exit-decisions.js';
+import {cancelPartialsForStop} from './partial-resolution.js';
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
 import {openEpisode,projectPortfolio,protectiveDecision,type PortfolioEvent,type ProtectiveStop,type ProtectiveQuote} from '@vcp/portfolio';
@@ -7,6 +9,7 @@ import {exchangeDate,parseFixed,utcInstant} from '@vcp/domain';
 import type {DailyStructureResult} from './daily-structure.js';
 import {canonical} from './indicators.js';
 import {appendAlert} from './alerts.js';
+import {effectivePositionStop} from './trail-state.js';
 const hash=(value:unknown)=>createHash('sha256').update(canonical(value)).digest('hex');
 export interface InitialStop {id:string;isin:string;episodeId:string;fillId:string;quantityAtCreation:number;state:'KNOWN'|'UNKNOWN';reason:string|null;stop:ProtectiveStop|null;sourceId:string|null;configHash:string;recordedAt:string}
 /** Must be called under the same owner lock and transaction as actual journal writes. */
@@ -47,24 +50,35 @@ export async function evaluatePositionStop(db:PrismaClient,ownerId:string,isin:s
   const episode=openEpisode(events,isin,asOf);if(!episode)return {state:'CLOSED',executable:false};
   await initializePositionStops(tx,ownerId,events,asOf,[isin]);
   const stops=await tx.$queryRaw<{evidence:InitialStop}[]>`SELECT "evidence" FROM "InitialPositionStop" WHERE "ownerId"=${ownerId}::uuid AND "isin"=${isin} AND "episodeId"=${episode.identity}::uuid`;
-  const record=stops[0]!.evidence,stop=record.fillId===episode.first.id?record.stop:null;
+  const record=stops[0]!.evidence,stop=record.fillId===episode.first.id?await effectivePositionStop(tx,record,asOf):null;
   const scale=stop?await actionScale(tx,stop.listingId,asOf):null;asOf=new Date().toISOString();const result=protectiveDecision(stop,quote,scale,episode.quantity,asOf);
   if(result.state!=='SELL_PROTECTIVE')return {...result,stopId:record.id};
   const session=exchangeDate(asOf),id=hash([record.id,session]),evidence={...result,id,ownerId,isin,stopId:record.id,episodeId:episode.identity,activeStop:stop!.activeStop,scaleRevision:scale,session,kind:'SELL_PROTECTIVE',configHash:record.configHash};
   const inserted=await tx.$executeRaw`INSERT INTO "ProtectiveSignal" ("id","ownerId","stopId","session","recognizedAt","evidence") VALUES (${id},${ownerId}::uuid,${record.id},${new Date(session)},${utcInstant(asOf)},${canonical(evidence)}::jsonb) ON CONFLICT DO NOTHING`;
+  await cancelPartialsForStop(tx,record.id,id,asOf);
   if(inserted)await appendAlert(tx,{...evidence,id,sourceEventId:id,kind:'SELL',sourceAt:quote!.sourceAt,occurredAt:quote!.sourceAt,decidedAt:asOf,effectiveAt:asOf,strategyVersion:PROFILE_VERSION,dataRevision:hash([record.id,quote,scale]),executable:false},[ownerId]);
+  await recordExitDecisions(tx,ownerId,events,asOf,[isin]);
   const saved=await tx.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "ProtectiveSignal" WHERE "id"=${id}`;return {state:'SELL_PROTECTIVE',signal:saved[0]!.evidence,created:!!inserted,executable:false};
  });
 }
 export async function readPositionStops(db:PrismaClient,ownerId:string){
+ const exitDecisions=await db.$queryRaw<{evidence:unknown}[]>`SELECT DISTINCT ON ("stopId") "evidence" FROM "ExitDecision" WHERE "ownerId"=${ownerId}::uuid ORDER BY "stopId","recordedAt" DESC,"id"`;
+ const exitResolutions=await db.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "ExitResolution" WHERE "ownerId"=${ownerId}::uuid ORDER BY "recordedAt" DESC,"id" LIMIT 100`;
+ const partials=await db.$queryRaw<{evidence:unknown;resolutions:unknown[]}[]>`SELECT s."evidence",COALESCE((SELECT jsonb_agg(r."evidence" ORDER BY r."recordedAt",r."id") FROM "PartialProfitResolution" r WHERE r."signalId"=s."id"),'[]'::jsonb) AS resolutions FROM "PartialProfitSignal" s WHERE s."ownerId"=${ownerId}::uuid ORDER BY s."recognizedAt" DESC,s."id" LIMIT 100`;
+ const failures=await db.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "PositionFailure" WHERE "ownerId"=${ownerId}::uuid ORDER BY "recognizedAt" DESC,"id" LIMIT 100`;
+ const trails=await db.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "PositionTrail" WHERE "ownerId"=${ownerId}::uuid ORDER BY "session" DESC,"decidedAt" DESC,"id" LIMIT 100`;
  const stops=await db.$queryRaw<{evidence:InitialStop}[]>`SELECT "evidence" FROM "InitialPositionStop" WHERE "ownerId"=${ownerId}::uuid ORDER BY "isin","id"`;
  const signals=await db.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "ProtectiveSignal" WHERE "ownerId"=${ownerId}::uuid ORDER BY "recognizedAt" DESC,"id" LIMIT 100`;
  const journal=await db.$queryRaw<{evidence:PortfolioEvent}[]>`SELECT "evidence" FROM "PortfolioJournal" WHERE "ownerId"=${ownerId}::uuid ORDER BY "sequence"`,events=journal.map(r=>r.evidence),asOf=new Date().toISOString(),p=projectPortfolio(events,asOf);
  const items=await Promise.all(Object.keys(p.holdings).map(async isin=>{const episode=openEpisode(events,isin,asOf)!,record=stops.find(r=>r.evidence.isin===isin&&r.evidence.episodeId===episode.identity)?.evidence;
   let state=record?.fillId===episode.first.id?record.state:'UNKNOWN',reason=record?.fillId===episode.first.id?record.reason:'INITIAL_STOP_EVIDENCE_UNAVAILABLE';
   if(state==='KNOWN'&&record?.stop&&await actionScale(db,record.stop.listingId,asOf)!==record.stop.scaleRevision){state='UNKNOWN';reason='PRICE_SCALE_UNVERIFIED'}
-  return {isin,quantity:episode.quantity,record:record??null,state,reason};
+  const activeStop=record&&record.fillId===episode.first.id?await effectivePositionStop(db,record,asOf):null;
+  return {isin,quantity:episode.quantity,record:record?{...record,initialStop:record.stop,stop:activeStop}:null,state,reason};
  }));
- return {items,stops:stops.map(r=>r.evidence),signals:signals.map(r=>r.evidence),asOf,executable:false};
+ return {items,partials,exitDecisions:exitDecisions.map(r=>r.evidence),exitResolutions:exitResolutions.map(r=>r.evidence),stops:stops.map(r=>r.evidence),signals:signals.map(r=>r.evidence),trails:trails.map(r=>r.evidence),failures:failures.map(r=>r.evidence),asOf,executable:false};
 }
+
+
+
 

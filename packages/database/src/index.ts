@@ -39,3 +39,8 @@ export * from './portfolio-risk.js';
 export * from './entry-risk.js';
 export * from './cash-allocation.js';
 export * from './current-regime.js';
+export * from './shadow-audit.js';
+export * from './position-trail.js';
+export * from './trail-state.js';
+export * from './partial-profit.js';
+export * from './exit-decisions.js';

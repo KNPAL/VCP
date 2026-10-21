@@ -12,7 +12,7 @@ Snapshot creation and reads hold the same owner row lock as journal writes. Evid
 
 **My positions** displays exposures and explicit reasons, refreshes every five seconds, and hides current valuation when its deadline passes even if polling fails. Actual holdings remain visible.
 
-Entry plans remain `BUY_BLOCKED`: durable market-regime, broker/readiness and candidate-quote integrations are still pending under KAN-93/94/96 and their dependencies. A valuation does not approve a BUY, guarantee a stop execution or create an actual fill.
+Entry plans remain `BUY_BLOCKED`: broker/readiness and candidate-quote integrations are still pending under KAN-93/94/96 and their dependencies. A valuation does not approve a BUY, guarantee a stop execution or create an actual fill.
 
 ## Entry-plan audit API
 
@@ -38,3 +38,6 @@ Entry-plan integration also covers concurrent duplicate requests, conflicting re
 
 Migration 37 connects the [actual loss-streak gate](loss-streak.md), including corporate-cash allocation and verified-session cooldowns. Entry plans retain its result and allocation revision; corrected allocations invalidate old plan evidence.
 
+
+Entry plans now retain server-validated regime evidence and use its multiplier for sizing. Current reads reject stale sessions, incomplete calendars, failed or expired benchmark proofs, changed universe/mapping/profile sources, newer adjustments and corrected raw candles. Calendar revisions conservatively require a new EOD plan. Plan expiry is bounded by the regime proof deadline, session close and exchange midnight; history flags changed or unavailable regime evidence. No migration beyond 37 is required.
+Entry eligibility now derives G04 from verified current regime evidence, G05 from the effective sector mapping, and G08 from owner-scoped journal reconciliation. Independent quantity limits produce PASS/FAIL/UNKNOWN risk gates using the market lot; missing sizing remains UNKNOWN. Sector and reconciliation evidence are retained in each immutable plan, and changed sector snapshot IDs invalidate history. Broker connection, settlement, heartbeat and surveillance gates remain unavailable until their dedicated integrations are complete; plans still cannot approve execution.

@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-76 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97, KAN-103, KAN-106–107, KAN-109, KAN-119, KAN-126, KAN-128.
+82 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–103, KAN-106–107, KAN-109, KAN-119, KAN-126, KAN-128, KAN-139.
 
-60 tickets remain, including epics. In Progress: KAN-4–11, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-122–123, KAN-139. Working status never implies verified completion.
+54 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-122–123. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -20,7 +20,7 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Current pipeline work
 
-KAN-93 remains In Progress. EOD plans now persist market-regime inputs/results alongside their pinned revisions and expose them through scan-job progress. The database build and isolated EOD integration passed, covering missing-member coverage, complete RED evidence, immutable retries and a newer failed benchmark proof. This is a prerequisite for risk sizing; live regime freshness/source checks and entry-plan consumption remain outstanding. No additional Jira is marked Coded for this partial dependency.
+KAN-93 remains In Progress. EOD plans now persist market-regime inputs/results alongside their pinned revisions and expose them through scan-job progress. The database build and isolated EOD integration passed, covering missing-member coverage, complete RED evidence, immutable retries and a newer failed benchmark proof. This is a prerequisite for risk sizing; live regime freshness/source checks and entry-plan consumption are now connected. Database/API/worker builds, lint, and EOD/entry-plan integration checks passed. Broker/readiness and candidate quote dependencies remain outstanding. No additional Jira is marked Coded for this partial dependency.
 
 KAN-21 is Coded. Migration 29 adds a fenced PostgreSQL scheduler lease, immutable once-per-session preparation requests and recoverable BullMQ dispatch. The independent scheduler waits for verified finalized exchange sessions and readiness evidence; scan computation runs in workers. Expired owners cannot write, competing instances cannot duplicate session requests, and missing preparation jobs are recovered. See scheduler.md for standalone and optional inline startup.
 
@@ -80,3 +80,18 @@ KAN-97 is Coded: actual BUY transactions freeze initial structural stops, curren
 2026-10-20: KAN-93/94/96 progress: migration 36 adds immutable owner-scoped entry-plan audit records and authenticated GET/POST /portfolio/risk/plans. Requests select stored market events and valuation snapshots; server reads supply quotes, canonical listings, action basis, calendar and structural stops. The owner lock serializes plans with journal writes. Concurrent retries return original evidence, changed payloads or stale snapshots return conflicts, and history reports expiry/journal/source validity separately. Sizing retains independently known caps with nulls and explicit reasons for missing inputs; an unmarked existing ISIN remains a top-up rather than a sixth position. All 142 unit/API tests, database/entry-risk integration, builds and lint passed; the earlier portfolio-risk regression suite also passed. Migration 36 is applied to both databases and API/worker restarted successfully. README and portfolio-risk.md document the API. These tickets remain In Progress: durable regime, loss-streak, broker/readiness and new-candidate live quote integrations still prevent BUY eligibility. No tickets were moved to Coded in this increment; total remains 75 Coded and 61 remaining.
 
 2026-10-20: KAN-103 is Coded. Actual position episodes accumulate exact BUY/SELL fees and explicitly attributed position cash; partial exits and top-ups stay in one episode. Three fully closed net losses block BUY/top-ups through the next verified finalized exchange session, with holidays, missing calendars and late knowledge handled explicitly. Corrections replay current facts while immutable earlier risk/entry decisions remain. Migration 37 adds owner-locked, versioned cash allocation with stable concurrent retries and owner isolation. Unknown attribution blocks the counter instead of omitting cash. The gate is wired into risk and entry sizing; public APIs use only the real journal, while pure paper calculations take separate inputs. My positions displays cooldown/episode evidence and allocation controls/history. All 148 unit/API tests, database/loss-streak/entry-risk integration, builds and lint passed. The allocation browser workflow passed after fixing dropdown accessible names; valuation-expiry and monitoring browser regressions also passed. Migration 37 is applied to both databases, API/worker/web run the updated code, and README plus loss-streak.md document operation. Totals: 76 Coded, 60 remaining. KAN-93/94/96 still await durable regime, broker/readiness and candidate-quote evidence; no overall BUY eligibility or live broker readiness is claimed.
+
+Entry-gate follow-up: connected verified benchmark, sector and reconciliation evidence and the independent sizing gates. Eight focused sizing tests passed. KAN-93/94/96 remain In Progress while broker connectivity, settlement, surveillance, heartbeat and candidate quote dependencies are unfinished.
+
+2026-10-21: KAN-139 is Coded. Migration 38 adds immutable owner-scoped offline shadow audits with idempotent retries and rejected-input digests. Database build, lint, shadow-audit integration and protective-stop integration passed. VETO, unavailable responses and failed audit writes cannot suppress protective SELL or alter fills. No model provider or external data transmission is enabled. KAN-12/98 are now In Progress.
+
+2026-10-21: KAN-98 is Coded. Migration 39 adds immutable EOD EMA21/half-ATR trailing evidence, +1R activation history recovery and next-session effective stops. Protective monitoring and portfolio risk consume the same effective stop. Three focused rule tests, all 153 unit/API tests, trailing/protective/risk integration, database/API/worker builds and lint passed. KAN-99 is now In Progress. Migration 40 is under verification; pending runtime migration/restart is documented before deployment.
+
+2026-10-21: KAN-99 and KAN-100 are Coded. Breakout-failure EOD integration, partial-profit concurrent/dismissal/actual-fill/full-SELL integration, authenticated API checks, 157 unit/API tests, builds and lint passed. Migrations 40–41 are applied to vcp_test; application database migration and runtime restart remain pending. README includes migration and Docker-engine troubleshooting. KAN-102 is In Progress for primary exit precedence and outstanding full-SELL resolution.
+
+
+2026-10-21: KAN-102 is Coded. Immutable primary exit decisions, higher-priority SELL notification suppression, repeated-evaluation deduplication and actual-zero closure resolution passed focused rules and all three exit integration suites. Builds and lint passed. Both vcp and vcp_test have migrations through 42. Runtime restart remains pending.
+
+
+2026-10-21: KAN-101 is Coded. Remaining FIFO weighted entry, explicit manual top-up quantity/cap/fee validation and immutable BREACH_ACTUAL risk evidence passed 162 unit/API tests, portfolio-risk and entry-risk integration, builds and lint. Actual outside fills remain recorded. Runtime containers are healthy at https://localhost:8443 through KAN-102; the top-up image refresh is pending. No live broker/data readiness is claimed.
+

@@ -7,7 +7,7 @@ export type AlertChannel='IN_APP'|'EMAIL'|'BROWSER';
 export interface AlertEvidence {id:string;sourceEventId:string;kind:string;sourceAt:string;occurredAt:string;decidedAt:string;effectiveAt:string;strategyVersion:string;configHash:string;dataRevision:string;executable:false}
 const digest=(input:unknown)=>createHash('sha256').update(canonical(input)).digest('hex');
 export function validateAlert(event:AlertEvidence){
- if(!/^[a-f0-9]{64}$/.test(event.id)||!/^[a-f0-9]{64}$/.test(event.sourceEventId)||!/^[a-f0-9]{64}$/.test(event.configHash)||!['BREAKOUT_CONFIRMED','BREAKOUT_PRICE_ONLY','WATCH','READY','DEVELOPING','BLOCKED_DATA','REJECTED','EXPIRED','INVALIDATED','SELL','MONITOR_DEGRADED'].includes(event.kind)||!event.strategyVersion||!event.dataRevision||event.executable!==false)throw new Error('INVALID_ALERT_EVIDENCE');
+ if(!/^[a-f0-9]{64}$/.test(event.id)||!/^[a-f0-9]{64}$/.test(event.sourceEventId)||!/^[a-f0-9]{64}$/.test(event.configHash)||!['BREAKOUT_CONFIRMED','BREAKOUT_PRICE_ONLY','WATCH','READY','DEVELOPING','BLOCKED_DATA','REJECTED','EXPIRED','INVALIDATED','SELL','MONITOR_DEGRADED','PARTIAL_PROFIT'].includes(event.kind)||!event.strategyVersion||!event.dataRevision||event.executable!==false)throw new Error('INVALID_ALERT_EVIDENCE');
  const source=utcInstant(event.sourceAt),occurred=utcInstant(event.occurredAt),decided=utcInstant(event.decidedAt),effective=utcInstant(event.effectiveAt);
  if(occurred>source||source>decided||decided>effective||decided>new Date())throw new Error('INVALID_ALERT_CHRONOLOGY');
 }
@@ -61,4 +61,5 @@ export async function deliverAlert(db:PrismaClient,adapter?:(delivery:AlertDeliv
  }catch{/* External error bodies are never persisted or logged. */}
  const accepted=await finishAlert(db,claim,delivered);return {state:accepted?(delivered?'DELIVERED':'RETRY_OR_FAILED'):'LEASE_LOST',id:claim.id};
 }
+
 

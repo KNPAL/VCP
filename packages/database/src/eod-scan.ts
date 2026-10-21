@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import type {PrismaClient} from '@prisma/client';
+import type {Prisma,PrismaClient} from '@prisma/client';
 import {utcInstant,sessionDate,exchangeDate} from '@vcp/domain';
 import {verifiedCalendar,readiness,type CalendarDay,type ActionSnapshot,type GateProof} from '@vcp/market-data';
 import {validateSeries,relativeStrength,percentiles,adv20,snapshot,sma,marketRegime,type Series} from '@vcp/indicators';
@@ -18,7 +18,7 @@ export interface Plan {request:EodScanRequest;configHash:string;dataRevision:str
 interface AdjustmentRow {id:string;listingId:string;asOf:Date;createdAt:Date;scaleSession:Date;state:string;evidence:{source:ActionSnapshot;result:{bars:(Series['bars'][number]&{rawRevisionId:string})[]}}}
 class MissingInput extends Error {}
 /** Reconstruct only the pinned revision, and reject future or incomplete evidence. */
-async function loadSeries(db:PrismaClient,id:string,request:EodScanRequest){
+export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:string,request:EodScanRequest){
  const cutoff=utcInstant(request.asOf);
  const rows=await db.$queryRaw<AdjustmentRow[]>`SELECT * FROM "AdjustmentSnapshot" WHERE "id"=${id}`;
  const row=rows[0];if(!row||row.state!=='KNOWN'||row.asOf>cutoff||row.createdAt>cutoff||row.scaleSession.toISOString().slice(0,10)!==request.session)throw new MissingInput('ADJUSTMENT_UNAVAILABLE');

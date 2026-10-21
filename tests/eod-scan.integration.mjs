@@ -87,6 +87,11 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   assert.deepEqual(conflicted.outcome.reasons,['DAILY_SESSION_ALREADY_FROZEN_REPLAY_REQUIRED']);
   assert.equal((await getScan(db,changedCutoff.request.scanId)).status,'ERROR');
   assert.deepEqual(await getScan(db,complete.request.scanId),completeResult);
+  const correctedAt=new Date().toISOString();
+  await ingestCandles(db,{listingId:peer.listingId,provider:peer.provider,from:date,to:date,asOf:correctedAt,calendar,bars:[{...peer.input.raw.at(-1),close:'50.5',receivedAt:correctedAt}]});
+  const rawChanged=await db.$transaction(tx=>readCurrentRegime(tx,new Date().toISOString()));
+  assert.equal(rawChanged.regime,'UNKNOWN');
+  assert.ok(rawChanged.reasons.includes('REGIME_SOURCE_SUPERSEDED'));
   await persistAdjustment(db,{...peer.input,asOf:new Date().toISOString(),source:{...peer.input.source,verified:false}});
   const superseded=await db.$transaction(tx=>readCurrentRegime(tx,new Date().toISOString()));
   assert.equal(superseded.regime,'UNKNOWN');

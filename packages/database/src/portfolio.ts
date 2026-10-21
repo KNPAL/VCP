@@ -1,3 +1,5 @@
+import {recordExitDecisions} from './exit-decisions.js';
+import {resolvePartialsFromJournal} from './partial-resolution.js';
 import {Prisma,PrismaClient} from '@prisma/client';
 import {createHash,randomUUID} from 'node:crypto';
 import {projectPortfolio,positionEpisodes} from '@vcp/portfolio';
@@ -31,6 +33,8 @@ export async function appendPortfolio(db:PrismaClient,ownerId:string,idempotency
   positionEpisodes([...events,...added],now,await cashAllocations(tx,ownerId));
   for(const event of added){const json=canonical(event);await tx.$executeRaw`INSERT INTO "PortfolioJournal" ("id","ownerId","sequence","kind","occurredAt","recordedAt","evidence") VALUES (${event.id}::uuid,${ownerId}::uuid,${event.sequence},${event.kind},${new Date(event.occurredAt)},${new Date(event.recordedAt)},${json}::jsonb)`}
   await initializePositionStops(tx,ownerId,[...events,...added],now,added.flatMap(event=>event.kind==='FILL'?[event.isin]:[]));
+  await resolvePartialsFromJournal(tx,ownerId,[...events,...added],now);
+  await recordExitDecisions(tx,ownerId,[...events,...added],now,added.flatMap(event=>event.kind==='FILL'?[event.isin]:[]));
   const response=JSON.parse(canonical({eventIds:added.map(event=>event.id),portfolio:projection})) as Prisma.InputJsonValue;
   await tx.idempotencyRecord.create({data:{ownerId,key,requestHash,response}});return response;
  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable})}catch(error){
@@ -39,3 +43,5 @@ export async function appendPortfolio(db:PrismaClient,ownerId:string,idempotency
  }
  throw new Error('PORTFOLIO_TRANSACTION_RETRY_EXHAUSTED');
 }
+
+

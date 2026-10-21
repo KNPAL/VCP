@@ -1,4 +1,5 @@
 import {parseFixed,formatFixed,integerShares,utcInstant} from '@vcp/domain';
+import {remainingWeightedEntry} from './actual-risk.js';
 export type FundingKind='INITIAL_CAPITAL'|'DEPOSIT'|'WITHDRAWAL'|'FEE'|'DIVIDEND'|'CORPORATE_CREDIT'|'CORPORATE_DEBIT';
 interface BaseEvent {id:string;sequence:number;occurredAt:string;recordedAt:string;sourceId:string;author:string}
 export type PortfolioEvent=BaseEvent&(
@@ -66,6 +67,7 @@ export function projectPortfolio(events:readonly PortfolioEvent[],asOf:string){
  const holdings:Record<string,number>={};for(const lot of lots)if(lot.remainingQty)holdings[lot.isin]=(holdings[lot.isin]??0)+lot.remainingQty;
  for(const qty of Object.values(holdings))integerShares(qty);
  const positions=Object.entries(holdings).sort().map(([isin,quantity])=>({isin,quantity,
+  weightedEntry:remainingWeightedEntry(lots,isin)!,
   costBasis:formatFixed(lots.filter(lot=>lot.isin===isin).reduce((total,lot)=>total+parseFixed(lot.price)*BigInt(lot.remainingQty)+parseFixed(lot.remainingFees),0n)),
   realizedPnl:formatFixed(realized.filter(row=>row.isin===isin).reduce((total,row)=>total+parseFixed(row.pnl),0n))}));
  return {asOf,cash:initial.length?formatFixed(cash):null,state:initial.length?'KNOWN' as const:'UNKNOWN' as const,reasons:initial.length?[]:['INITIAL_CAPITAL_REQUIRED'],holdings,positions,lots,realized,realizedPnl:formatFixed(realized.reduce((total,row)=>total+parseFixed(row.pnl),0n)),cashEntries,reversed:[...reversed]};

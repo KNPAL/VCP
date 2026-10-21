@@ -636,3 +636,62 @@ model ProtectiveSignal {
  evidence Json
  @@unique([ownerId,stopId,session])
 }
+model ShadowReviewAudit {
+ id String @id
+ ownerId String @db.Uuid
+ recordedAt DateTime @db.Timestamptz(6)
+ requestHash String
+ evidence Json
+ @@index([ownerId, recordedAt(sort: Desc)], map: "shadow_audit_owner_time")
+}
+model PositionTrail {
+ id String @id
+ ownerId String @db.Uuid
+ stopId String
+ session DateTime @db.Date
+ decidedAt DateTime @db.Timestamptz(6)
+ effectiveAt DateTime? @db.Timestamptz(6)
+ state String
+ evidence Json
+ @@index([stopId, session(sort: Desc)], map: "position_trail_stop_time")
+}
+model PartialProfitSignal {
+ id String @id
+ ownerId String @db.Uuid
+ stopId String @unique
+ recognizedAt DateTime @db.Timestamptz(6)
+ evidence Json
+}
+model PartialProfitResolution {
+ id String @id
+ signalId String
+ recordedAt DateTime @db.Timestamptz(6)
+ evidence Json
+ @@index([signalId], map: "partial_resolution_signal")
+}
+model PositionFailure {
+ id String @id
+ ownerId String @db.Uuid
+ stopId String
+ session DateTime @db.Date
+ recognizedAt DateTime @db.Timestamptz(6)
+ effectiveAt DateTime? @db.Timestamptz(6)
+ state String
+ evidence Json
+ @@index([ownerId, recognizedAt(sort: Desc)], map: "position_failure_owner_time")
+}
+model ExitResolution {
+ id String @id
+ ownerId String @db.Uuid
+ signalId String @unique
+ recordedAt DateTime @db.Timestamptz(6)
+ evidence Json
+}
+model ExitDecision {
+ id String @id
+ ownerId String @db.Uuid
+ stopId String
+ recordedAt DateTime @db.Timestamptz(6)
+ evidence Json
+ @@index([stopId, recordedAt(sort: Desc)], map: "exit_decision_stop_time")
+}

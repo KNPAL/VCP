@@ -1,10 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {valuePortfolio,sizeEntry} from '../packages/portfolio/dist/index.js';
+import {valuePortfolio,sizeEntry,entrySizingGates} from '../packages/portfolio/dist/index.js';
 const asOf='2026-10-16T06:00:00Z',isin='INE000000001';
 const portfolio=(holdings=[],cash='100000')=>valuePortfolio({holdings,cash,cashVerified:true,reconciled:true,asOf});
 const mark=(overrides={})=>({isin,sector:'TECH',quantity:100,price:'100',quoteAt:asOf,verified:true,stop:'95',...overrides});
 const plan=(overrides={})=>sizeEntry({portfolio:portfolio(),isin,sector:'TECH',entry:'100',stop:'95',regime:'GREEN',lotSize:1,estimatedFees:'0',lossStreakPass:true,...overrides});
+
+test('entry gates retain independent cap evidence and apply the market lot',()=>{
+ assert.ok(Object.values(entrySizingGates(plan(),1,true)).every(g=>g==='PASS'));
+ const partial=entrySizingGates(plan({portfolio:portfolio([mark({stop:null})],'90000')}),1,true);
+ assert.equal(partial.OPEN_RISK_CAP,'UNKNOWN');assert.equal(partial.CASH,'PASS');assert.equal(partial.STOCK_CAP,'PASS');
+ const limited=plan({portfolio:portfolio([mark({quantity:140,stop:'99'})],'86000'),stop:'99',lotSize:20});
+ assert.equal(entrySizingGates(limited,20,true).STOCK_CAP,'FAIL');
+ assert.equal(entrySizingGates(plan({stop:'91'}),1,true).PER_TRADE_RISK,'FAIL');
+});
+
+test('absent sizing and regime cannot produce passing risk gates',()=>{
+ const missing=entrySizingGates(null,1,null);assert.ok(Object.values(missing).every(g=>g==='UNKNOWN'));
+ const unknown=entrySizingGates(plan({regime:'UNKNOWN'}),1,false);
+ assert.equal(unknown.PER_TRADE_RISK,'UNKNOWN');assert.equal(unknown.GROSS_CAP,'UNKNOWN');assert.equal(unknown.LOSS_STREAK,'FAIL');assert.equal(unknown.CASH,'PASS');
+ const five=portfolio(Array.from({length:5},(_,i)=>mark({isin:'INE00000000'+(i+1),quantity:1})),'99500');
+ assert.equal(entrySizingGates(plan({portfolio:five}),1,true).POSITION_CAP,'PASS');
+ assert.equal(entrySizingGates(plan({portfolio:five,isin:'INE000000009'}),1,true).POSITION_CAP,'FAIL');
+});
 test('cash, equity and exposures aggregate same-company holdings across exchanges',()=>{
  const p=portfolio([mark(),mark({quantity:50})]);assert.equal(p.cash,'100000.000000');assert.equal(p.equity,'115000.000000');
  assert.equal(p.positionCount,1);assert.equal(p.companyExposure[isin],'15000.000000');assert.equal(p.sectorExposure.TECH,'15000.000000');assert.equal(p.plannedOpenRisk,'750.000000');
