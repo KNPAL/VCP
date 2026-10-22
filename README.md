@@ -225,3 +225,7 @@ Migration 39 adds [EMA21 trailing stops](docs/position-trailing.md). Apply migra
 Migrations 40–41 add [breakout-failure and partial-profit evidence](docs/position-exits.md), including owner dismissal and actual-fill resolution. Run the documented migration command before starting the updated application. Integration tests require Docker Desktop's Linux engine and the PostgreSQL container to be running; a stopped engine can surface as a Prisma schema-engine error.
 
 Migration 42 adds primary exit decisions and actual-closure resolutions. [Manual top-ups](docs/manual-topups.md) use remaining FIFO lots and retain actual risk-breach evidence; proposal validation does not execute trades.
+
+Migration 43 adds [position lifecycle and monitoring history](docs/position-lifecycle.md). Apply it before starting the updated API/worker. The Positions view separates actual fill state, monitoring health and recommendation; unavailable or expired inputs cannot display a current HOLD.
+
+The worker includes an optional [single-owner SmartAPI live stream](docs/live-stream-owner.md), disabled by default. The guide covers encrypted feed credentials, account configuration, subscription limits and Docker/local startup. Reauthenticate older broker sessions to capture a feed token; no additional migration is required.

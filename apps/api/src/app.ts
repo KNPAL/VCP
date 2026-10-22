@@ -11,7 +11,7 @@ import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,getRe
 import type {JournalCommand} from '@vcp/database';
 import {recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
-import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops,dismissPartialProfit} from '@vcp/database';
+import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops,readPositionStatus,dismissPartialProfit} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
 
 export class StrictObjectPipe implements PipeTransform {
@@ -44,6 +44,7 @@ export const openapi = {
   components: { schemas: wireSchemas, securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: 'vcp_session' } } },
   paths: {
     '/api/v1/positions/stops':{get:{operationId:'protectiveStopEvidence',security:[{session:[]}],responses:{'200':{description:'Own current holding episodes, immutable initial stops, exit observations and partial resolutions; no execution implied'},'401':{description:'Authentication required'}}}},
+    '/api/v1/positions/status':{get:{operationId:'positionLifecycleHistory',security:[{session:[]}],responses:{'200':{description:'Owner-scoped lifecycle, recommendation and independent monitoring health with immutable observation history'},'401':{description:'Authentication required'}}}},
     '/api/v1/positions/partials/{id}/dismiss':{post:{operationId:'dismissPartialProfit',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['reason'],additionalProperties:false,properties:{reason:{type:'string',minLength:1,maxLength:1000}}}}}},responses:{'201':{description:'Immutable owner dismissal; no fill created'},'401':{description:'Authentication required'},'403':{description:'CSRF token required'},'404':{description:'Own partial signal not found'},'409':{description:'Idempotency conflict'},'422':{description:'Invalid input'}}}},
     '/api/v1/watchlists':{get:{operationId:'savedWatchlists',security:[{session:[]}],responses:{'200':{description:'Owner lists, persisted query/exchange filters, saved timestamps and explicit UNKNOWN research status'}}},post:{operationId:'saveWatchlist',security:[{session:[]}],responses:{'201':{description:'Create a named list or replace its query/exchange filters; CSRF required'}}}},
     '/api/v1/watchlists/instruments':{get:{operationId:'watchlistInstruments',security:[{session:[]}],responses:{'200':{description:'Current verified canonical cash-equity listings; missing mapping yields empty items with reason'}}}},
@@ -184,6 +185,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       try{return await dismissPartialProfit(db,request.ownerId!,key,id,body['reason'])}
       catch(error){if(!(error instanceof Error)||!['STALE_CONFLICT','PARTIAL_SIGNAL_NOT_FOUND','INVALID_PARTIAL_DISMISSAL'].includes(error.message))throw error;throw new HttpException(error.message,error.message==='STALE_CONFLICT'?409:error.message==='PARTIAL_SIGNAL_NOT_FOUND'?404:422)}
     }
+    @Get('status') status(@Req() request:AuthRequest){return readPositionStatus(db,request.ownerId!)}
     @Get('stops') stops(@Req() request:AuthRequest){return readPositionStops(db,request.ownerId!)}
     @Get() async positions(@Req() request:AuthRequest){const p=await readPortfolio(db,request.ownerId!);return {items:Object.entries(p.holdings).map(([isin,quantity])=>({id:isin,isin,quantity,lots:p.lots.filter(lot=>lot.isin===isin&&lot.remainingQty>0)})),asOf:p.asOf,cash:p.cash,realizedPnl:p.realizedPnl}}
     @Post() async open(@Req() request:AuthRequest){
@@ -290,4 +292,5 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   app.enableShutdownHooks();
   return app;
 }
+
 

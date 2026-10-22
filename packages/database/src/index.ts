@@ -44,3 +44,5 @@ export * from './position-trail.js';
 export * from './trail-state.js';
 export * from './partial-profit.js';
 export * from './exit-decisions.js';
+export * from './position-status.js';
+export * from './stream-timeline.js';

@@ -10,6 +10,7 @@ export * from './breakout-failure.js';
 export * from './partial-profit.js';
 export * from './exit-precedence.js';
 export * from './actual-risk.js';
+export * from './position-status.js';
 const money=(s:string)=>parseFixed(s);
 const positive=(s:string)=>{const n=money(s);if(n<=0n)throw new Error('INVALID_POSITIVE_AMOUNT');return n};
 const maxZero=(n:bigint)=>n>0n?n:0n;

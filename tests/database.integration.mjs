@@ -113,6 +113,8 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   assert.equal((await send('/positions',{method:'POST',headers:{...fillHeaders,'idempotency-key':randomUUID()},body:JSON.stringify({...manualBody,quantity:0})})).status,400);
   assert.equal((await send('/positions',{headers:{cookie}})).status,200);
   assert.equal((await send('/positions/stops')).status,401);
+  assert.equal((await send('/positions/status')).status,401);
+  assert.equal((await send('/positions/status',{headers:{cookie}})).status,200);
   const partialPath='/positions/partials/'+'a'.repeat(64)+'/dismiss',dismissBody=JSON.stringify({reason:'Owner decision'});
   assert.equal((await send(partialPath,{method:'POST',body:dismissBody})).status,401);
   assert.equal((await send(partialPath,{method:'POST',headers:{cookie,origin:'http://localhost:3000','content-type':'application/json'},body:dismissBody})).status,403);

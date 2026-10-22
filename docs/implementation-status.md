@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-82 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–103, KAN-106–107, KAN-109, KAN-119, KAN-126, KAN-128, KAN-139.
+84 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–107, KAN-109, KAN-119, KAN-126, KAN-128, KAN-139.
 
-54 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-122–123. Working status never implies verified completion.
+52 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-108, KAN-122–123. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -95,3 +95,8 @@ Entry-gate follow-up: connected verified benchmark, sector and reconciliation ev
 
 2026-10-21: KAN-101 is Coded. Remaining FIFO weighted entry, explicit manual top-up quantity/cap/fee validation and immutable BREACH_ACTUAL risk evidence passed 162 unit/API tests, portfolio-risk and entry-risk integration, builds and lint. Actual outside fills remain recorded. Runtime containers are healthy at https://localhost:8443 through KAN-102; the top-up image refresh is pending. No live broker/data readiness is claimed.
 
+
+2026-10-21: KAN-104 is Coded. Immutable lifecycle history separates actual fill state, exit recommendations and feed health. HOLD requires all applicable inputs and expires independently in the browser. All 164 unit/API tests, lifecycle/database integration, two browser suites, builds and lint passed. Migration 43 is applied to both local databases. Container build passed compilation; image export and runtime refresh are pending. KAN-105 is In Progress for fenced stream ownership and subscription recovery.
+
+
+2026-10-22: KAN-105 is Coded. Account-scoped stream ownership, unique connection epochs, deterministic subscriptions, verified TLS transport, encrypted feed credentials and credential/session renewal passed 170 unit/API tests, stream-context PostgreSQL integration and four Redis/worker integration checks. Builds and lint passed. KAN-104 runtime is healthy with migration 43. Stream code image refresh is pending and live streaming remains disabled. KAN-108 is In Progress for authenticated browser streaming and durable REST replay.

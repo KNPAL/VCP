@@ -19,6 +19,6 @@ export async function resolveBrokerSession(db:PrismaClient,reference:string,load
   const rows=await db.$queryRaw<{accountKey:string;sessionRevision:string;keyId:string;expiresAt:Date;envelope:{binding:CredentialBinding;envelope:EncryptedCredential}}[]>`SELECT s."accountKey",s."sessionRevision",s."keyId",s."expiresAt",s."envelope" FROM "BrokerCredential" s JOIN "BrokerCircuit" c ON c."accountKey"=s."accountKey" AND c."sessionRevision"=s."sessionRevision" WHERE s."reference"=${reference}::uuid AND NOT c."open" AND c."verifiedAt"<=${new Date(now)} AND c."expiresAt">${new Date(now)} AND s."expiresAt"=c."expiresAt"`;
   const row=rows[0],stored=row?.envelope;if(!stored||stored.binding.reference!==reference||stored.binding.accountKey!==row!.accountKey||stored.binding.sessionRevision!==row!.sessionRevision||stored.binding.keyId!==row!.keyId||new Date(stored.binding.expiresAt).valueOf()!==row!.expiresAt.valueOf())throw new Error();
   const key=Buffer.from(await loadKey(stored.binding.keyId));
-  try{return {accountKey:stored.binding.accountKey,sessionRevision:stored.binding.sessionRevision,staticIpVerified:true as const,secrets:decryptBrokerCredentials(stored.binding,stored.envelope,key,now)}}finally{key.fill(0)}
+  try{return {accountKey:stored.binding.accountKey,sessionRevision:stored.binding.sessionRevision,expiresAt:stored.binding.expiresAt,staticIpVerified:true as const,secrets:decryptBrokerCredentials(stored.binding,stored.envelope,key,now)}}finally{key.fill(0)}
  }catch{throw new Error('BROKER_UNAVAILABLE')}
 }

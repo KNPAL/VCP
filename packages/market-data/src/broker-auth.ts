@@ -36,6 +36,7 @@ export async function authenticateBroker(input:BrokerLogin,proof:StaticIpProof,d
    const expiry=Math.min(Number(claims.exp)*1000,midnight,utcInstant(proof.expiresAt).valueOf());
    if(utcInstant(verifiedAt).valueOf()<at||expiry<=utcInstant(verifiedAt).valueOf()||controller.signal.aborted)throw new Error();
    const secrets:BrokerSecrets={accessToken:token,apiKey:input.apiKey,clientLocalIp:input.clientLocalIp,clientPublicIp:input.clientPublicIp,macAddress:input.macAddress};
+   if(typeof login['feedToken']==='string'&&login['feedToken'].trim()&&login['feedToken'].length<=16000&&!/[\r\n]/.test(login['feedToken'])){secrets.clientCode=input.clientCode;secrets.feedToken=login['feedToken']}
    return {accountKey:brokerAccountKey(input.clientCode),verifiedAt,expiresAt:new Date(expiry).toISOString(),secrets};
   };
   return await Promise.race([work(),new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error())},timeout)})]);

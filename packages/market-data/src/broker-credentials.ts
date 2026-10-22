@@ -11,6 +11,7 @@ function aad(binding:CredentialBinding){
 }
 function validate(value:unknown):asserts value is BrokerSecrets {
  const keys=['accessToken','apiKey','clientLocalIp','clientPublicIp','macAddress'];
+ if(value&&typeof value==='object'&&('clientCode' in value||'feedToken' in value))keys.push('clientCode','feedToken');
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join('|')!==[...keys].sort().join('|')||keys.some(key=>{const v=(value as Record<string,unknown>)[key];return typeof v!=='string'||!v.trim()||v.length>16000||/[\r\n]/.test(v)}))throw new Error('BROKER_UNAVAILABLE');
 }
 export function encryptBrokerCredentials(binding:CredentialBinding,secrets:BrokerSecrets,key:Buffer):EncryptedCredential {

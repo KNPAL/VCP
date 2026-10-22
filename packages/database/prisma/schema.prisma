@@ -695,3 +695,25 @@ model ExitDecision {
  evidence Json
  @@index([stopId, recordedAt(sort: Desc)], map: "exit_decision_stop_time")
 }
+model PositionStatusHistory {
+ id String @id
+ ownerId String @db.Uuid
+ stopId String
+ recordedAt DateTime @db.Timestamptz(6)
+ evidence Json
+ @@index([stopId, recordedAt(sort: Desc)], map: "position_status_stop_time")
+}
+
+model StreamTimeline {
+ sequence BigInt @id @default(autoincrement())
+ id String @unique
+ ownerId String? @db.Uuid
+ listingId String? @db.Uuid
+ kind String
+ eventAt DateTime @default(now()) @db.Timestamptz(6)
+ sourceAt DateTime? @db.Timestamptz(6)
+ revision String
+ reference Json
+ @@index([ownerId,sequence],map:"stream_owner_sequence")
+ @@index([listingId,sequence],map:"stream_listing_sequence")
+}

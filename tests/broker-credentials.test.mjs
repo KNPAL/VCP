@@ -9,6 +9,12 @@ test('broker encryption uses independent nonces and round trips exact credential
  const key=randomBytes(32),one=encryptBrokerCredentials(binding,secrets,key),two=encryptBrokerCredentials(binding,secrets,key);
  assert.notEqual(one.iv,two.iv);assert.notEqual(one.ciphertext,two.ciphertext);assert.ok(!JSON.stringify(one).includes(secrets.accessToken));assert.deepEqual(decryptBrokerCredentials(binding,one,key,now),secrets);
 });
+test('feed token and verified client identity are encrypted together; partial stream credentials are rejected',()=>{
+ const key=randomBytes(32),stream={...secrets,clientCode:'TEST123',feedToken:'synthetic-feed-token'};
+ const envelope=encryptBrokerCredentials(binding,stream,key);assert.deepEqual(decryptBrokerCredentials(binding,envelope,key,now),stream);assert.ok(!JSON.stringify(envelope).includes(stream.feedToken));
+ assert.throws(()=>encryptBrokerCredentials(binding,{...secrets,feedToken:stream.feedToken},key),/BROKER_UNAVAILABLE/);
+ assert.throws(()=>encryptBrokerCredentials(binding,{...stream,feedToken:'bad\r\nheader'},key),/BROKER_UNAVAILABLE/);
+});
 test('wrong keys, altered ciphertext and changed identity metadata fail with sanitized errors',()=>{
  const key=randomBytes(32),envelope=encryptBrokerCredentials(binding,secrets,key);
  const fail=fn=>assert.throws(fn,error=>error.message==='BROKER_UNAVAILABLE'&&!error.message.includes(secrets.accessToken));

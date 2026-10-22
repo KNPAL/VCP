@@ -1,3 +1,4 @@
+import {recordJournalPositionStatus} from './position-status.js';
 import {recordExitDecisions} from './exit-decisions.js';
 import {resolvePartialsFromJournal} from './partial-resolution.js';
 import {Prisma,PrismaClient} from '@prisma/client';
@@ -35,6 +36,7 @@ export async function appendPortfolio(db:PrismaClient,ownerId:string,idempotency
   await initializePositionStops(tx,ownerId,[...events,...added],now,added.flatMap(event=>event.kind==='FILL'?[event.isin]:[]));
   await resolvePartialsFromJournal(tx,ownerId,[...events,...added],now);
   await recordExitDecisions(tx,ownerId,[...events,...added],now,added.flatMap(event=>event.kind==='FILL'?[event.isin]:[]));
+  await recordJournalPositionStatus(tx,ownerId,[...events,...added],now,added.flatMap(event=>event.kind==='FILL'?[event.isin]:[]));
   const response=JSON.parse(canonical({eventIds:added.map(event=>event.id),portfolio:projection})) as Prisma.InputJsonValue;
   await tx.idempotencyRecord.create({data:{ownerId,key,requestHash,response}});return response;
  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable})}catch(error){
@@ -43,5 +45,6 @@ export async function appendPortfolio(db:PrismaClient,ownerId:string,idempotency
  }
  throw new Error('PORTFOLIO_TRANSACTION_RETRY_EXHAUSTED');
 }
+
 
 

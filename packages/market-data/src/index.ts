@@ -12,3 +12,4 @@ export * from './broker-credentials.js';
 export * from './broker-auth.js';
 export * from './live-quotes.js';
 export * from './monitor.js';
+export * from './stream-subscriptions.js';

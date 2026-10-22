@@ -11,12 +11,14 @@
   },
   "dependencies": {
     "@vcp/database": "workspace:*",
-    "@vcp/market-data": "workspace:*",
     "@vcp/domain": "workspace:*",
-    "bullmq": "^5.0.0"
+    "@vcp/market-data": "workspace:*",
+    "bullmq": "^5.0.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
-    "typescript": "^5.9.0",
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.2",
+    "typescript": "^5.9.0"
   }
 }

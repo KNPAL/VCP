@@ -1,5 +1,5 @@
 import type {Queue} from 'bullmq';
-import {readPortfolio,recordPositionMonitor,evaluatePositionStop,recordPortfolioRisk,evaluatePositionTrail,evaluatePartialProfit,evaluateExitDecisions,type PortfolioQuotes,type PrismaClient} from '@vcp/database';
+import {readPortfolio,recordPositionMonitor,evaluatePositionStop,recordPortfolioRisk,evaluatePositionTrail,evaluatePartialProfit,evaluateExitDecisions,recordPositionStatus,type PortfolioQuotes,type PrismaClient} from '@vcp/database';
 
 import {assessHeldQuote,canonicalListings,type CalendarDay,type InstrumentSnapshot,type MonitorAssessment} from '@vcp/market-data';
 import {readLiveQuote} from './live-quotes.js';
@@ -33,7 +33,9 @@ export async function monitorHeldPositions(db:PrismaClient,q:Queue,streamOwner:s
  for(const item of trails)await evaluatePositionTrail(db,item.ownerId,item.isin);
  for(const item of trails)await evaluatePartialProfit(db,item.ownerId,item.isin,item.quote);
  for(const item of trails)await evaluateExitDecisions(db,item.ownerId,item.isin);
+ for(const item of trails)await recordPositionStatus(db,item.ownerId,item.isin,item.quote);
 }
+
 
 
 

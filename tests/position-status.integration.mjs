@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID,randomInt,createHash} from 'node:crypto';
+import {PrismaClient,appendPortfolio,registerProfile,persistInstrumentSnapshot,recordPositionStatus,readPositionStatus,evaluatePositionStop,readPortfolio} from '../packages/database/dist/index.js';
+import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
+const db=new PrismaClient(),hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
+test('status requires current inputs, preserves actual lifecycle and never equates an alert with execution',async()=>{
+ assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
+ try{
+  const owner=await db.owner.findFirstOrThrow(),profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0),listingId=randomUUID(),isin='INE'+String(randomInt(1000000000)).padStart(9,'0'),before=new Date(Date.now()-10000).toISOString(),date=new Date(Date.now()+19800000).toISOString().slice(0,10);
+  const mappingInput={knownAt:new Date().toISOString(),sourceReference:'synthetic-status',rows:[{companyId:randomUUID(),isin,listingId,exchange:'NSE',series:'EQ',symbol:'STATUS',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]};
+  let mapping=await persistInstrumentSnapshot(db,mappingInput);
+  const calendarId=hash(randomUUID()),calendar=[{date,kind:'SPECIAL',opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:new Date(date+'T23:59:59+05:30').toISOString(),finalizedAt:null,knownAt:before,source:'synthetic-status',verified:true}];
+  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
+  const sourceId=hash(randomUUID()),source={id:sourceId,input:{listingId,configHash:profile.id,decidedAt:before,scaleRevision:hash([])},detector:{frozen:{primary:{state:'READY',lastLow:'95.02',pivot:'101',asOf:before}}}};
+  await db.$executeRaw`INSERT INTO "DailyStructureExecution" ("id","listingId","session","configHash","evidence") VALUES (${sourceId},${listingId}::uuid,${new Date(date)},${profile.id},${JSON.stringify(source)}::jsonb)`;
+  const adjustmentId=hash(randomUUID()),actionSource={id:hash(randomUUID()),listingId,knownAt:before,verified:true,sourceReference:'synthetic-status',coverageFrom:'2020-01-01',coverageThrough:date,actions:[]};
+  await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${adjustmentId},${listingId}::uuid,${new Date(date)},${new Date(before)},'KNOWN',${JSON.stringify({source:actionSource})}::jsonb)`;
+  const fill={kind:'FILL',isin,side:'BUY',quantity:10,price:'100',fees:'0',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-status'};
+  await appendPortfolio(db,owner.id,randomUUID(),fill);
+  const view=async()=>(await readPositionStatus(db,owner.id)).items.find(p=>p.evidence.isin===isin);
+  assert.equal((await view()).result.lifecycle,'OPEN');assert.equal((await view()).result.action,'UNABLE_TO_EVALUATE');
+  const quote=(ltp='100')=>{const at=new Date().toISOString();return {listingId,provider:'fixture',token:'123',mappingRevision:mapping.id,rawLtp:'10000',priceDecimals:2,ltp,sourceAt:at,receivedAt:at,decidedAt:at,session:date,sequence:'1',quality:'FRESH',connection:'CONNECTED',validUntil:new Date(Date.now()+30000).toISOString(),executable:false}};
+  const journal=(await readPortfolio(db,owner.id)).events,q=quote(),first=await recordPositionStatus(db,owner.id,isin,q);assert.equal(first.result.action,'HOLD');assert.equal(first.result.health,'FEED_FRESH');
+  await recordPositionStatus(db,owner.id,isin,q);assert.deepEqual((await readPortfolio(db,owner.id)).events,journal);assert.equal((await view()).result.action,'HOLD');
+  const stale=await recordPositionStatus(db,owner.id,isin,{...q,validUntil:new Date(Date.now()-1).toISOString()});assert.equal(stale.result.action,'UNABLE_TO_EVALUATE');assert.equal(stale.result.lifecycle,'OPEN');
+  await recordPositionStatus(db,owner.id,isin,quote());assert.equal((await view()).result.action,'HOLD');
+  mapping=await persistInstrumentSnapshot(db,{...mappingInput,knownAt:new Date().toISOString(),sourceReference:'synthetic-status-new-mapping'});
+  assert.equal((await view()).result.action,'UNABLE_TO_EVALUATE');await recordPositionStatus(db,owner.id,isin,quote());assert.equal((await view()).result.action,'HOLD');
+  await recordPositionStatus(db,owner.id,isin,{...quote(),validUntil:new Date(Date.now()+250).toISOString()});await new Promise(resolve=>setTimeout(resolve,300));assert.equal((await view()).result.action,'UNABLE_TO_EVALUATE');
+  await appendPortfolio(db,owner.id,randomUUID(),{...fill,side:'SELL',quantity:3,brokerReference:randomUUID(),occurredAt:new Date().toISOString()});assert.equal((await view()).result.lifecycle,'PARTIALLY_EXITED');
+  assert.equal((await evaluatePositionStop(db,owner.id,isin,quote('90'))).state,'SELL_PROTECTIVE');
+  const alert=await recordPositionStatus(db,owner.id,isin,quote('90'));assert.equal(alert.result.lifecycle,'EXIT_ALERTED');assert.equal(alert.result.actualFillState,'PARTIALLY_EXITED');assert.equal(alert.result.quantity,7);
+  const dropped=await recordPositionStatus(db,owner.id,isin,null);assert.equal(dropped.result.action,'SELL_PROTECTIVE');assert.equal(dropped.result.health,'MONITOR_DEGRADED');
+  const closedAt=new Date().toISOString();await appendPortfolio(db,owner.id,randomUUID(),{...fill,side:'SELL',quantity:7,brokerReference:randomUUID(),occurredAt:closedAt});assert.equal((await view()).result.lifecycle,'CLOSED');assert.equal((await view()).result.quantity,0);
+  await appendPortfolio(db,owner.id,randomUUID(),{...fill,quantity:2,brokerReference:randomUUID(),occurredAt:closedAt});
+  const reopened=(await readPositionStatus(db,owner.id)).items.find(p=>p.evidence.isin===isin&&p.result.quantity===2);assert.equal(reopened.result.lifecycle,'OPEN');assert.equal(reopened.result.actualFillState,'OPEN');
+  await appendPortfolio(db,owner.id,randomUUID(),{...fill,side:'SELL',quantity:2,brokerReference:randomUUID(),occurredAt:new Date().toISOString()});
+  await assert.rejects(db.$executeRaw`DELETE FROM "PositionStatusHistory" WHERE "id"=${first.id}`);assert.equal((await readPositionStatus(db,randomUUID())).items.length,0);
+ }finally{await db.$disconnect()}
+});

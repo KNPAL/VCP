@@ -14,6 +14,11 @@ test('login and profile are independently budgeted; verified sessions expire by 
 test('invalid or unknown static IP proof blocks requests before quota reservation',async()=>{
  for(const patch of [{address:'192.0.2.2'},{sourceReference:''},{expiresAt:now()},{verifiedAt:'2027-01-01T00:00:00Z'}]){const f=fixture();await assert.rejects(authenticateBroker(login,{...proof,...patch},f.deps),/BROKER_UNAVAILABLE/);assert.equal(f.requests.length,0);assert.equal(f.reservations(),0)}
 });
+test('verified login retains feed credentials only as a complete encrypted-session input',async()=>{
+ const f=fixture(i=>i===0?json({jwtToken:jwt,feedToken:'synthetic-feed'}):json({clientcode:login.clientCode}));
+ const result=await authenticateBroker(login,proof,f.deps);assert.equal(result.secrets.clientCode,login.clientCode);assert.equal(result.secrets.feedToken,'synthetic-feed');
+ const bad=fixture(i=>i===0?json({jwtToken:jwt,feedToken:'bad\r\nheader'}):json({clientcode:login.clientCode}));assert.equal((await authenticateBroker(login,proof,bad.deps)).secrets.feedToken,undefined);
+});
 test('403, HTML, null, provider error and mismatched account never establish a session',async()=>{
  const bad=[()=>new Response('secret',{status:403}),()=>new Response('<html>secret</html>',{headers:{'content-type':'text/html'}}),()=>new Response('null',{headers:{'content-type':'application/json'}}),()=>new Response('{"status":false,"data":{}}',{headers:{'content-type':'application/json'}})];
  for(const response of bad){const f=fixture(response);await assert.rejects(authenticateBroker(login,proof,f.deps),error=>error.message==='BROKER_UNAVAILABLE');assert.equal(f.requests.length,1)}
