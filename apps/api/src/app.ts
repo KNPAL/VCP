@@ -13,6 +13,8 @@ import {recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory
 import {candidatePage} from '@vcp/strategy';
 import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops,readPositionStatus,dismissPartialProfit} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
+import {materializeStreamTimeline,readStreamTimeline} from '@vcp/database';
+import {attachStream} from './stream.js';
 
 export class StrictObjectPipe implements PipeTransform {
   constructor(private readonly fields: Readonly<Record<string, (value: unknown) => boolean>>) {}
@@ -43,6 +45,7 @@ export const openapi = {
   openapi: '3.1.0', info: { title: 'Study Trade VCP', version: '4.0.0' },
   components: { schemas: wireSchemas, securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: 'vcp_session' } } },
   paths: {
+    '/api/v1/stream/events':{get:{operationId:'streamReplay',security:[{session:[]}],responses:{'200':{description:'Owner-scoped persistent event references and scope-bound replay cursor; transient quotes are never replayed'},'400':{description:'Invalid scope, cursor or limit'},'401':{description:'Authentication required'}}}},
     '/api/v1/positions/stops':{get:{operationId:'protectiveStopEvidence',security:[{session:[]}],responses:{'200':{description:'Own current holding episodes, immutable initial stops, exit observations and partial resolutions; no execution implied'},'401':{description:'Authentication required'}}}},
     '/api/v1/positions/status':{get:{operationId:'positionLifecycleHistory',security:[{session:[]}],responses:{'200':{description:'Owner-scoped lifecycle, recommendation and independent monitoring health with immutable observation history'},'401':{description:'Authentication required'}}}},
     '/api/v1/positions/partials/{id}/dismiss':{post:{operationId:'dismissPartialProfit',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',required:['reason'],additionalProperties:false,properties:{reason:{type:'string',minLength:1,maxLength:1000}}}}}},responses:{'201':{description:'Immutable owner dismissal; no fill created'},'401':{description:'Authentication required'},'403':{description:'CSRF token required'},'404':{description:'Own partial signal not found'},'409':{description:'Idempotency conflict'},'422':{description:'Invalid input'}}}},
@@ -108,6 +111,17 @@ class SystemController {
 export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink} = {}) {
   const db = options.db ?? await databaseFromEnvironment();
   const auth = new AuthService(db, options.origin ?? process.env['APP_ORIGIN'] ?? 'http://localhost:3000', options.secure ?? process.env['COOKIE_SECURE'] !== 'false');
+  let closeStream=async()=>{};
+  @Controller('stream')
+  class StreamController {
+    @Get('events') async events(@Req() request:AuthRequest,@Query() query:Record<string,unknown>){
+      if(Object.keys(query).some(key=>!['listings','cursor','limit','tail'].includes(key))||Object.values(query).some(value=>typeof value!=='string')||query['tail']!==undefined&&query['tail']!=='1')throw new BadRequestException('Invalid replay query');
+      const listings=typeof query['listings']==='string'&&query['listings']?query['listings'].split(','):[],cursor=query['cursor'] as string|undefined,limit=query['limit'] as string|undefined;
+      if(limit!==undefined&&!/^\d{1,3}$/.test(limit))throw new BadRequestException('Invalid replay limit');
+      try{await materializeStreamTimeline(db);return await readStreamTimeline(db,request.ownerId!,{listings,...(cursor?{cursor}:{}),...(limit?{limit:Number(limit)}:{}),...(query['tail']==='1'?{tail:true}:{})})}
+      catch(error){if(error instanceof Error&&/^(INVALID_STREAM_|STREAM_LISTING_FORBIDDEN)/.test(error.message))throw new BadRequestException('Invalid replay scope or cursor');throw error}
+    }
+  }
   @Controller('auth')
   class AuthController {
     @Post('login') login(@Req() request:AuthRequest,@Res({passthrough:true}) response:AuthResponse) { return auth.login(request,response); }
@@ -265,7 +279,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:()=>db.$disconnect()}}]})
+  @Module({controllers:[SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   app.setGlobalPrefix('api/v1');
@@ -290,6 +304,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     });
   });
   app.enableShutdownHooks();
+  closeStream=attachStream(app.getHttpServer(),db,auth);
   return app;
 }
 

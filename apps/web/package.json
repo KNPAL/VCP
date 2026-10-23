@@ -5,18 +5,19 @@
   "scripts": {
     "build": "next build",
     "typecheck": "tsc --noEmit",
-    "start": "next start -H 0.0.0.0"
+    "start": "node ../../scripts/web-server.mjs"
   },
   "dependencies": {
+    "@vcp/domain": "workspace:*",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@vcp/domain": "workspace:*"
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
-    "typescript": "^5.9.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0"
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.9.0"
   }
 }

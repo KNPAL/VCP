@@ -229,3 +229,5 @@ Migration 42 adds primary exit decisions and actual-closure resolutions. [Manual
 Migration 43 adds [position lifecycle and monitoring history](docs/position-lifecycle.md). Apply it before starting the updated API/worker. The Positions view separates actual fill state, monitoring health and recommendation; unavailable or expired inputs cannot display a current HOLD.
 
 The worker includes an optional [single-owner SmartAPI live stream](docs/live-stream-owner.md), disabled by default. The guide covers encrypted feed credentials, account configuration, subscription limits and Docker/local startup. Reauthenticate older broker sessions to capture a feed token; no additional migration is required.
+
+Migration 44 adds [authenticated browser updates and REST replay](docs/browser-stream.md). Apply it before starting the rebuilt API/web. The Updates control restores missed events on reconnect; live prices remain separately validated and are never replayed from history. Configure the API's Redis connection and stream account only when enabling quote fanout.

@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-84 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–107, KAN-109, KAN-119, KAN-126, KAN-128, KAN-139.
+85 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-119, KAN-126, KAN-128, KAN-139.
 
-52 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-108, KAN-122–123. Working status never implies verified completion.
+51 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-111, KAN-122–123. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -100,3 +100,6 @@ Entry-gate follow-up: connected verified benchmark, sector and reconciliation ev
 
 
 2026-10-22: KAN-105 is Coded. Account-scoped stream ownership, unique connection epochs, deterministic subscriptions, verified TLS transport, encrypted feed credentials and credential/session renewal passed 170 unit/API tests, stream-context PostgreSQL integration and four Redis/worker integration checks. Builds and lint passed. KAN-104 runtime is healthy with migration 43. Stream code image refresh is pending and live streaming remains disabled. KAN-108 is In Progress for authenticated browser streaming and durable REST replay.
+
+
+2026-10-23: KAN-108 is Coded. Authenticated Socket.IO, immutable owner-filtered replay, bounded initial history, session revocation, shared quote expiry/fencing and browser reconnect passed 170 unit/API tests, two PostgreSQL/Redis stream integration tests, quote/owner regressions, all three browser suites, builds and lint. An explicit WebSocket upgrade proxy fixes local Next streaming. Migration 44 is applied to both databases. KAN-105 containers are healthy; KAN-108 image refresh is pending. KAN-111 is In Progress for immutable historical snapshot selection.

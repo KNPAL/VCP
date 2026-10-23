@@ -26,9 +26,10 @@ services:
   web:
     image: study-trade-vcp:local
     working_dir: /app/apps/web
-    command: [node, node_modules/next/dist/bin/next, start, -H, 0.0.0.0]
+    command: [node, /app/scripts/web-server.mjs]
     environment:
       API_INTERNAL_URL: http://api:3001
+      WEB_HOST: 0.0.0.0
     depends_on:
       api: {condition: service_healthy}
     healthcheck:

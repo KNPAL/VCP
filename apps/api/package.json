@@ -14,6 +14,7 @@
     "@nestjs/platform-express": "^11.0.0",
     "@vcp/database": "workspace:*",
     "@vcp/domain": "workspace:*",
+    "@vcp/market-data": "workspace:*",
     "@vcp/strategy": "workspace:*",
     "bullmq": "^5.81.5",
     "reflect-metadata": "^0.2.2",

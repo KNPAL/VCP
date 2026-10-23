@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import type {Queue} from 'bullmq';
-import {normalizeLiveTick,type ProviderTick,type InstrumentSnapshot,type QuoteSession,type NormalizedQuote} from '@vcp/market-data';
+import {normalizeLiveTick,readQuoteCache,type ProviderTick,type InstrumentSnapshot,type QuoteSession} from '@vcp/market-data';
 const clock="local t=redis.call('TIME');local now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000);";
 function keys(owner:string,listing='connection'){if(!/^[a-zA-Z0-9-]{1,100}$/.test(owner)||!/^[a-zA-Z0-9-]{1,100}$/.test(listing))throw new Error('INVALID_QUOTE_SCOPE');return ['lease:'+owner,'quotes:'+owner+':connection','quotes:'+owner+':'+listing,'quotes:'+owner+':'+listing+':watermark']}
 async function run(q:Queue,lua:string,ks:string[],args:(string|number)[]){const c=await q.client,name='quote_'+createHash('sha256').update(lua).digest('hex').slice(0,16);c.defineCommand(name,{numberOfKeys:ks.length,lua});return c.runCommand(name,[...ks,...args])}
@@ -31,14 +31,4 @@ export async function publishLiveTick(q:Queue,owner:string,fence:string,tick:Pro
  return 'STORED'`,keys(owner,quote.listingId),[fence,JSON.stringify(quote),Date.parse(quote.sourceAt),Date.parse(quote.receivedAt),quote.sequence,Date.parse(session!.closesAt)]);
  return result==='STORED'?{state:'KNOWN' as const,quote}:{state:'UNKNOWN' as const,reason:String(result)};
 }
-export async function readLiveQuote(q:Queue,owner:string,listingId:string):Promise<{state:'KNOWN';quote:NormalizedQuote&{validUntil:string}}|{state:'UNKNOWN';reason:string}>{
- const result=await run(q,clock+`
- local current=redis.call('GET',KEYS[1]);local conn=redis.call('GET',KEYS[2]);local value=redis.call('GET',KEYS[3])
- if not current or not conn then return 'MONITOR_DEGRADED' end
- conn=cjson.decode(conn);if conn.fence~=current or conn.state~='CONNECTED' or now-conn.at>=30000 then return 'MONITOR_DEGRADED' end
- if not value then return 'QUOTE_UNAVAILABLE' end
- value=cjson.decode(value);if value.fence~=current then return 'MONITOR_DEGRADED' end
- return cjson.encode({quote=value.quote,validUntil=math.min(now+redis.call('PTTL',KEYS[1]),now+redis.call('PTTL',KEYS[3]),conn.at+30000)})`,keys(owner,listingId).slice(0,3),[]);
- const value=String(result);if(!value.startsWith('{'))return {state:'UNKNOWN',reason:value};
- const parsed=JSON.parse(value) as {quote:NormalizedQuote;validUntil:number};return {state:'KNOWN',quote:{...parsed.quote,validUntil:new Date(parsed.validUntil).toISOString()}};
-}
+export async function readLiveQuote(q:Queue,owner:string,listingId:string){return readQuoteCache((script,ks)=>run(q,script,ks,[]),owner,listingId)}
