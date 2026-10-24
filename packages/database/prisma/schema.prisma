@@ -717,3 +717,116 @@ model StreamTimeline {
  @@index([ownerId,sequence],map:"stream_owner_sequence")
  @@index([listingId,sequence],map:"stream_listing_sequence")
 }
+model HistoricalReplaySnapshot {
+ id String @id @db.Uuid
+ ownerId String @db.Uuid
+ requestId String
+ snapshotHash String
+ sourceAt DateTime @db.Timestamptz(6)
+ occurredAt DateTime @db.Timestamptz(6)
+ decidedAt DateTime @db.Timestamptz(6)
+ effectiveAt DateTime @db.Timestamptz(6)
+ strategyRevision String
+ dataRevision String
+ evidence Json
+ @@unique([ownerId, requestId])
+}
+model HistoricalReplayRun {
+ id String @id
+ ownerId String @db.Uuid
+ snapshotId String @db.Uuid
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+}
+model HistoricalReplayEvent {
+ id String @id
+ runId String
+ ownerId String @db.Uuid
+ session DateTime @db.Date
+ sourceAt DateTime @db.Timestamptz(6)
+ occurredAt DateTime @db.Timestamptz(6)
+ decidedAt DateTime @db.Timestamptz(6)
+ effectiveAt DateTime @db.Timestamptz(6)
+ strategyRevision String
+ dataRevision String
+ evidence Json
+ @@unique([runId, session])
+}
+model HistoricalEntryDecision {
+ id String @id
+ ownerId String @db.Uuid
+ runId String
+ replayEventId String
+ marketEventId String
+ sourceAt DateTime @db.Timestamptz(6)
+ occurredAt DateTime @db.Timestamptz(6)
+ decidedAt DateTime @db.Timestamptz(6)
+ effectiveAt DateTime @db.Timestamptz(6)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ strategyRevision String
+ dataRevision String
+ evidence Json
+ @@unique([runId, marketEventId])
+}
+model HistoricalExitDecision {
+ id String @id
+ ownerId String @db.Uuid
+ runId String
+ positionId String
+ session DateTime @db.Date
+ sourceAt DateTime @db.Timestamptz(6)
+ occurredAt DateTime @db.Timestamptz(6)
+ decidedAt DateTime @db.Timestamptz(6)
+ effectiveAt DateTime @db.Timestamptz(6)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ strategyRevision String
+ dataRevision String
+ evidence Json
+ @@unique([runId, positionId, session])
+}
+model PaperLedgerRevision {
+ revision String @id
+ runId String
+ ownerId String @db.Uuid
+ sequence Int
+ parentRevision String?
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@unique([runId, sequence])
+}
+model PaperProtectionPlan {
+ id String @id
+ runId String
+ ownerId String @db.Uuid
+ episodeId String @db.Uuid
+ isin String
+ session DateTime @db.Date
+ sourceAt DateTime @db.Timestamptz(6)
+ occurredAt DateTime @db.Timestamptz(6)
+ decidedAt DateTime @db.Timestamptz(6)
+ effectiveAt DateTime @db.Timestamptz(6)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@unique([runId, episodeId, session])
+}
+model PaperOpeningExitDecision {
+ id String @id
+ runId String
+ ownerId String @db.Uuid
+ positionId String @db.Uuid
+ session DateTime @db.Date
+ decidedAt DateTime @db.Timestamptz(6)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@unique([runId, positionId, session])
+}
+model PaperSessionResult {
+ id String @id
+ runId String
+ ownerId String @db.Uuid
+ session DateTime @db.Date
+ requestHash String
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@unique([runId, session])
+}

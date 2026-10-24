@@ -1,15 +1,18 @@
 import {exchangeDate,formatFixed,parseFixed,utcInstant} from '@vcp/domain';
-import {projectPortfolio,type PortfolioEvent} from './ledger.js';
+import {projectPortfolio,adjustedShareQuantity,type PortfolioEvent,type ShareAdjustment} from './ledger.js';
 export interface CashAllocation {cashEventId:string;episodeId:string;recordedAt:string}
 export interface LossCalendarDay {date:string;kind:'TRADING'|'SPECIAL'|'HOLIDAY';opensAt:string|null;closesAt:string|null;finalizedAt:string|null;knownAt:string;source:string;verified:boolean}
 const at=(value:string)=>utcInstant(value).valueOf();
-export function positionEpisodes(events:readonly PortfolioEvent[],asOf:string,allocations:readonly CashAllocation[]=[]){
- const journal=projectPortfolio(events,asOf),visible=events.filter(e=>at(e.recordedAt)<=at(asOf)&&at(e.occurredAt)<=at(asOf)),byId=new Map(visible.map(e=>[e.id,e]));
+export function positionEpisodes(events:readonly PortfolioEvent[],asOf:string,allocations:readonly CashAllocation[]=[],corporateActions:readonly ShareAdjustment[]=[]){
+ const journal=projectPortfolio(events,asOf,corporateActions),visible=events.filter(e=>at(e.recordedAt)<=at(asOf)&&at(e.occurredAt)<=at(asOf)),byId=new Map(visible.map(e=>[e.id,e]));
  const root=(e:PortfolioEvent):PortfolioEvent=>e.kind==='FILL'&&e.replacementOf?root(byId.get(e.replacementOf)!):e;
  const fills=visible.filter((e):e is Extract<PortfolioEvent,{kind:'FILL'}>=>e.kind==='FILL'&&!journal.reversed.includes(e.id)).sort((a,b)=>at(a.occurredAt)-at(b.occurredAt)||root(a).sequence-root(b).sequence);
  type Episode={id:string;isin:string;openedAt:string;closedAt:string|null;closeSequence:number|null;knownAt:string;quantity:number;tradeCash:bigint;extraCash:bigint;fillIds:string[];cashEventIds:string[]};
  const episodes:Episode[]=[],open=new Map<string,Episode>();
+ const actions=corporateActions.filter(action=>at(action.recordedAt)<=at(asOf)&&at(action.occurredAt)<=at(asOf)).sort((a,b)=>at(a.occurredAt)-at(b.occurredAt)||a.id.localeCompare(b.id));let actionIndex=0;
+ const applyThrough=(until:string)=>{while(actionIndex<actions.length&&at(actions[actionIndex]!.occurredAt)<=at(until)){const action=actions[actionIndex++]!,episode=open.get(action.isin);if(episode){episode.quantity=adjustedShareQuantity(episode.quantity,action);if(at(action.recordedAt)>at(episode.knownAt))episode.knownAt=action.recordedAt}}};
  for(const fill of fills){
+  applyThrough(fill.occurredAt);
   let episode=open.get(fill.isin);
   if(!episode){if(fill.side!=='BUY')throw new Error('INVALID_EPISODE');episode={id:root(fill).id,isin:fill.isin,openedAt:fill.occurredAt,closedAt:null,closeSequence:null,knownAt:fill.recordedAt,quantity:0,tradeCash:0n,extraCash:0n,fillIds:[],cashEventIds:[]};episodes.push(episode);open.set(fill.isin,episode)}
   episode.quantity+=fill.side==='BUY'?fill.quantity:-fill.quantity;
@@ -17,6 +20,7 @@ export function positionEpisodes(events:readonly PortfolioEvent[],asOf:string,al
   episode.fillIds.push(fill.id);if(at(fill.recordedAt)>at(episode.knownAt))episode.knownAt=fill.recordedAt;
   if(episode.quantity===0){episode.closedAt=fill.occurredAt;episode.closeSequence=root(fill).sequence;open.delete(fill.isin)}
  }
+ applyThrough(asOf);
  const costs=visible.filter(e=>['FEE','DIVIDEND','CORPORATE_CREDIT','CORPORATE_DEBIT'].includes(e.kind)),unallocated:string[]=[];
  const assignments=new Map<string,CashAllocation>();
  for(const allocation of allocations){if(at(allocation.recordedAt)>at(asOf))continue;if(assignments.has(allocation.cashEventId))throw new Error('DUPLICATE_CASH_ALLOCATION');assignments.set(allocation.cashEventId,allocation)}
@@ -46,9 +50,10 @@ function nextSession(calendar:readonly LossCalendarDay[]|null,triggerAt:string,a
   return {session:next.date,resetAt:next.finalizedAt};
  }catch{return null}
 }
-export function lossStreak(input:{events:readonly PortfolioEvent[];allocations?:readonly CashAllocation[];calendar:readonly LossCalendarDay[]|null;asOf:string;source:'REAL'|'PAPER'}){
+export function lossStreak(input:{events:readonly PortfolioEvent[];allocations?:readonly CashAllocation[];corporateActions?:readonly ShareAdjustment[];calendar:readonly LossCalendarDay[]|null;asOf:string;source:'REAL'|'PAPER'}){
  if(!['REAL','PAPER'].includes(input.source))throw new Error('INVALID_STREAK_SOURCE');
- const history=positionEpisodes(input.events,input.asOf,input.allocations),closed=history.episodes.filter(e=>e.closedAt!==null).sort((a,b)=>at(a.closedAt!)-at(b.closedAt!)||a.closeSequence!-b.closeSequence!);
+ if(input.source==='REAL'&&input.corporateActions?.length)throw new Error('PAPER_SHARE_ACTIONS_ONLY');
+ const history=positionEpisodes(input.events,input.asOf,input.allocations,input.corporateActions),closed=history.episodes.filter(e=>e.closedAt!==null).sort((a,b)=>at(a.closedAt!)-at(b.closedAt!)||a.closeSequence!-b.closeSequence!);
  const reasons:string[]=[];if(!history.initialCapitalKnown)reasons.push('INITIAL_CAPITAL_REQUIRED');
  if(history.unallocated.length)reasons.push('POSITION_CASH_ATTRIBUTION_REQUIRED');
  let streak=0,knownAt=0,cooldown:{triggerEpisodeId:string;triggerAt:string;session:string|null;resetAt:string|null}|null=null;

@@ -231,3 +231,17 @@ Migration 43 adds [position lifecycle and monitoring history](docs/position-life
 The worker includes an optional [single-owner SmartAPI live stream](docs/live-stream-owner.md), disabled by default. The guide covers encrypted feed credentials, account configuration, subscription limits and Docker/local startup. Reauthenticate older broker sessions to capture a feed token; no additional migration is required.
 
 Migration 44 adds [authenticated browser updates and REST replay](docs/browser-stream.md). Apply it before starting the rebuilt API/web. The Updates control restores missed events on reconnect; live prices remain separately validated and are never replayed from history. Configure the API's Redis connection and stream account only when enabling quote fanout.
+
+Historical replay archives: see [snapshot selection and operator commands](docs/historical-snapshots.md). Migration 45 adds immutable snapshot storage.
+
+Daily historical detector replay and immutable event inspection: [operator commands and limitations](docs/historical-chronology.md). Migration 46 is required. This records research events; portfolio-wide FIFO coordination and performance reporting remain separate work.
+
+Historical next-open entry simulation: [cost assumptions, risk gates and operator command](docs/historical-entry.md). Migration 47 is required. Simulated decisions are stored separately from actual fills.
+
+Historical stop-first daily exit simulation: [rules, source binding and operator command](docs/historical-exits.md). Migration 48 is required. Intraday proceeds cannot fund opening entries; FIFO coordination remains KAN-115 work.
+
+Historical paper portfolio: [setup, session JSON and CLI commands](docs/paper-ledger.md). Migrations 49–52 add immutable paper ledgers, next-session protection plans, opening exits and atomic session results. The session runner applies opening exits before entries and rolls back all phase changes if a session fails.
+
+Paper performance reports: [metrics, cutoff behavior and CLI usage](docs/paper-performance.md). Reports include FIFO realized P&L, neutral-inclusive win rate, initial-R expectancy, equity/exposure curves, drawdown and explicit data limitations.
+
+Frozen backtest regression and walk-forward comparison: [fixture runner, warm-up ranges and chronological run plans](docs/golden-walk-forward.md). Run `node scripts/golden-backtest.mjs` after building the workspace.

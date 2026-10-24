@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-85 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-119, KAN-126, KAN-128, KAN-139.
+91 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–116, KAN-119, KAN-126, KAN-128, KAN-139.
 
-51 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-111, KAN-122–123. Working status never implies verified completion.
+45 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-117, KAN-122–123. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -19,6 +19,10 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 - Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Other feature screens remain incomplete.
 
 ## Current pipeline work
+
+2026-10-25: KAN-116 is Coded. Deterministic as-of paper reports include neutral-inclusive win rate, FIFO realized/closed P&L, initial-R expectancy, profit factor, equity/exposure curves, prior-peak drawdown, entry-regime segments and signal execution gaps. Missing data/costs and unlinked manual executions remain explicit. The owner-scoped reader selects only ledger revisions known at the requested cutoff. Fixed metric tests, replay/report PostgreSQL integration, builds and lint pass; README links the CLI and calculation definitions. KAN-117 is In Progress for the complete golden fixture suite and walk-forward comparison. 91 Coded; 45 remain.
+
+2026-10-25: KAN-115 is Coded. Atomic session execution now orders corporate actions, opening exits, ledger-sized entries, daily exits and next-session protection. Opening decisions consume only opening evidence; intraday cash cannot fund earlier entries. Full-session rollback, concurrent retries, changed-request rejection, no skipped sessions while holding, immutable evidence and actual-journal isolation pass PostgreSQL integration. All 192 unit/API tests, four replay integration cases, lint and database/API/worker builds passed. Migrations 51–52 are applied to both databases. The running local containers are healthy on the earlier image through migration 50; rebuilding that image is still required to include the new session CLI. KAN-116 is In Progress for metrics; fixed fixtures for neutral-inclusive win rates, initial-R expectancy, prior-peak drawdown and missing valuations pass.
 
 KAN-93 remains In Progress. EOD plans now persist market-regime inputs/results alongside their pinned revisions and expose them through scan-job progress. The database build and isolated EOD integration passed, covering missing-member coverage, complete RED evidence, immutable retries and a newer failed benchmark proof. This is a prerequisite for risk sizing; live regime freshness/source checks and entry-plan consumption are now connected. Database/API/worker builds, lint, and EOD/entry-plan integration checks passed. Broker/readiness and candidate quote dependencies remain outstanding. No additional Jira is marked Coded for this partial dependency.
 
@@ -103,3 +107,12 @@ Entry-gate follow-up: connected verified benchmark, sector and reconciliation ev
 
 
 2026-10-23: KAN-108 is Coded. Authenticated Socket.IO, immutable owner-filtered replay, bounded initial history, session revocation, shared quote expiry/fencing and browser reconnect passed 170 unit/API tests, two PostgreSQL/Redis stream integration tests, quote/owner regressions, all three browser suites, builds and lint. An explicit WebSocket upgrade proxy fixes local Next streaming. Migration 44 is applied to both databases. KAN-105 containers are healthy; KAN-108 image refresh is pending. KAN-111 is In Progress for immutable historical snapshot selection.
+
+2026-10-24: KAN-108 image deployed successfully; API, worker, web, proxy, PostgreSQL and Redis are healthy. KAN-111 snapshot selection and immutable storage are implemented with four no-lookahead unit tests and one PostgreSQL retry/recovery test passing. Final validation is underway.
+
+
+2026-10-24: KAN-111 is Coded after 174 unit/API tests, snapshot PostgreSQL retry/recovery integration, package builds and lint passed. Migration 45 is applied to vcp and vcp_test. Operator archive pin/slice commands and limitations are documented. 86 of the original 136 tickets are Coded; 50 remain. KAN-112 is In Progress. Running containers include KAN-108; historical snapshot operator code runs from the built workspace.
+2026-10-24: KAN-112 is Coded. All 176 unit/API tests, two snapshot/replay PostgreSQL integration checks, lint and API/worker/package builds passed. Migration 46 is applied to both databases. 87 of the original 136 tickets are Coded; 49 remain. KAN-113 is In Progress for conservative opening fills and shared risk gates.
+2026-10-24: KAN-113 is Coded. All 179 unit/API tests, three PostgreSQL snapshot/replay/entry integration checks, focused automatic-add regression, lint and package/API/worker builds passed. Migration 47 is applied to both databases. 88 of the original 136 tickets are Coded; 48 remain. KAN-114 is In Progress for stop-first daily-bar ambiguity and gap simulation. Running containers still use the KAN-108 image; new historical operator commands run from the built workspace.
+2026-10-24: KAN-114 is Coded after 183 unit/API tests, three PostgreSQL integration checks, focused same-session/invalid-calendar regressions, builds and lint passed. Migration 48 is applied to both databases. KAN-115 is In Progress for an isolated FIFO paper ledger, trailing and cooldown coordination. 89 Coded; 47 remain.
+2026-10-24: KAN-115 partial progress: isolated PAPER ledger reuses production FIFO allocation and loss-streak rules. Immutable ledger revisions, integer split/bonus rebasing with exact remaining lot costs, ledger-derived entry cash/exposure, persisted EOD trailing/failure plans and source-bound daily exits are implemented. Exit application rejects fabricated position identity, stops and scheduled sells. Seven focused tests and three PostgreSQL integration cases pass, including no-lookahead cash, retry safety, owner isolation and unchanged actual journal counts; lint passes. Migrations 49–50 are applied to both databases. README links the supported paper CLI workflow. Automatic portfolio session coordination, including opening-price execution and opening-sale cash reuse, remains unfinished. KAN-115 stays In Progress; 89 Coded and 47 remain.

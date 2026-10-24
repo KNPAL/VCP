@@ -131,6 +131,18 @@ importers:
       '@vcp/domain':
         specifier: workspace:*
         version: link:../domain
+      '@vcp/indicators':
+        specifier: workspace:*
+        version: link:../indicators
+      '@vcp/market-data':
+        specifier: workspace:*
+        version: link:../market-data
+      '@vcp/portfolio':
+        specifier: workspace:*
+        version: link:../portfolio
+      '@vcp/strategy':
+        specifier: workspace:*
+        version: link:../strategy
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -144,6 +156,9 @@ importers:
       '@prisma/client':
         specifier: 6.19.0
         version: 6.19.0(prisma@6.19.0(typescript@5.9.3))(typescript@5.9.3)
+      '@vcp/backtest':
+        specifier: workspace:*
+        version: link:../backtest
       '@vcp/domain':
         specifier: workspace:*
         version: link:../domain

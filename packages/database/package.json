@@ -17,6 +17,7 @@
     "seed": "node dist/seed.js"
   },
   "dependencies": {
+    "@vcp/backtest": "workspace:*",
     "@vcp/indicators": "workspace:*",
     "@vcp/domain": "workspace:*",
     "@vcp/strategy": "workspace:*",

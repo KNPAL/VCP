@@ -7,7 +7,14 @@ export type PortfolioEvent=BaseEvent&(
  {kind:'FILL';isin:string;side:'BUY'|'SELL';quantity:number;price:string;fees:string;brokerReference:string;replacementOf?:string}|
  {kind:'REVERSAL';targetId:string;reason:string}
 );
-export interface Lot {fillId:string;isin:string;originalQty:number;remainingQty:number;price:string;remainingFees:string;occurredAt:string}
+export interface Lot {fillId:string;isin:string;originalQty:number;remainingQty:number;price:string;remainingFees:string;occurredAt:string;remainingPriceCost?:string}
+export interface ShareAdjustment {id:string;isin:string;occurredAt:string;recordedAt:string;sharesAfter:string;sharesBefore:string;sourceId:string}
+export function adjustedShareQuantity(quantity:number,action:ShareAdjustment){
+ if(!action.id||!action.sourceId||!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(action.isin)||!/^\d+$/.test(action.sharesAfter)||!/^\d+$/.test(action.sharesBefore)||BigInt(action.sharesAfter)<=0n||BigInt(action.sharesBefore)<=0n||utcInstant(action.occurredAt)>utcInstant(action.recordedAt))throw new Error('INVALID_SHARE_ADJUSTMENT');
+ const n=BigInt(integerShares(quantity))*BigInt(action.sharesAfter),d=BigInt(action.sharesBefore);
+ if(n%d!==0n)throw new Error('FRACTIONAL_SHARE_ENTITLEMENT_UNKNOWN');
+ if(n/d>BigInt(Number.MAX_SAFE_INTEGER))throw new Error('QUANTITY_OVERFLOW');return Number(n/d);
+}
 const fundingKinds=['INITIAL_CAPITAL','DEPOSIT','WITHDRAWAL','FEE','DIVIDEND','CORPORATE_CREDIT','CORPORATE_DEBIT'];
 const instant=(s:string)=>utcInstant(s).valueOf();
 export function validatePortfolioEvent(event:PortfolioEvent){
@@ -24,9 +31,10 @@ function signedCash(event:PortfolioEvent){
  const amount=parseFixed(event.amount);return ['WITHDRAWAL','FEE','CORPORATE_DEBIT'].includes(event.kind)?-amount:amount;
 }
 /** Replay only facts known at the requested cutoff; alerts cannot enter this ledger. */
-export function projectPortfolio(events:readonly PortfolioEvent[],asOf:string){
+export function projectPortfolio(events:readonly PortfolioEvent[],asOf:string,corporateActions:readonly ShareAdjustment[]=[]){
  const cutoff=instant(asOf),ids=new Set<string>(),sequences=new Set<number>();
  for(const event of events){validatePortfolioEvent(event);if(ids.has(event.id)||sequences.has(event.sequence))throw new Error('DUPLICATE_LEDGER_EVENT');ids.add(event.id);sequences.add(event.sequence)}
+ const actionIds=new Set<string>();for(const action of corporateActions){adjustedShareQuantity(0,action);if(actionIds.has(action.id))throw new Error('DUPLICATE_SHARE_ADJUSTMENT');actionIds.add(action.id)}
  const visible=events.filter(e=>instant(e.recordedAt)<=cutoff&&instant(e.occurredAt)<=cutoff).sort((a,b)=>a.sequence-b.sequence),byId=new Map(visible.map(e=>[e.id,e]));
  const reversed=new Set<string>();const cashEntries:{eventId:string;amount:string;sourceId:string}[]=[];let cash=0n;
  const initial=visible.filter(e=>e.kind==='INITIAL_CAPITAL');if(initial.length>1)throw new Error('INITIAL_CAPITAL_ALREADY_SET');
@@ -54,12 +62,24 @@ export function projectPortfolio(events:readonly PortfolioEvent[],asOf:string){
   return event.sequence;
  };
  const fills=visible.filter(e=>e.kind==='FILL'&&!reversed.has(e.id)).sort((a,b)=>instant(a.occurredAt)-instant(b.occurredAt)||originalSequence(a)-originalSequence(b));
- for(const event of fills){if(event.kind!=='FILL')continue;
+ const timeline=[...fills.map(event=>({kind:'FILL' as const,event,at:event.occurredAt})),...corporateActions.filter(action=>instant(action.recordedAt)<=cutoff&&instant(action.occurredAt)<=cutoff).map(action=>({kind:'ACTION' as const,action,at:action.occurredAt}))].sort((a,b)=>instant(a.at)-instant(b.at)||(a.kind!==b.kind?(a.kind==='ACTION'?-1:1):a.kind==='FILL'&&b.kind==='FILL'?originalSequence(a.event)-originalSequence(b.event):a.kind==='ACTION'&&b.kind==='ACTION'?a.action.id.localeCompare(b.action.id):0));
+ for(const item of timeline){
+  if(item.kind==='ACTION'){
+   for(const lot of lots)if(lot.isin===item.action.isin&&lot.remainingQty>0){
+    const cost=lot.remainingPriceCost===undefined?parseFixed(lot.price)*BigInt(lot.remainingQty):parseFixed(lot.remainingPriceCost),quantity=adjustedShareQuantity(lot.remainingQty,item.action);
+    if(quantity<=0||cost/BigInt(quantity)<=0n)throw new Error('ADJUSTED_LOT_PRICE_UNDERFLOW');
+    lot.remainingQty=quantity;lot.remainingPriceCost=formatFixed(cost);lot.price=formatFixed(cost/BigInt(quantity));
+   }
+   continue;
+  }
+  const event=item.event;if(event.kind!=='FILL')continue;
   if(event.side==='BUY'){lots.push({fillId:event.id,isin:event.isin,originalQty:event.quantity,remainingQty:event.quantity,price:event.price,remainingFees:event.fees,occurredAt:event.occurredAt});continue}
   let remaining=event.quantity,cost=0n;const consumed:{lotId:string;quantity:number;buyFees:string}[]=[];
   for(const lot of lots){if(!remaining)break;if(lot.isin!==event.isin||!lot.remainingQty)continue;
    const qty=Math.min(remaining,lot.remainingQty),fees=parseFixed(lot.remainingFees)*BigInt(qty)/BigInt(lot.remainingQty);
-   cost+=parseFixed(lot.price)*BigInt(qty)+fees;lot.remainingFees=formatFixed(parseFixed(lot.remainingFees)-fees);lot.remainingQty-=qty;remaining-=qty;consumed.push({lotId:lot.fillId,quantity:qty,buyFees:formatFixed(fees)});
+   const priceCost=lot.remainingPriceCost===undefined?parseFixed(lot.price)*BigInt(qty):parseFixed(lot.remainingPriceCost)*BigInt(qty)/BigInt(lot.remainingQty);
+   cost+=priceCost+fees;if(lot.remainingPriceCost!==undefined)lot.remainingPriceCost=formatFixed(parseFixed(lot.remainingPriceCost)-priceCost);
+   lot.remainingFees=formatFixed(parseFixed(lot.remainingFees)-fees);lot.remainingQty-=qty;remaining-=qty;consumed.push({lotId:lot.fillId,quantity:qty,buyFees:formatFixed(fees)});
   }
   if(remaining)throw new Error('SELL_EXCEEDS_HOLDINGS');
   realized.push({fillId:event.id,isin:event.isin,quantity:event.quantity,pnl:formatFixed(parseFixed(event.price)*BigInt(event.quantity)-parseFixed(event.fees)-cost),consumed});
@@ -68,7 +88,7 @@ export function projectPortfolio(events:readonly PortfolioEvent[],asOf:string){
  for(const qty of Object.values(holdings))integerShares(qty);
  const positions=Object.entries(holdings).sort().map(([isin,quantity])=>({isin,quantity,
   weightedEntry:remainingWeightedEntry(lots,isin)!,
-  costBasis:formatFixed(lots.filter(lot=>lot.isin===isin).reduce((total,lot)=>total+parseFixed(lot.price)*BigInt(lot.remainingQty)+parseFixed(lot.remainingFees),0n)),
+  costBasis:formatFixed(lots.filter(lot=>lot.isin===isin).reduce((total,lot)=>total+(lot.remainingPriceCost===undefined?parseFixed(lot.price)*BigInt(lot.remainingQty):parseFixed(lot.remainingPriceCost))+parseFixed(lot.remainingFees),0n)),
   realizedPnl:formatFixed(realized.filter(row=>row.isin===isin).reduce((total,row)=>total+parseFixed(row.pnl),0n))}));
  return {asOf,cash:initial.length?formatFixed(cash):null,state:initial.length?'KNOWN' as const:'UNKNOWN' as const,reasons:initial.length?[]:['INITIAL_CAPITAL_REQUIRED'],holdings,positions,lots,realized,realizedPnl:formatFixed(realized.reduce((total,row)=>total+parseFixed(row.pnl),0n)),cashEntries,reversed:[...reversed]};
 }

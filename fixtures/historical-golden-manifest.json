@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "synthetic": true,
+  "performanceVerified": false,
+  "replayFixtureHash": "6302fff6c3c25651a2c7305216fa6edccc060f833e68dd48c4622c8b29b437c0",
+  "entryFixtureHash": "3aaff32b864ae57a74610eb083fb6df1da53a5f2456e8608ade8d876a3f0f131",
+  "cases": [
+    {"id": "01", "case": "Same-version deterministic structural VCP and serialized replay", "tests": ["tests/vcp.test.mjs", "tests/backtest-chronology.test.mjs"]},
+    {"id": "02", "case": "Swing confirmation only after i+3", "tests": ["tests/vcp.test.mjs"]},
+    {"id": "03", "case": "EOD signal never fills at the same close", "tests": ["tests/backtest-entry.test.mjs"]},
+    {"id": "04", "case": "Three-percent gap chase rejected", "tests": ["tests/backtest-entry.test.mjs"]},
+    {"id": "05", "case": "Stop wider than eight percent rejected", "tests": ["tests/backtest-entry.test.mjs"]},
+    {"id": "06", "case": "FIFO costs and partial-position accounting", "tests": ["tests/paper-ledger.test.mjs"]},
+    {"id": "07", "case": "One-third 2R partial profit only once", "tests": ["tests/backtest-exit.test.mjs"]},
+    {"id": "08", "case": "Same-bar stop and target uses stop first", "tests": ["tests/backtest-exit.test.mjs"]},
+    {"id": "09", "case": "Two-for-one split rebases quantities and stops", "tests": ["tests/backtest-exit.test.mjs", "tests/adjustments.test.mjs"]},
+    {"id": "10", "case": "Missing source, immutable restore and retry", "tests": ["tests/backtest-snapshot.test.mjs"], "integration": "tests/backtest-snapshot.integration.mjs"},
+    {"id": "11", "case": "Five positions, shared cash and concurrent retry", "tests": ["tests/backtest-golden-boundaries.test.mjs"], "integration": "tests/backtest-snapshot.integration.mjs"},
+    {"id": "12", "case": "Short-history IPO and SME cannot generate main-profile BUY", "tests": ["tests/backtest-golden-boundaries.test.mjs"]},
+    {"id": "13", "case": "All G01-G10 gates independently fail closed", "tests": ["tests/backtest-golden-boundaries.test.mjs", "tests/readiness.test.mjs"]}
+  ]
+}

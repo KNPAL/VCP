@@ -5,7 +5,7 @@ import type {Lot} from './ledger.js';
 export function remainingWeightedEntry(lots:readonly Lot[],isin:string){
  const open=lots.filter(l=>l.isin===isin&&l.remainingQty>0),quantity=open.reduce((n,l)=>n+BigInt(l.remainingQty),0n);
  if(quantity===0n)return null;
- const priceCost=open.reduce((n,l)=>n+parseFixed(l.price)*BigInt(l.remainingQty),0n),fees=open.reduce((n,l)=>n+parseFixed(l.remainingFees),0n);
+ const priceCost=open.reduce((n,l)=>n+(l.remainingPriceCost===undefined?parseFixed(l.price)*BigInt(l.remainingQty):parseFixed(l.remainingPriceCost)),0n),fees=open.reduce((n,l)=>n+parseFixed(l.remainingFees),0n);
  return {quantity:Number(quantity),weightedEntry:formatFixed(priceCost/quantity),costPerShareAfterFees:formatFixed((priceCost+fees)/quantity),remainingCost:formatFixed(priceCost+fees)};
 }
 /** Actual breaches annotate recorded facts. They never reject or undo a fill. */
