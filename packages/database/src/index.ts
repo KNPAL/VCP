@@ -55,3 +55,6 @@ export * from './paper-protection.js';
 export * from './paper-session.js';
 export * from './paper-performance.js';
 export * from './walk-forward.js';
+export {readDashboard} from './dashboard.js';
+export {readInspector,inspectorListings,inspectorSeries} from './inspector.js';
+export {readPositionCards,positionCardValues} from './position-cards.js';

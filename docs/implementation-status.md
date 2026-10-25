@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-91 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–116, KAN-119, KAN-126, KAN-128, KAN-139.
+94 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–120, KAN-126, KAN-128, KAN-139.
 
-45 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-117, KAN-122–123. Working status never implies verified completion.
+42 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-122–123. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -19,6 +19,12 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 - Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Other feature screens remain incomplete.
 
 ## Current pipeline work
+
+2026-10-25: KAN-120 is Coded. Lightweight Charts inspector renders stored swings, legs, frozen pivots, market events, owner fills and basis-checked stop/trail histories with adjusted candles/volume and server-side production indicator curves. It preserves occurrence/confirmation times, separates raw fill prices, excludes reversed fills, and ends stop overlays at episode closure. Golden curve, PostgreSQL owner isolation, all UI routes, responsive keyboard/browser checks, builds and lint pass; the full unit/API suite passes 203 tests. README includes inspector usage. KAN-118 is deployed locally with healthy containers; the inspector image deployment remains pending. KAN-122 card completion is underway. 94 Coded; 42 remain.
+
+2026-10-25: KAN-118 is Coded. The dashboard displays server-validated regime and source age, latest intended/processed job coverage separately from completed scan WATCH/READY/BUY counts, owner holdings and valuation, current SELL alerts and degraded monitoring. Evidence links, IST timestamps, expiry and distinct loading/empty/UNKNOWN/403/503 states are implemented. Database isolation/read-only checks, authenticated API, all 15 UI routes, desktop/mobile Edge interactions, keyboard access, builds and lint pass. Screenshots were reviewed. README links dashboard usage. KAN-120 is In Progress for the annotated inspector. 93 Coded; 43 remain.
+
+2026-10-25: KAN-117 is Coded. The versioned golden manifest, production-boundary fixtures and stored walk-forward comparisons pass verification (45 golden tests, seven focused tests after the warmup addition, five PostgreSQL integration cases, database build and lint). Training alone selects configurations; validation and out-of-sample evidence stay separate. Warmup precedes evaluation windows and excludes pre-listing candles. The running local image includes KAN-115/116 and migrations through 52. KAN-118 is In Progress for the evidence-backed dashboard. 92 Coded; 44 remain.
 
 2026-10-25: KAN-116 is Coded. Deterministic as-of paper reports include neutral-inclusive win rate, FIFO realized/closed P&L, initial-R expectancy, profit factor, equity/exposure curves, prior-peak drawdown, entry-regime segments and signal execution gaps. Missing data/costs and unlinked manual executions remain explicit. The owner-scoped reader selects only ledger revisions known at the requested cutoff. Fixed metric tests, replay/report PostgreSQL integration, builds and lint pass; README links the CLI and calculation definitions. KAN-117 is In Progress for the complete golden fixture suite and walk-forward comparison. 91 Coded; 45 remain.
 

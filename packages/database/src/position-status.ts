@@ -67,7 +67,7 @@ export async function recordJournalPositionStatus(tx:Prisma.TransactionClient,ow
  }
 }
 export async function readPositionStatus(db:PrismaClient,ownerId:string){
- const rows=await db.$queryRaw<{evidence:{id:string;isin:string;asOf:string;validUntil:string;sources:{journal:string;mapping?:string;calendar?:string;adjustment?:string;activeStop?:{listingId:string}};result:ReturnType<typeof positionStatus>}}[]>`SELECT DISTINCT ON ("stopId") "evidence" FROM "PositionStatusHistory" WHERE "ownerId"=${ownerId}::uuid ORDER BY "stopId","recordedAt" DESC,"id"`;
+ const rows=await db.$queryRaw<{evidence:{id:string;isin:string;stopId:string;asOf:string;validUntil:string;sources:{journal:string;mapping?:string;calendar?:string;adjustment?:string;activeStop?:{listingId:string}};result:ReturnType<typeof positionStatus>}}[]>`SELECT DISTINCT ON ("stopId") "evidence" FROM "PositionStatusHistory" WHERE "ownerId"=${ownerId}::uuid ORDER BY "stopId","recordedAt" DESC,"id"`;
  const journal=await db.$queryRaw<{evidence:PortfolioEvent}[]>`SELECT "evidence" FROM "PortfolioJournal" WHERE "ownerId"=${ownerId}::uuid ORDER BY "sequence"`;
  const mappings=await db.$queryRaw<{id:string}[]>`SELECT "id" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
  const calendars=await db.$queryRaw<{id:string}[]>`SELECT "id" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;

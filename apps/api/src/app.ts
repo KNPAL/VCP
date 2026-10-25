@@ -7,7 +7,9 @@ import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError } from '@vcp/doma
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
-import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
+import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
+import {readInspector,inspectorListings} from '@vcp/database';
+import {readPositionCards} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
@@ -66,6 +68,10 @@ export const openapi = {
     '/api/v1/positions/fills/{id}/correct':{post:{operationId:'correctActualFill',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Linked reversal and replacement appended atomically, original retained'},'422':{description:'Invalid correction target or chronology'}}}},
     '/api/v1/vcp/lifecycle/{id}':{get:{operationId:'patternLifecycle',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[a-f0-9]{64}$'}}],responses:{'200':{description:'Immutable pattern observations, transitions and separate market breakouts; explicit UNKNOWN if absent'},'400':{description:'Invalid pattern identity'},'401':{description:'Authentication required'}}}},
     '/api/v1/vcp/profiles':{get:{operationId:'strategyHistory',security:[{session:[]}],responses:{'200':{description:'Immutable versions, activation history and supported execution hash'}}},post:{operationId:'saveStrategyVersion',security:[{session:[]}],responses:{'201':{description:'Idempotently registered version; activation unchanged'},'409':{description:'Immutable version conflict'},'422':{description:'Invalid configuration or unsupported authority'}}}},
+    '/api/v1/portfolio/dashboard':{get:{operationId:'dashboardEvidence',security:[{session:[]}],responses:{'200':{description:'Owner-scoped portfolio and alert evidence, current regime, latest job progress and completed scan signal counts'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
+    '/api/v1/vcp/inspector':{get:{operationId:'inspectorExecutions',security:[{session:[]}],responses:{'200':{description:'Latest stored daily execution per listing'},'401':{description:'Authentication required'}}}},
+    '/api/v1/vcp/inspector/{id}':{get:{operationId:'inspectorEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[a-f0-9]{64}$'}}],responses:{'200':{description:'Pinned adjusted candles, production indicator curves, stored structure and owner-scoped actual-fill/stop history'},'400':{description:'Invalid execution ID'},'404':{description:'Execution unavailable'},'503':{description:'Evidence unavailable'}}}},
+    '/api/v1/positions/cards':{get:{operationId:'positionCards',security:[{session:[]}],responses:{'200':{description:'Owner actual holdings, FIFO costs, verified mark/P&L, initial R, current stop, EMA and source evidence'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
     '/api/v1/vcp/latest-scan':{get:{operationId:'latestScanSummary',security:[{session:[]}],responses:{'200':{description:'Latest stored scan identity and coverage, or explicit UNKNOWN when absent'},'401':{description:'Authentication required'}}}},
     '/api/v1/vcp/candidates': {
       get: {operationId:'vcpCandidates',security:[{session:[]}],parameters:[
@@ -140,6 +146,11 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('vcp')
   class CandidateController {
+    @Get('inspector') inspectorList(){return inspectorListings(db)}
+    @Get('inspector/:id') async inspector(@Req() request:AuthRequest,@Param('id') id:string){
+      if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid daily execution ID');
+      const result=await readInspector(db,request.ownerId!,id);if(!result)throw new NotFoundException('Daily execution not found');return result;
+    }
     @Get('lifecycle/:id') async lifecycle(@Param('id') id:string){if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid pattern ID');return patternHistory(db,id)}
     @Get('profiles') profiles(){return readProfileHistory(db)}
     @Post('profiles') async profile(@Req() request:AuthRequest){
@@ -193,6 +204,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('positions')
   class PositionController {
+    @Get('cards') cards(@Req() request:AuthRequest){return readPositionCards(db,request.ownerId!)}
     @Post('partials/:id/dismiss') async dismissPartial(@Param('id') id:string,@Req() request:AuthRequest){
       const body=strictBody(request,['reason']),key=request.headers['idempotency-key'];
       if(typeof key!=='string'||typeof body['reason']!=='string')throw new BadRequestException('Reason and Idempotency-Key required');
@@ -216,6 +228,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('portfolio')
   class PortfolioController {
+    @Get('dashboard') dashboard(@Req() request:AuthRequest){return readDashboard(db,request.ownerId!)}
     @Get() async portfolio(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.journal,monitor:await readPositionMonitor(db,request.ownerId!),equity:risk.valuation.equity,risk,reconciliation:risk.reconciliation.state,reconciliationEvidence:risk.reconciliation,reasons:risk.reasons}}
     @Get('risk') risk(@Req() request:AuthRequest){return readPortfolioRisk(db,request.ownerId!)}
     @Get('loss-streak') async lossStreak(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.lossStreak,journalHash:risk.journalHash,cashAllocationRevision:risk.cashAllocationRevision,allocationHistory:await cashAllocationHistory(db,request.ownerId!)}}

@@ -245,3 +245,9 @@ Historical paper portfolio: [setup, session JSON and CLI commands](docs/paper-le
 Paper performance reports: [metrics, cutoff behavior and CLI usage](docs/paper-performance.md). Reports include FIFO realized P&L, neutral-inclusive win rate, initial-R expectancy, equity/exposure curves, drawdown and explicit data limitations.
 
 Frozen backtest regression and walk-forward comparison: [fixture runner, warm-up ranges and chronological run plans](docs/golden-walk-forward.md). Run `node scripts/golden-backtest.mjs` after building the workspace.
+
+Dashboard: open /dashboard after signing in. See [dashboard evidence and verification](docs/dashboard.md) for scan coverage, regime freshness, portfolio values and alert behavior.
+
+Chart inspector: open /inspector or follow a screener row's inspector link. See [chart evidence, price scales and verification](docs/inspector.md).
+
+My Positions now includes [actual position cards](docs/position-cards.md) with FIFO costs, verified marks, P&L, stops, EMA21 and initial-R metrics.

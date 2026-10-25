@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import ReconciliationWorkspace from './reconciliation-workspace';
 import ProtectiveStopsWorkspace from './protective-stops-workspace';
+import PositionCards from './position-cards';
 import LossStreakWorkspace from './loss-streak-workspace';
 type MonitorItem={validUntil?:string|null;isin:string;state:string;reason:string;asOf:string;sourceAt:string|null;gapStartedAt:string|null};
 type Risk={asOf:string;validUntil:string;reasons:string[];valuation:{state:string;equity:string|null;grossExposure:string|null;plannedOpenRisk:string|null;companyExposure:Record<string,string|null>;sectorExposure:Record<string,string|null>};plan:{state:string;reasons:string[]}};
@@ -43,6 +44,7 @@ export default function PortfolioWorkspace(){
  return <>
   <div className="pagehead"><div><div className="eyebrow">Portfolio / Actual execution</div><h1>My positions</h1><p>Record completed manual fills and review your cash and FIFO lots.</p></div><button className="quiet" onClick={()=>void load()} disabled={loading}>Refresh journal</button></div>
   <div className="note"><strong>New BUY plans remain blocked</strong><br/>Current marks and reconciled holdings support valuation. Entry plans also require verified candidate, regime and loss-streak evidence. A valuation or alert never records a fill.</div>
+  <PositionCards/>
   {error&&<p className="error" role="alert">{error} <a href="/login">Sign in</a></p>}{notice&&<p role="status">{notice}</p>}
   {loading&&<p role="status">Loading recorded portfolio…</p>}
   {data&&<section className="panel riskvaluation" aria-label="Portfolio valuation"><h2>Portfolio valuation</h2><p>{currentRisk?'Checked '+ist(currentRisk.asOf)+' · Valid until '+ist(currentRisk.validUntil):'Current valuation evidence unavailable or expired. Recorded holdings are retained.'}</p><div className="cards"><div className="card">Gross exposure<strong className="value">{money(currentRisk?.valuation.grossExposure??null)}</strong></div><div className="card">Planned stop-level downside<strong className="value">{money(currentRisk?.valuation.plannedOpenRisk??null)}</strong></div></div><p className="caption">Stop-level downside is an estimate; a gap can produce a larger loss. Unknown exposure is never treated as zero.</p>{currentRisk&&<><div className="tablewrap"><table><thead><tr><th>Exposure</th><th>Marked value</th></tr></thead><tbody>{Object.entries(currentRisk.valuation.companyExposure).map(([isin,value])=><tr key={isin}><td>{isin}</td><td>{money(value)}</td></tr>)}{Object.entries(currentRisk.valuation.sectorExposure).map(([sector,value])=><tr key={'sector:'+sector}><td>Sector · {sector}</td><td>{money(value)}</td></tr>)}</tbody></table></div><details><summary>Valuation and entry-plan reasons</summary><ul>{[...new Set([...currentRisk.reasons,...currentRisk.plan.reasons])].map(reason=><li key={reason}>{reason.replaceAll('_',' ')}</li>)}</ul></details></>}</section>}

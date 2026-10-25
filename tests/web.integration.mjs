@@ -8,7 +8,7 @@ test('all UI shell routes enforce login and render after authentication',async()
  const password=process.env.WEB_TEST_PASSWORD??(await readFile('.runtime/owner-password','utf8')).trim();
  const login=await fetch(base+'/api/v1/auth/login',{method:'POST',headers:{origin:base,'content-type':'application/json'},body:JSON.stringify({login:process.env.WEB_TEST_LOGIN??'owner',password})});
  assert.equal(login.status,201);const cookie=login.headers.get('set-cookie').split(';')[0];const session=await login.json();
- try{for(const route of routes){const r=await fetch(base+'/'+route,{headers:{cookie}});assert.equal(r.status,200,route);const html=await r.text();assert.ok(html.includes('Skip to content'),route);assert.ok(html.includes(route==='positions'?'New BUY plans remain blocked':'Source freshness'),route);}}
+ try{const dashboard=await fetch(base+'/api/v1/portfolio/dashboard',{headers:{cookie}});assert.equal(dashboard.status,200);const overview=await dashboard.json();assert.equal(overview.executable,false);assert.equal(overview.readiness.items.length,10);const cards=await fetch(base+'/api/v1/positions/cards',{headers:{cookie}});assert.equal(cards.status,200);assert.equal((await cards.json()).executable,false);for(const route of routes){const r=await fetch(base+'/'+route,{headers:{cookie}});assert.equal(r.status,200,route);const html=await r.text();assert.ok(html.includes('Skip to content'),route);assert.ok(html.includes(route==='positions'?'New BUY plans remain blocked':route==='dashboard'?'Market overview':route==='inspector'?'VCP chart inspector':'Source freshness'),route);}}
  finally{const r=await fetch(base+'/api/v1/auth/logout',{method:'POST',headers:{cookie,origin:base,'x-csrf-token':session.csrfToken}});assert.equal(r.status,201);}
 });
 
