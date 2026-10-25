@@ -12,10 +12,11 @@ let result;
 try{
  const api=start(['apps/api/dist/main.js'],{env:{...common,NODE_ENV:'development'}});
  const web=start(['scripts/web-server.mjs'],{env:{...common,VCP_WEB_PORT:String(webPort),WEB_HOST:'127.0.0.1',NODE_ENV:'production'}});
- const deadline=Date.now()+30000;let ready=false;
- while(Date.now()<deadline){if(api.exitCode!==null||web.exitCode!==null)throw new Error('Preview process exited early');try{ready=(await fetch('http://127.0.0.1:3001/api/v1/system/health')).ok&&(await fetch('http://127.0.0.1:'+webPort+'/login')).ok}catch{/* Services may still be binding their ports. */}if(ready)break;await new Promise(resolve=>setTimeout(resolve,200))}
+ const startupTimeout=Number(process.env.WEB_TEST_STARTUP_TIMEOUT_MS??30000);if(!Number.isSafeInteger(startupTimeout)||startupTimeout<1000||startupTimeout>180000)throw new Error('Invalid WEB_TEST_STARTUP_TIMEOUT_MS');
+ const deadline=Date.now()+startupTimeout;let ready=false;
+ while(Date.now()<deadline){if(api.exitCode!==null||web.exitCode!==null)throw new Error('Preview process exited early');try{ready=(await fetch('http://127.0.0.1:3001/api/v1/system/health',{signal:AbortSignal.timeout(2000)})).ok&&(await fetch('http://127.0.0.1:'+webPort+'/login',{signal:AbortSignal.timeout(2000)})).ok}catch{/* Services may still be binding their ports. */}if(ready)break;await new Promise(resolve=>setTimeout(resolve,200))}
  if(!ready)throw new Error('Preview readiness timeout');
- const test=start(['--test','tests/web.integration.mjs',...(process.env.VCP_POSITION_CARDS_TEST==='true'?['tests/position-cards.browser.mjs']:[]),...(process.env.VCP_INSPECTOR_TEST==='true'?['tests/inspector.browser.mjs']:[]),...(process.env.VCP_DASHBOARD_TEST==='true'?['tests/dashboard.browser.mjs']:[]),...(process.env.VCP_BROWSER_TESTS==='true'?['tests/protective-stops.browser.mjs','tests/stream.browser.mjs']:[])],{env:{...common,WEB_TEST_LOGIN:'integration-owner',WEB_TEST_PASSWORD:'synthetic-test-password-2026'}});
+ const test=start(['--test','tests/web.integration.mjs',...(process.env.VCP_SELL_ALERTS_TEST==='true'?['tests/sell-alerts.browser.mjs']:[]),...(process.env.VCP_POSITION_DETAIL_TEST==='true'?['tests/position-detail.browser.mjs']:[]),...(process.env.VCP_POSITION_CARDS_TEST==='true'?['tests/position-cards.browser.mjs']:[]),...(process.env.VCP_INSPECTOR_TEST==='true'?['tests/inspector.browser.mjs']:[]),...(process.env.VCP_DASHBOARD_TEST==='true'?['tests/dashboard.browser.mjs']:[]),...(process.env.VCP_BROWSER_TESTS==='true'?['tests/protective-stops.browser.mjs','tests/stream.browser.mjs']:[])],{env:{...common,WEB_TEST_LOGIN:'integration-owner',WEB_TEST_PASSWORD:'synthetic-test-password-2026'}});
  result=await new Promise(resolve=>test.once('exit',code=>resolve(code??1)));
 }finally{
  for(const child of children)if(child.exitCode===null)child.kill('SIGTERM');

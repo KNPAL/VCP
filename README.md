@@ -251,3 +251,7 @@ Dashboard: open /dashboard after signing in. See [dashboard evidence and verific
 Chart inspector: open /inspector or follow a screener row's inspector link. See [chart evidence, price scales and verification](docs/inspector.md).
 
 My Positions now includes [actual position cards](docs/position-cards.md) with FIFO costs, verified marks, P&L, stops, EMA21 and initial-R metrics.
+
+Select a position card's ISIN for [immutable position detail and manual-sale guidance](docs/position-detail.md).
+
+The [prioritized SELL screen](docs/sell-alerts.md) separates pending exit evidence, review acknowledgement and actual execution.

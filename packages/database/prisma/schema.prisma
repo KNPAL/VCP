@@ -830,3 +830,12 @@ model PaperSessionResult {
  evidence Json
  @@unique([runId, session])
 }
+model PositionAlertAcknowledgement {
+ id String @id
+ ownerId String @db.Uuid
+ signalId String
+ isin String
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@unique([ownerId,signalId])
+}

@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-94 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–120, KAN-126, KAN-128, KAN-139.
+96 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–120, KAN-122–123, KAN-126, KAN-128, KAN-139.
 
-42 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-122–123. Working status never implies verified completion.
+40 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-124. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -19,6 +19,10 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 - Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Other feature screens remain incomplete.
 
 ## Current pipeline work
+
+2026-10-25: KAN-123 is Coded. Owner position detail displays original/reversed fills, FIFO fees/realized P&L, source corporate actions, prior pivots and paginated immutable stop/alert/status history. Separate immutable acknowledgements never resolve or execute alerts; confirmed actual SELL records use the existing idempotent journal endpoint. PostgreSQL paging/owner isolation/concurrent retries/immutability, authenticated API and 15 shell routes, mobile/keyboard/expiry/403/503 browser checks, builds and lint pass. Migration 53 is applied to vcp_test; local runtime image refresh and application to vcp are underway. Root README links usage. KAN-124 is In Progress. 96 Coded; 40 remain.
+
+2026-10-25: KAN-122 is Coded. Actual per-ISIN cards expose remaining FIFO cost/entry, verified raw mark/time, exact P&L, current/initial stops, EMA21, original R0/R-multiple, exposure and monitoring/risk status. Stale marks and expired evidence become UNKNOWN; overlapping refreshes cannot replace newer observations. Exact arithmetic tests, owner-isolated PostgreSQL projection, authenticated API/UI routes, mobile decimal layout, keyboard and 403/503/empty/stale browser checks pass. Builds/lint pass. README documents formulas and usage. KAN-123 timeline and separate review acknowledgements are underway; migration 53 has not yet been verified/applied. 95 Coded; 41 remain.
 
 2026-10-25: KAN-120 is Coded. Lightweight Charts inspector renders stored swings, legs, frozen pivots, market events, owner fills and basis-checked stop/trail histories with adjusted candles/volume and server-side production indicator curves. It preserves occurrence/confirmation times, separates raw fill prices, excludes reversed fills, and ends stop overlays at episode closure. Golden curve, PostgreSQL owner isolation, all UI routes, responsive keyboard/browser checks, builds and lint pass; the full unit/API suite passes 203 tests. README includes inspector usage. KAN-118 is deployed locally with healthy containers; the inspector image deployment remains pending. KAN-122 card completion is underway. 94 Coded; 42 remain.
 

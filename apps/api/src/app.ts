@@ -10,6 +10,7 @@ import type { PrismaClient } from '@vcp/database';
 import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import {readInspector,inspectorListings} from '@vcp/database';
 import {readPositionCards} from '@vcp/database';
+import {readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
@@ -71,6 +72,10 @@ export const openapi = {
     '/api/v1/portfolio/dashboard':{get:{operationId:'dashboardEvidence',security:[{session:[]}],responses:{'200':{description:'Owner-scoped portfolio and alert evidence, current regime, latest job progress and completed scan signal counts'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
     '/api/v1/vcp/inspector':{get:{operationId:'inspectorExecutions',security:[{session:[]}],responses:{'200':{description:'Latest stored daily execution per listing'},'401':{description:'Authentication required'}}}},
     '/api/v1/vcp/inspector/{id}':{get:{operationId:'inspectorEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[a-f0-9]{64}$'}}],responses:{'200':{description:'Pinned adjusted candles, production indicator curves, stored structure and owner-scoped actual-fill/stop history'},'400':{description:'Invalid execution ID'},'404':{description:'Execution unavailable'},'503':{description:'Evidence unavailable'}}}},
+    '/api/v1/positions/{isin}/detail':{get:{operationId:'positionDetail',security:[{session:[]}],responses:{'200':{description:'Owner immutable fills, FIFO lots, episodes and corporate action evidence'}}}},
+    '/api/v1/positions/{isin}/timeline':{get:{operationId:'positionTimeline',security:[{session:[]}],responses:{'200':{description:'Owner immutable timeline, fifty records per cursor page'},'400':{description:'Invalid cursor'}}}},
+    '/api/v1/positions/alerts/{id}/acknowledge':{post:{operationId:'acknowledgePositionAlert',security:[{session:[]}],responses:{'201':{description:'Immutable review acknowledgement; no execution or resolution'},'404':{description:'Alert not found for owner'},'409':{description:'Acknowledgement already exists with different note'}}}},
+    '/api/v1/positions/sell-alerts':{get:{operationId:'sellAlerts',security:[{session:[]}],responses:{'200':{description:'Owner prioritized pending exits, remaining actual quantity, source revision and independent monitor freshness'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
     '/api/v1/positions/cards':{get:{operationId:'positionCards',security:[{session:[]}],responses:{'200':{description:'Owner actual holdings, FIFO costs, verified mark/P&L, initial R, current stop, EMA and source evidence'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
     '/api/v1/vcp/latest-scan':{get:{operationId:'latestScanSummary',security:[{session:[]}],responses:{'200':{description:'Latest stored scan identity and coverage, or explicit UNKNOWN when absent'},'401':{description:'Authentication required'}}}},
     '/api/v1/vcp/candidates': {
@@ -204,7 +209,17 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('positions')
   class PositionController {
+    @Get('sell-alerts') sellAlerts(@Req() request:AuthRequest){return readSellAlerts(db,request.ownerId!)}
     @Get('cards') cards(@Req() request:AuthRequest){return readPositionCards(db,request.ownerId!)}
+    @Get(':isin/detail') async detail(@Req() request:AuthRequest,@Param('isin') isin:string){if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin))throw new BadRequestException('Invalid ISIN');return readPositionDetail(db,request.ownerId!,isin)}
+    @Get(':isin/timeline') async timeline(@Req() request:AuthRequest,@Param('isin') isin:string,@Query() query:Record<string,string>){
+      if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin)||Object.keys(query).some(key=>key!=='cursor')||query['cursor']!==undefined&&typeof query['cursor']!=='string')throw new BadRequestException('Invalid timeline query');
+      try{return await positionTimeline(db,request.ownerId!,isin,query['cursor'])}catch(error){if(error instanceof Error&&error.message==='INVALID_TIMELINE_CURSOR')throw new BadRequestException(error.message);throw error}
+    }
+    @Post('alerts/:id/acknowledge') async acknowledge(@Req() request:AuthRequest,@Param('id') id:string){
+      const body=strictBody(request,['note']);if(typeof body['note']!=='string')throw new BadRequestException('Review note required');
+      try{return await acknowledgePositionAlert(db,request.ownerId!,id,body['note'])}catch(error){if(error instanceof Error&&['INVALID_ALERT_ACKNOWLEDGEMENT','POSITION_ALERT_NOT_FOUND','STALE_CONFLICT'].includes(error.message))throw new HttpException(error.message,error.message==='STALE_CONFLICT'?409:error.message==='POSITION_ALERT_NOT_FOUND'?404:422);throw error}
+    }
     @Post('partials/:id/dismiss') async dismissPartial(@Param('id') id:string,@Req() request:AuthRequest){
       const body=strictBody(request,['reason']),key=request.headers['idempotency-key'];
       if(typeof key!=='string'||typeof body['reason']!=='string')throw new BadRequestException('Reason and Idempotency-Key required');
