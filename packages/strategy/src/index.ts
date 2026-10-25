@@ -26,3 +26,5 @@ export function canonicalConfiguration(value:unknown):string{
  return JSON.stringify(value);
 }
 export function configurationHash(value:unknown){return createHash('sha256').update(canonicalConfiguration(value)).digest('hex')}
+
+export * from './ipo-research.js';

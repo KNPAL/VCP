@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 export const navigation = [
- ['My watchlists','/watchlists','☆'],
+ ['My watchlists','/watchlists','☆'],['IPO research','/research/ipo','◇'],['SME research','/research/sme','◇'],
  ['Overview','/dashboard','◫'],['Universe & data','/universe','◎'],['VCP screener','/screener','⌕'],['Chart inspector','/inspector','⌁'],['BUY signals','/buy','↗'],['My positions','/positions','▣'],['SELL alerts','/sell','↙'],['Backtests','/backtests','◷'],['Settings','/settings','⚙'],['Operations','/operations','◇'],
 ] as const;
 export function Navigation(){const path=usePathname();return <nav aria-label="Main navigation">{navigation.map(([label,href,icon])=><Link className="navlink" aria-current={path===href?'page':undefined} key={href} href={href}><span className="navicon" aria-hidden="true">{icon}</span>{label}</Link>)}</nav>}

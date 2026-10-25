@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-96 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–120, KAN-122–123, KAN-126, KAN-128, KAN-139.
+98 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–120, KAN-122–124, KAN-126, KAN-128, KAN-136, KAN-139.
 
-40 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-124. Working status never implies verified completion.
+38 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-137. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -19,6 +19,14 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 - Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Other feature screens remain incomplete.
 
 ## Current pipeline work
+
+2026-10-25: KAN-137 is In Progress. SME source metadata, effective instrument/lot matching, storage/display/derivation permission gates and always-blocked research projection are implemented. A read-only SME screen is connected; boundary/source tests and persistence/browser verification are underway. Migration 55 is not yet applied to either database.
+
+2026-10-25: KAN-136 is Coded. Immutable reviewed IPO metadata requires matching verified equity listing identity/date; source corrections remain append-only and newer unverified metadata hides older verified facts. The read-only IPO research page uses the production finalized-calendar/candle loader and confirmed-extrema rules, permits structure observations at 30 bars, leaves long-history values UNKNOWN and always returns BUY_BLOCKED. Two boundary/source unit tests, PostgreSQL identity/idempotency/immutability/correction checks, two browser/API suites (16 routes), keyboard/mobile visual review, builds and lint pass. Root README documents reviewed import and source restrictions. Migration 54 is applied only to vcp_test; the live runtime remains the verified KAN-124 image with migration 53. 98 Coded; 38 remain.
+
+2026-10-25: Completed position-detail/SELL runtime is deployed at https://localhost:8443 with API, web, worker, proxy, Redis and PostgreSQL healthy. Migration 53 ran successfully through the image migrate service. All 205 unit/API tests passed before deployment. KAN-136 is In Progress: immutable IPO source metadata and a 30-session research-only structure projection are implemented; two boundary/source tests pass. Persistence and UI verification are pending. Migration 54 is not yet applied to the application database.
+
+2026-10-25: KAN-124 is Coded. The SELL screen uses backend exit precedence, actual remaining quantities, pinned source prices/times/revisions and independent monitoring expiry. Reviews never resolve exits; partial dismissal is separate from actual manual sales. PostgreSQL partial/full collision, acknowledgement, closed-position and owner-isolation checks pass. Three source/precedence unit tests and all three sequential browser/API suites pass, including KAN-123 nested failure acknowledgement regression. Mobile visual review, production builds and lint pass. Concurrent browser load caused one transient dashboard 500; its isolated DB regression and sequential authenticated API checks passed. The harness now runs browser files sequentially with bounded configurable startup probes. Image refresh/migration 53 to vcp still pending. 97 Coded; 39 remain.
 
 2026-10-25: KAN-123 is Coded. Owner position detail displays original/reversed fills, FIFO fees/realized P&L, source corporate actions, prior pivots and paginated immutable stop/alert/status history. Separate immutable acknowledgements never resolve or execute alerts; confirmed actual SELL records use the existing idempotent journal endpoint. PostgreSQL paging/owner isolation/concurrent retries/immutability, authenticated API and 15 shell routes, mobile/keyboard/expiry/403/503 browser checks, builds and lint pass. Migration 53 is applied to vcp_test; local runtime image refresh and application to vcp are underway. Root README links usage. KAN-124 is In Progress. 96 Coded; 40 remain.
 

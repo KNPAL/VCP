@@ -255,3 +255,7 @@ My Positions now includes [actual position cards](docs/position-cards.md) with F
 Select a position card's ISIN for [immutable position detail and manual-sale guidance](docs/position-detail.md).
 
 The [prioritized SELL screen](docs/sell-alerts.md) separates pending exit evidence, review acknowledgement and actual execution.
+
+[IPO research](docs/ipo-research.md) uses reviewed listing facts and at least 30 finalized sessions, with live BUY permanently blocked for this research profile.
+
+[SME research](docs/sme-research.md) keeps lot, liquidity, restrictions and source permissions explicit and never grants live BUY eligibility.

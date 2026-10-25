@@ -62,3 +62,7 @@ export {acknowledgePositionAlert} from './alert-acknowledgement.js';
 export {readPositionDetail,positionTimeline} from './position-detail.js';
 
 export * from './sell-alerts.js';
+
+export * from './ipo-research.js';
+
+export * from './sme-research.js';

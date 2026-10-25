@@ -10,7 +10,7 @@ import type { PrismaClient } from '@vcp/database';
 import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import {readInspector,inspectorListings} from '@vcp/database';
 import {readPositionCards} from '@vcp/database';
-import {readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
+import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
 import {recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
@@ -76,6 +76,8 @@ export const openapi = {
     '/api/v1/positions/{isin}/timeline':{get:{operationId:'positionTimeline',security:[{session:[]}],responses:{'200':{description:'Owner immutable timeline, fifty records per cursor page'},'400':{description:'Invalid cursor'}}}},
     '/api/v1/positions/alerts/{id}/acknowledge':{post:{operationId:'acknowledgePositionAlert',security:[{session:[]}],responses:{'201':{description:'Immutable review acknowledgement; no execution or resolution'},'404':{description:'Alert not found for owner'},'409':{description:'Acknowledgement already exists with different note'}}}},
     '/api/v1/positions/sell-alerts':{get:{operationId:'sellAlerts',security:[{session:[]}],responses:{'200':{description:'Owner prioritized pending exits, remaining actual quantity, source revision and independent monitor freshness'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
+    '/api/v1/research/ipo':{get:{operationId:'ipoResearchListings',security:[{session:[]}],responses:{'200':{description:'Stored IPO research metadata revisions; no BUY eligibility'}}}},
+    '/api/v1/research/ipo/{id}':{get:{operationId:'ipoResearch',security:[{session:[]}],responses:{'200':{description:'Revision-pinned short-history observations with permanently blocked live BUY'},'400':{description:'Invalid listing UUID'}}}},
     '/api/v1/positions/cards':{get:{operationId:'positionCards',security:[{session:[]}],responses:{'200':{description:'Owner actual holdings, FIFO costs, verified mark/P&L, initial R, current stop, EMA and source evidence'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
     '/api/v1/vcp/latest-scan':{get:{operationId:'latestScanSummary',security:[{session:[]}],responses:{'200':{description:'Latest stored scan identity and coverage, or explicit UNKNOWN when absent'},'401':{description:'Authentication required'}}}},
     '/api/v1/vcp/candidates': {
@@ -273,6 +275,16 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       return writeJournal(request,body as unknown as JournalCommand);
     }
   }
+  @Controller('research/sme')
+  class SmeResearchController {
+    @Get() list(){return listSmeResearch(db)}
+    @Get(':id') async get(@Param('id') id:string){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))throw new BadRequestException('Invalid listing ID');return readSmeResearch(db,id)}
+  }
+  @Controller('research/ipo')
+  class IpoResearchController {
+    @Get() list(){return listIpoResearch(db)}
+    @Get(':id') async get(@Param('id') id:string){if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))throw new BadRequestException('Invalid listing ID');return readIpoResearch(db,id)}
+  }
   @Controller('sources')
   class SourceController {
     @Get('readiness') readiness(){return getReadiness(db)}
@@ -307,7 +319,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await db.$disconnect()}}}]})
+  @Module({controllers:[SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   app.setGlobalPrefix('api/v1');

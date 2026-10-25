@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {ipoResearch} from '../packages/strategy/dist/index.js';
+import {goldenSeries} from '../fixtures/vcp-golden.mjs';
+const {chromium}=await import(process.env.VCP_PLAYWRIGHT_MODULE??'playwright');
+test('IPO research shows source-bound short history and never offers live BUY',async()=>{
+ const browser=await chromium.launch({headless:true,channel:process.env.VCP_BROWSER_CHANNEL??'msedge'}),base=process.env.WEB_TEST_BASE_URL??'http://localhost:3002',context=await browser.newContext({baseURL:base});
+ try{
+  assert.equal((await context.request.post('/api/v1/auth/login',{headers:{origin:base},data:{login:process.env.WEB_TEST_LOGIN,password:process.env.WEB_TEST_PASSWORD}})).status(),201);
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));let mode='normal';const original=goldenSeries(),bars=original.bars.slice(-30),series={...original,priceScale:'ADJUSTED',bars,sessions:bars.map(b=>b.session)},listingId='00000000-0000-4000-8000-000000000003',metadata={listingId,isin:'INE000000001',listingDate:bars[0].session,issuePrice:null,listingPrice:'100.000000',knownAt:series.asOf,sourceReference:'synthetic-reviewed-source',permissionReference:'synthetic-test-only',verified:true};
+  await page.route('**/api/v1/research/ipo**',async route=>{
+   assert.equal(route.request().method(),'GET');if(['403','503'].includes(mode))return route.fulfill({status:Number(mode),json:{}});if(mode==='loading')await new Promise(r=>setTimeout(r,500));
+   if(new URL(route.request().url()).pathname.endsWith('/ipo'))return route.fulfill({json:{items:mode==='empty'?[]:[{listingId,isin:metadata.isin,verified:true}]}});
+   const selected=mode==='short'?{...series,bars:bars.slice(1),sessions:series.sessions.slice(1)}:series,result=ipoResearch(mode==='unknown'?{...metadata,verified:false}:metadata,selected,series.asOf);return route.fulfill({json:{...result,metadataRevision:'metadata-revision',calendarRevision:'calendar-revision',sourceSession:bars.at(-1).session,sourceAt:bars.at(-1).finalizedAt,sourceReason:null}});
+  });
+  await page.goto('/research/ipo');await page.getByRole('heading',{name:'STRUCTURE_OBSERVATION',exact:true}).waitFor();assert.match(await page.locator('main').innerText(),/30 verified completed bars/);assert.match(await page.locator('main').innerText(),/BUY_BLOCKED/);assert.match(await page.locator('main').innerText(),/UNKNOWN — no short-history substitution/);assert.match(await page.locator('main').innerText(),/raw source age: \d+ seconds/);assert.equal(await page.getByRole('button',{name:/buy/i}).count(),0);
+  await page.getByText('Pinned revisions',{exact:true}).focus();await page.keyboard.press('Enter');await page.getByText('Metadata: metadata-revision',{exact:false}).waitFor();await page.screenshot({path:'.runtime/ipo-research-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'.runtime/ipo-research-mobile.png',fullPage:true});
+  mode='short';await page.getByRole('button',{name:'Refresh IPO research',exact:true}).click();await page.getByRole('heading',{name:'INSUFFICIENT_HISTORY',exact:true}).waitFor();mode='unknown';await page.getByRole('button',{name:'Refresh IPO research',exact:true}).click();await page.getByRole('heading',{name:'UNKNOWN',exact:true}).waitFor();assert.equal(await page.getByText('100.000000',{exact:true}).count(),0);
+  for(const code of ['403','503']){mode=code;await page.getByRole('button',{name:'Refresh IPO research',exact:true}).click();await page.locator('main').getByRole('alert').waitFor();assert.match(await page.locator('main').getByRole('alert').innerText(),new RegExp(code));assert.equal(await page.getByRole('heading',{name:'STRUCTURE_OBSERVATION',exact:true}).count(),0)}
+  mode='empty';await page.getByRole('button',{name:'Retry IPO research',exact:true}).click();await page.getByRole('heading',{name:'No reviewed IPO listings',exact:true}).waitFor();mode='loading';await page.getByRole('button',{name:'Refresh IPO research',exact:true}).click();await page.getByText('Loading IPO evidence…',{exact:true}).waitFor();await page.getByRole('heading',{name:'STRUCTURE_OBSERVATION',exact:true}).waitFor();assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close()}
+});

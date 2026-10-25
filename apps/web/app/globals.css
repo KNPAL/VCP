@@ -20,3 +20,7 @@
 
 .position-detail table{min-width:820px}.position-detail th,.position-detail td:not(:last-child){white-space:nowrap;word-break:normal}
 .sell-alerts dl{display:grid;grid-template-columns:minmax(140px,1fr) minmax(0,2fr);gap:12px}.sell-alerts dd{margin:0;overflow-wrap:anywhere}.sell-alerts pre{white-space:pre-wrap;overflow-wrap:anywhere}.sell-alerts form{margin:16px 0}.sell-alerts input{width:100%}@media(max-width:600px){.sell-alerts dl{grid-template-columns:1fr;gap:6px}.sell-alerts dd{margin-bottom:12px}}
+
+.skip:not(:focus){clip-path:inset(50%);width:1px;height:1px;overflow:hidden;padding:0}
+
+.ipo-research .panel{margin-top:20px}.ipo-research table{min-width:900px}.ipo-research td{white-space:nowrap}.ipo-research select{max-width:100%;display:block;margin-top:8px;padding:10px;background:var(--panel);color:var(--text)}.ipo-research dd{margin:6px 0 16px;overflow-wrap:anywhere}

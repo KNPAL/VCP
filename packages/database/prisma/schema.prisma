@@ -839,3 +839,21 @@ model PositionAlertAcknowledgement {
  evidence Json
  @@unique([ownerId,signalId])
 }
+
+model IpoListingSnapshot {
+ id String @id
+ listingId String @db.Uuid
+ knownAt DateTime @db.Timestamptz(6)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@index([listingId,knownAt(sort: Desc),recordedAt(sort: Desc)],map: "ipo_listing_known")
+}
+
+model SmeResearchSnapshot {
+ id String @id
+ listingId String @db.Uuid
+ knownAt DateTime @db.Timestamptz(6)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@index([listingId,knownAt(sort: Desc),recordedAt(sort: Desc)],map: "sme_research_known")
+}

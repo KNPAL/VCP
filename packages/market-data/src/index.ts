@@ -14,3 +14,5 @@ export * from './live-quotes.js';
 export * from './monitor.js';
 export * from './stream-subscriptions.js';
 export * from './quote-cache.js';
+
+export * from './sme-research.js';
