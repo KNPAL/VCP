@@ -1,4 +1,4 @@
-import {prepareManualDownload} from '@vcp/database';
+import {prepareManualDownload,reconcileManualDownloads} from '@vcp/database';
 import {writeFile} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {tmpdir} from 'node:os';
@@ -29,7 +29,7 @@ const worker=createWorker('vcp',{health:async()=>({status:'UP'}),'candle-change'
 const schedulerOwner=randomUUID();
 worker.on('error',()=>{const at=new Date().toISOString();writeLog('worker.error',{startedAt:at,finishedAt:at,result:'FAILED',failureCode:'WORKER_ERROR'})});
 let polling:Promise<void>|null=null;
-const heartbeat=setInterval(()=>{if(polling)return;polling=trace('worker.poll',async()=>{await monitorHeldPositions(db,q,streamName);for(let i=0;i<25;i++){if((await deliverAlert(db)).state==='IDLE')break}const client=await q.client;await client.info();if(process.env['VCP_ENABLE_EOD_SCHEDULER']==='true')await runSchedulerCycle(db,q,schedulerOwner);await dispatchScheduledScans(db,q);await dispatchCandleChanges(db,q);if(process.env['VCP_ENABLE_MANUAL_DOWNLOADS']==='true')await prepareManualDownload(db);await dispatchBackfills(db,q);await dispatchIndicatorReplays(db,q);await dispatchStrengthReplays(db,q);await dispatchStructureReplays(db,q);await dispatchEodScans(db,q);await writeFile(join(tmpdir(),'vcp-worker-health'),new Date().toISOString());}).catch(()=>{}).finally(()=>{polling=null});},5000);
+const heartbeat=setInterval(()=>{if(polling)return;polling=trace('worker.poll',async()=>{await monitorHeldPositions(db,q,streamName);for(let i=0;i<25;i++){if((await deliverAlert(db)).state==='IDLE')break}const client=await q.client;await client.info();if(process.env['VCP_ENABLE_EOD_SCHEDULER']==='true')await runSchedulerCycle(db,q,schedulerOwner);await dispatchScheduledScans(db,q);await dispatchCandleChanges(db,q);if(process.env['VCP_ENABLE_MANUAL_DOWNLOADS']==='true'){await reconcileManualDownloads(db);await prepareManualDownload(db);}await dispatchBackfills(db,q);await dispatchIndicatorReplays(db,q);await dispatchStrengthReplays(db,q);await dispatchStructureReplays(db,q);await dispatchEodScans(db,q);await writeFile(join(tmpdir(),'vcp-worker-health'),new Date().toISOString());}).catch(()=>{}).finally(()=>{polling=null});},5000);
 async function stop(){clearInterval(heartbeat);if(streamTimer)clearInterval(streamTimer);await stream?.stop();await polling;await worker.close();await q.close();await db.$disconnect()}
 process.once('SIGTERM',()=>void stop());process.once('SIGINT',()=>void stop());
 

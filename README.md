@@ -128,12 +128,13 @@ For a web-test port conflict, set `WEB_TEST_PORT=3002` before `test-web` (PowerS
 
 Live access requires account/API entitlement, independently verified registered/static outbound IP, source licensing, verified instruments/calendars and encryption keys. Broker requests originate only in the backend.
 
+- [Broker configuration](docs/broker-configuration.md): encrypted setup API, HTTPS/key requirements and current integration limitations.
 - [Credential provisioning](docs/broker-credentials.md): protected PIN/TOTP input, `BROKER_KEY_DIRECTORY`, encrypted references and session renewal.
 - [Backfill setup](docs/backfill.md): submission input, pinned sources/mappings, bounded downloads and recovery.
 - [Historical probes](docs/historical-probes.md): observed coverage, account limits and truncation detection.
 - [Universe and data health](docs/data-health.md): stored coverage, scan progress, source gates and broker status; manual browser downloads and retry controls remain in progress.
 - [Preview authorization](docs/download-authorization.md): optional protected signing-key setup, five-minute owner/evidence binding and remaining download submission work.
-- [Manual download acceptance](docs/manual-downloads.md): internal durable request handling and remaining queue/cancellation/retry integration; public submission is not yet available.
+- [Manual downloads](docs/manual-downloads.md): opt-in submission, job history, cancellation and retry setup, migration requirements and remaining delivery verification.
 
 The operator provisioning/submission entry points require `DATABASE_URL` and `REDIS_HOST`/`REDIS_PORT` in their environment; they do not automatically use the local-server wrapper's settings. Pass protected input-file **paths**, never credentials as command-line values. Set `BROKER_KEY_DIRECTORY` in the worker environment before startup. Real credentials, encryption keys and verified live datasets are not bundled.
 

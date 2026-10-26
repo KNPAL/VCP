@@ -1,17 +1,40 @@
-# Manual download acceptance — KAN-145 In Progress
+# Manual downloads — KAN-145 Coded
 
-The internal `acceptManualDownload` service verifies a signed owner-bound preview and re-reads current evidence inside a serializable transaction. It checks current licensing, broker readiness and unchanged universe/instrument/calendar/candle revisions before accepting work. The account identity is pinned privately in the accepted evidence and participates in request equivalence; it is omitted from the read projection.
+The workspace implements owner-scoped signed-preview submission, newest-first job history, progress details, cancellation and explicit retry. The UI is at `/data/historical/download` and `/data/historical/downloads`. Existing stored data remains readable without a broker session. The deployed image has not been refreshed with this work.
 
-Migration 56 adds durable `ManualDownloadRun`, `ManualDownloadSubmission` and immutable `ManualDownloadEvent` records. An owner-scoped transaction lock, idempotency receipt and active-request uniqueness constraint prevent duplicate acceptance. The request hash includes the broker account, requested range/mode and evidence binding. Equivalent active requests reuse the same run, even with different idempotency keys; reuse of one key for different evidence or mode fails. Serialization/deadlock conflicts have a bounded retry. A repeated valid receipt returns the original run without producing another event.
+## Configuration and rollout
 
-`readManualDownload` requires the same owner and returns pinned request evidence, UTC timestamps and durable events without exposing the private broker account identity. It explicitly reports `dispatchAvailable: false`.
+Manual download execution is off by default. Before enabling it in an isolated test environment:
 
-## Not yet available
+1. Apply migrations through **59** using the normal database deployment command described in the root README. Migrations 56–59 are currently applied to **vcp_test only**; the application database remains at 55.
+2. Build database, API, worker and web packages. Run API and worker against the same database and Redis.
+3. Generate and configure the dedicated signing key using [download authorization](download-authorization.md). Set `VCP_DOWNLOAD_PREVIEW_KEY_FILE` on the API and configure `VCP_BROKER_ACCOUNT_KEY`.
+4. Set `VCP_ENABLE_MANUAL_DOWNLOADS=true` on both API and worker. Enabling only the API accepts requests that no enabled worker will prepare. The flag does not establish source permission or broker readiness.
+5. Provide verified universe, instrument, calendar and source evidence, current broker authentication and readiness proofs. The preview still blocks unpopulated ranges without authoritative provider-final-session evidence.
 
-This is an internal acceptance service, not a public submission endpoint. No worker consumes these manual requests yet. Existing operator backfill behavior is unchanged. Do not call the internal service operationally until dispatch integration is complete. Public submission controls remain disabled.
+Keep operational execution disabled until migrations and the verified workspace build are deployed. No live broker calls have been made during development.
 
-Remaining work includes translating accepted plans into the existing sync windows and credential/source bindings, recoverable BullMQ delivery, aggregate coverage/progress, auth/quota pauses, cancellation, explicit resume/retry, API endpoints and UI. Completed windows must not be redownloaded except for an explicit reconciliation plan; failed-window retry budgets must not be reset silently. Completion must follow coverage verification.
+## Public API and screens
 
-Migration 56 has been applied to **vcp_test only**. The deployed application database remains on migration 55; no deployment has been made. Apply the migration through the normal deployment workflow when the feature is ready.
+All routes require the owner session. Writes also require CSRF. Submission, cancellation and retry require an `Idempotency-Key` header.
 
-Verification uses only synthetic fixtures in `vcp_test`: signed-preview acceptance, identical and concurrent equivalent submissions, conflicting-key rejection, immutable events, owner isolation and account-identity non-disclosure. Run `node scripts/database-command.mjs test download-preview` after building the database and API packages. No broker calls, worker jobs or real financial data are involved.
+- `POST /api/v1/history/downloads/preview`: read-only coverage preview with optional five-minute signed `previewId`, human-readable `previewFingerprint` and `submissionEnabled`.
+- `POST /api/v1/history/downloads` with `{previewId,mode}`: HTTP 202 with run ID, current status and status URL. Revalidates signed owner, expiry, pinned evidence, source permission and broker readiness transactionally.
+- `GET /api/v1/history/downloads?cursor=`: up to 25 owner requests, newest first, with next cursor.
+- `GET /api/v1/history/downloads/{runId}`: request, events, aggregate candle changes, window history and per-instrument progress. Reads use one repeatable database snapshot. Remaining stored-coverage gaps are distinct from remaining requested reconciliation sessions. Counts describe committed evidence; no estimated completion percentage is invented.
+- `POST /api/v1/history/downloads/{runId}/cancel` with `{}`: stops future claims; a live request can finish safely. Committed candles remain stored.
+- `POST /api/v1/history/downloads/{runId}/retry` with `{}`: requires valid current context and authentication, and respects an outstanding quota delay. Only incomplete requested sessions are prepared.
+
+The preview screen retains the same submission key after a failed response. Job pages poll every five seconds, show UTC evidence formatted in IST, and expose eligible cancel/retry controls. The API remains authoritative for every action. `retryEnabled` indicates the API feature flag, not guaranteed authentication or quota availability. `dispatchAvailable: false` in the legacy read projection is not a worker heartbeat and should not be used as an operational health signal.
+
+## Durability and worker behavior
+
+Owner-scoped locking, submission receipts and active-request uniqueness prevent duplicate jobs. Account identity participates in request equivalence but is excluded from public responses. Immutable events record state changes. Preparation atomically links accepted work to existing HistoricalSyncRun/Window and BackfillBinding records. The existing SQL-driven BullMQ dispatcher and shared backfill gateway handle provider delivery; there is no second downloader.
+
+Cancellation prevents new claims through a parent-row guard. Explicit retries create a new child generation without resetting historical attempts. Completed sessions from validated immutable response evidence are skipped, including accepted sessions from partial responses. Current progress excludes superseded generations where appropriate; historical attempts remain visible. Quota pauses can resume after the stored wait, while authentication pauses require explicit retry. No PIN/TOTP login is automated.
+
+Completion requires coverage validation against the pinned calendar, not merely terminal worker windows. UNKNOWN or incomplete coverage remains PARTIAL. A dedicated BullMQ queue-loss/reconnection test now verifies SQL reconstruction, exactly the missing-session fetch, and no redispatch after completion. Acceptance review passed, including expired idempotency receipts, equivalent active requests after partial progress, and authentication loss after exhausted windows. KAN-145 is Coded. KAN-144 provider-final-session planning is Coded; KAN-125's broker connection workflow remains unfinished.
+
+## Verification
+
+After building packages, run `node scripts/database-command.mjs test download-preview` and `node scripts/database-command.mjs test database`. Synthetic fixtures cover authorization, concurrent/idempotent acceptance, owner isolation, immutable events, partial response retry, quota/auth pauses, cancellation during a live lease, retained candles and coverage-derived progress. Browser tests in `tests/download-preview.browser.mjs` cover expiry, changed inputs, permission failures, stable submission keys after failed responses, cancellation, job navigation and mobile layout. Use isolated API/web ports when another application owns the defaults; the web build's `API_INTERNAL_URL` must match the test API port.

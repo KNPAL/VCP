@@ -1,7 +1,8 @@
 import 'reflect-metadata';
+import {isIP} from 'node:net';
 import { randomUUID } from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import { Catch, Controller, Get, Post, Delete, Param, Query, Req, Res, HttpException, Module, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Catch, Controller, Get, Post, Put, Delete, Param, Query, Req, Res, HttpException, Module, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { ArgumentsHost, ExceptionFilter, PipeTransform } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError, utcInstant } from '@vcp/domain';
@@ -11,8 +12,8 @@ import type { PrismaClient } from '@vcp/database';
 import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import {readInspector,inspectorListings} from '@vcp/database';
 import {compareBacktestSelection,type BacktestComparisonSelection,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '@vcp/database';
-import {readDataHealth,readBrokerHealth} from '@vcp/database';
-import {readDownloadPreview,signDownloadPreview} from '@vcp/database';
+import {readDataHealth,readBrokerConnection,saveBrokerConfiguration} from '@vcp/database';
+import {readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualDownload,listManualDownloads,cancelManualDownload,retryManualDownload} from '@vcp/database';
 import {readPositionCards} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
@@ -81,8 +82,13 @@ export const openapi = {
     '/api/v1/positions/alerts/{id}/acknowledge':{post:{operationId:'acknowledgePositionAlert',security:[{session:[]}],responses:{'201':{description:'Immutable review acknowledgement; no execution or resolution'},'404':{description:'Alert not found for owner'},'409':{description:'Acknowledgement already exists with different note'}}}},
     '/api/v1/positions/sell-alerts':{get:{operationId:'sellAlerts',security:[{session:[]}],responses:{'200':{description:'Owner prioritized pending exits, remaining actual quantity, source revision and independent monitor freshness'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
     '/api/v1/backtests/compare':{post:{operationId:'compareBacktestWindows',security:[{session:[]}],responses:{'201':{description:'Owner-scoped training, validation and out-of-sample comparison from stored runs; 10bps slippage and equal configuration/costs required'},'403':{description:'CSRF required'},'404':{description:'Own run not found'},'422':{description:'Invalid, overlapping or incomplete comparison evidence'}}}},
-    '/api/v1/history/downloads/preview':{post:{operationId:'previewHistoricalDownload',security:[{session:[]}],responses:{'201':{description:'Read-only local coverage preview; five-minute fingerprint, execution remains disabled'},'401':{description:'Authentication required'},'403':{description:'CSRF or source permission denied'},'404':{description:'Universe not found'},'422':{description:'Invalid preview request'}}}},
+    '/api/v1/history/downloads':{get:{operationId:'listHistoricalDownloads',security:[{session:[]}],responses:{'200':{description:'Owner-scoped newest-first requests with cursor pagination'}}},post:{operationId:'submitHistoricalDownload',security:[{session:[]}],responses:{'202':{description:'Durable request accepted or equivalent request reused; requires signed previewId, mode, CSRF and Idempotency-Key'},'409':{description:'Changed preview or conflicting idempotency key'},'422':{description:'Invalid or expired authorization'},'503':{description:'Submission disabled or configuration unavailable'}}}},
+    '/api/v1/history/downloads/{runId}':{get:{operationId:'readHistoricalDownload',security:[{session:[]}],responses:{'200':{description:'Owner request, aggregate attempt counts and immutable status events'},'404':{description:'Own request not found'}}}},
+    '/api/v1/history/downloads/{runId}/cancel':{post:{operationId:'cancelHistoricalDownload',security:[{session:[]}],responses:{'201':{description:'Idempotent cancellation; active lease may finish safely'},'403':{description:'CSRF required'}}}},
+    '/api/v1/history/downloads/{runId}/retry':{post:{operationId:'retryHistoricalDownload',security:[{session:[]}],responses:{'201':{description:'Idempotent explicit retry of incomplete sessions'},'422':{description:'Current authentication, quota or source readiness prevents retry'},'503':{description:'Manual downloads disabled'}}}},
+    '/api/v1/history/downloads/preview':{post:{operationId:'previewHistoricalDownload',security:[{session:[]}],responses:{'201':{description:'Read-only local coverage preview with optional five-minute signed submission authorization'},'401':{description:'Authentication required'},'403':{description:'CSRF or source permission denied'},'404':{description:'Universe not found'},'422':{description:'Invalid preview request'}}}},
     '/api/v1/data/health':{get:{operationId:'universeDataHealth',security:[{session:[]}],responses:{'200':{description:'Stored universe and supported listings, separate scan/job progress, G01-G10 gates and sync checkpoints'}}}},
+    '/api/v1/broker/angel-one/config':{put:{operationId:'saveBrokerConfiguration',security:[{session:[]}],responses:{'200':{description:'Idempotent encrypted configuration revision; HTTPS, CSRF and Idempotency-Key required'},'403':{description:'HTTPS or CSRF required'},'409':{description:'Conflicting idempotency receipt'},'422':{description:'Invalid configuration'},'503':{description:'Protected encryption key unavailable'}}}},
     '/api/v1/broker/angel-one/status':{get:{operationId:'brokerHealth',security:[{session:[]}],responses:{'200':{description:'Configured account circuit/expiry/credential presence and readiness gates; no credentials returned or broker request made'}}}},
     '/api/v1/backtests':{get:{operationId:'backtestRuns',security:[{session:[]}],responses:{'200':{description:'Owner-scoped stored runs with pinned strategy, data, universe, calendar, dates and costs'}}}},
     '/api/v1/backtests/{id}':{get:{operationId:'backtestResult',security:[{session:[]}],responses:{'200':{description:'Historical paper performance and blocked entry evidence at explicit asOf; missing ledger UNKNOWN'},'400':{description:'Invalid or out-of-snapshot reference'},'404':{description:'Own run not found'}}}},
@@ -136,6 +142,7 @@ class SystemController {
 }
 export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink} = {}) {
   const db = options.db ?? await databaseFromEnvironment();
+  const trustedProxies=(process.env['VCP_TRUSTED_PROXY_IPS']??'').split(',').map(s=>s.trim()).filter(Boolean);if(trustedProxies.some(ip=>!isIP(ip)))throw new Error('INVALID_TRUSTED_PROXY_IP');
   const auth = new AuthService(db, options.origin ?? process.env['APP_ORIGIN'] ?? 'http://localhost:3000', options.secure ?? process.env['COOKIE_SECURE'] !== 'false');
   let closeStream=async()=>{};
   @Controller('stream')
@@ -294,14 +301,29 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('history/downloads')
   class DownloadPreviewController {
+    async mapped<T>(work:()=>Promise<T>){try{return await work()}catch(error){if(error instanceof HttpException)throw error;if(error instanceof Error){if(error.message==='DOWNLOAD_RUN_NOT_FOUND')throw new NotFoundException('Own download not found');if(error.message==='DOWNLOAD_IDEMPOTENCY_CONFLICT'||error.message==='DOWNLOAD_PREVIEW_CHANGED')throw new HttpException(error.message,409);if(error.message.startsWith('DOWNLOAD_')||error.message.startsWith('INVALID_DOWNLOAD_'))throw new HttpException(error.message,422)}throw error}}
+    @Get() list(@Req() request:AuthRequest,@Query('cursor') cursor?:string){return this.mapped(()=>listManualDownloads(db,request.ownerId!,cursor))}
+    @Get(':id') detail(@Req() request:AuthRequest,@Param('id') id:string){return this.mapped(async()=>({...await readManualDownload(db,request.ownerId!,id),retryEnabled:process.env['VCP_ENABLE_MANUAL_DOWNLOADS']==='true'}))}
+    @Post() async submit(@Req() request:AuthRequest,@Res({passthrough:true}) response:AuthResponse){
+      if(process.env['VCP_ENABLE_MANUAL_DOWNLOADS']!=='true')throw new HttpException('MANUAL_DOWNLOADS_DISABLED',503);
+      const body=strictBody(request,['previewId','mode']),idempotencyKey=request.headers['idempotency-key'];
+      if(typeof body['previewId']!=='string'||!['MISSING_ONLY','RECONCILE'].includes(String(body['mode']))||typeof idempotencyKey!=='string')throw new BadRequestException('Signed preview, mode and Idempotency-Key required');
+      const keyFile=process.env['VCP_DOWNLOAD_PREVIEW_KEY_FILE'],accountKey=process.env['VCP_BROKER_ACCOUNT_KEY'];if(!keyFile||!accountKey)throw new HttpException('DOWNLOAD_CONFIGURATION_UNAVAILABLE',503);
+      let key:Buffer;try{key=await readFile(keyFile);if(key.length!==32){key.fill(0);throw new Error()}}catch{throw new HttpException('DOWNLOAD_CONFIGURATION_UNAVAILABLE',503)}
+      try{return await this.mapped(async()=>{const result=await acceptManualDownload(db,request.ownerId!,{previewToken:body['previewId'] as string,mode:body['mode'] as 'MISSING_ONLY'|'RECONCILE',idempotencyKey},key,accountKey),run=await readManualDownload(db,request.ownerId!,result.runId);response.status(202);return {runId:result.runId,status:run.status,statusUrl:'/api/v1/history/downloads/'+result.runId}})}finally{key.fill(0)}
+    }
+    @Post(':id/cancel') cancel(@Req() request:AuthRequest,@Param('id') id:string){strictBody(request,[]);const key=request.headers['idempotency-key'];if(typeof key!=='string')throw new BadRequestException('Idempotency-Key required');return this.mapped(()=>cancelManualDownload(db,request.ownerId!,id,key))}
+    @Post(':id/retry') retry(@Req() request:AuthRequest,@Param('id') id:string){
+      if(process.env['VCP_ENABLE_MANUAL_DOWNLOADS']!=='true')throw new HttpException('MANUAL_DOWNLOADS_DISABLED',503);strictBody(request,[]);const key=request.headers['idempotency-key'];if(typeof key!=='string')throw new BadRequestException('Idempotency-Key required');return this.mapped(()=>retryManualDownload(db,request.ownerId!,id,key))
+    }
     @Post('preview') async preview(@Req() request:AuthRequest){
       try{const preview=await readDownloadPreview(db,request.ownerId!,request.body,process.env['VCP_BROKER_ACCOUNT_KEY']);
         const keyFile=process.env['VCP_DOWNLOAD_PREVIEW_KEY_FILE'];
-        if(!keyFile)return {...preview,previewToken:null,authorization:'NOT_CONFIGURED'};
+        if(!keyFile)return {...preview,previewToken:null,authorization:'NOT_CONFIGURED',submissionEnabled:false};
         let key:Buffer|undefined;
-        try{key=await readFile(keyFile);return {...preview,previewToken:signDownloadPreview(preview,request.ownerId!,key),authorization:'SIGNED'}}catch{throw new HttpException('DOWNLOAD_PREVIEW_AUTHORIZATION_UNAVAILABLE',503)}finally{key?.fill(0)}
+        try{key=await readFile(keyFile);const token=signDownloadPreview(preview,request.ownerId!,key);return {...preview,previewFingerprint:preview.previewId,previewId:token,previewToken:token,authorization:'SIGNED',submissionEnabled:process.env['VCP_ENABLE_MANUAL_DOWNLOADS']==='true'&&preview.items.length>0&&!preview.blockedInstruments.length&&preview.items.every(i=>i.state==='KNOWN')&&Object.values(preview.sourcePermissions).every(p=>p.status==='PASS')&&!preview.warnings.includes('BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY')}}catch{throw new HttpException('DOWNLOAD_PREVIEW_AUTHORIZATION_UNAVAILABLE',503)}finally{key?.fill(0)}
       }catch(error){
-        if(error instanceof Error&&error.message==='INVALID_DOWNLOAD_PREVIEW')throw new HttpException(error.message,422);
+        if(error instanceof Error&&['INVALID_DOWNLOAD_PREVIEW','SESSION_NOT_PROVIDER_FINALIZED'].includes(error.message))throw new HttpException(error.message,422);
         if(error instanceof Error&&error.message==='DOWNLOAD_UNIVERSE_NOT_FOUND')throw new NotFoundException('Universe snapshot not found');
         if(error instanceof Error&&error.message==='DOWNLOAD_PREVIEW_PERMISSION_DENIED')throw new HttpException(error.message,403);
         throw error;
@@ -310,7 +332,14 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('broker/angel-one')
   class BrokerHealthController {
-    @Get('status') status(){return readBrokerHealth(db,process.env['VCP_BROKER_ACCOUNT_KEY'])}
+    @Get('status') status(@Req() request:AuthRequest){return readBrokerConnection(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'])}
+    @Put('config') async configure(@Req() request:AuthRequest&{secure?:boolean}){
+      if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);
+      const body=strictBody(request,['apiKey','clientCode']),receipt=request.headers['idempotency-key'];if(typeof receipt!=='string')throw new BadRequestException('Idempotency-Key required');
+      const file=process.env['VCP_BROKER_CONFIGURATION_KEY_FILE'];if(!file)throw new HttpException('BROKER_CONFIGURATION_UNAVAILABLE',503);
+      let key:Buffer;try{key=await readFile(file);if(key.length!==32){key.fill(0);throw new Error()}}catch{throw new HttpException('BROKER_CONFIGURATION_UNAVAILABLE',503)}
+      try{return await saveBrokerConfiguration(db,request.ownerId!,body,receipt,key)}catch(error){if(error instanceof Error&&error.message==='BROKER_CONFIGURATION_CONFLICT')throw new HttpException(error.message,409);if(error instanceof Error&&error.message.startsWith('INVALID_BROKER_'))throw new HttpException(error.message,422);throw new HttpException('BROKER_CONFIGURATION_UNAVAILABLE',503)}finally{key.fill(0);request.body=undefined}
+    }
   }
   @Controller('backtests')
   class BacktestController {
@@ -378,6 +407,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   @Module({controllers:[DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
+  if(trustedProxies.length)app.getHttpAdapter().getInstance().set('trust proxy',trustedProxies);
   app.setGlobalPrefix('api/v1');
   app.use((request: Request, response: Response & {statusCode:number;on:(name:string,callback:()=>void)=>void}, next: () => void) => {
     request.requestId = randomUUID();

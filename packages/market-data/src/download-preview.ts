@@ -16,7 +16,7 @@ export function previewDownloadRange(input:DownloadRangeInput){
  if(fromDate>toDate||fromDate<backfillHorizon(toDate).from)throw new Error('INVALID_DOWNLOAD_RANGE');
  if(input.providerFinalSession){sessionDate(input.providerFinalSession);if(toDate>input.providerFinalSession)throw new Error('SESSION_NOT_PROVIDER_FINALIZED')}
  const from=input.listingDate>fromDate?input.listingDate:fromDate;
- const empty={checkedAt:asOf,fromDate,toDate,interval:input.interval,mode:input.mode,alreadyStoredCount:0,missingCount:null as number|null,invalidCount:0,missingSessions:[] as string[],reconcileSessions:[] as string[],rangesToFetch:[] as ReturnType<typeof missingWindows>,planWindowCount:0,estimatedRequestCount:0};
+ const empty={checkedAt:asOf,fromDate,toDate,interval:input.interval,mode:input.mode,targetSessions:450,availableSessions:null as number|null,historyState:'UNKNOWN' as string,alreadyStoredCount:0,missingCount:null as number|null,invalidCount:0,missingSessions:[] as string[],reconcileSessions:[] as string[],rangesToFetch:[] as ReturnType<typeof missingWindows>,planWindowCount:0,estimatedRequestCount:0};
  if(from>toDate)return {...empty,state:'BLOCKED' as const,reasons:['BEFORE_LISTING'],excludedDates:[{from:fromDate,to:toDate,reason:'BEFORE_LISTING'}]};
  const excludedDates:{from:string;to:string;reason:string}[]=from>fromDate?[{from:fromDate,to:dateAfter(from,-1),reason:'BEFORE_LISTING'}]:[];
  const calendar=verifiedCalendar(input.calendar,from,toDate,asOf);
@@ -30,5 +30,5 @@ export function previewDownloadRange(input:DownloadRangeInput){
  const reconcileSessions=input.mode==='RECONCILE'?sessions.slice(-3):[];
  const refreshing=new Set(reconcileSessions),rangesToFetch=missingWindows(sessions,stored.filter(day=>!refreshing.has(day)));
  const reasons=input.providerFinalSession?[]:['PROVIDER_FINAL_SESSION_UNKNOWN'];
- return {...empty,state:reasons.length?'BLOCKED' as const:'KNOWN' as const,reasons,excludedDates,alreadyStoredCount:stored.length,missingCount:missingSessions.length,invalidCount:inspected.quarantined.length,missingSessions,reconcileSessions,rangesToFetch,planWindowCount:rangesToFetch.length,estimatedRequestCount:rangesToFetch.length};
+ return {...empty,targetSessions:450,availableSessions:sessions.length,historyState:sessions.length>=450?'SUFFICIENT':'INSUFFICIENT_AVAILABLE_HISTORY',state:reasons.length?'BLOCKED' as const:'KNOWN' as const,reasons,excludedDates,alreadyStoredCount:stored.length,missingCount:missingSessions.length,invalidCount:inspected.quarantined.length,missingSessions,reconcileSessions,rangesToFetch,planWindowCount:rangesToFetch.length,estimatedRequestCount:rangesToFetch.length};
 }

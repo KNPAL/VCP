@@ -16,7 +16,8 @@ export function signDownloadPreview(preview:Preview,ownerId:string,key:Uint8Arra
  const payload=Buffer.from(canonical({version:1,ownerId,request:validateDownloadPreviewRequest(preview.request),issuedAt:preview.checkedAt,expiresAt:preview.expiresAt,binding:binding(preview)})).toString('base64url');
  return payload+'.'+createHmac('sha256',signingKey(key)).update(payload).digest('base64url');
 }
-export function verifyDownloadPreview(token:string,ownerId:string,key:Uint8Array,now=new Date().toISOString()){
+/** Signature and owner validation only; callers must enforce expiry before accepting new work. */
+export function readDownloadPreviewProof(token:string,ownerId:string,key:Uint8Array,now=new Date().toISOString()){
  signingKey(key);if(typeof token!=='string'||token.length>65536)throw new Error('DOWNLOAD_PREVIEW_INVALID');
  const parts=token.split('.');if(parts.length!==2||parts.some(p=>!p||!/^[A-Za-z0-9_-]+$/.test(p)))throw new Error('DOWNLOAD_PREVIEW_INVALID');
  const expected=createHmac('sha256',key).update(parts[0]!).digest(),actual=Buffer.from(parts[1]!,'base64url');
@@ -26,8 +27,10 @@ export function verifyDownloadPreview(token:string,ownerId:string,key:Uint8Array
  if(proof.ownerId!==ownerId)throw new Error('DOWNLOAD_PREVIEW_INVALID');
  const at=utcInstant(now).valueOf(),issued=Date.parse(proof.issuedAt),expires=Date.parse(proof.expiresAt);
  if(issued>at||expires-issued!==300000)throw new Error('DOWNLOAD_PREVIEW_INVALID');
- if(expires<=at)throw new Error('DOWNLOAD_PREVIEW_EXPIRED');
  return {...proof,request:validateDownloadPreviewRequest(proof.request)};
+}
+export function verifyDownloadPreview(token:string,ownerId:string,key:Uint8Array,now=new Date().toISOString()){
+ const proof=readDownloadPreviewProof(token,ownerId,key,now);if(Date.parse(proof.expiresAt)<=Date.parse(now))throw new Error('DOWNLOAD_PREVIEW_EXPIRED');return proof;
 }
 /** Re-read evidence and current readiness before enqueueing; a valid signature alone is insufficient. */
 export function authorizeDownloadPreview(token:string,ownerId:string,key:Uint8Array,current:Preview,now=new Date().toISOString()){

@@ -438,7 +438,16 @@ model ManualDownloadChild {
  manualRunId String @db.Uuid
  listingId String @db.Uuid
  syncRunId String @unique @db.Uuid
- @@id([manualRunId,listingId])
+ generation Int @default(0)
+ @@id([manualRunId,listingId,generation])
+}
+model ManualDownloadAction {
+ ownerId String @db.Uuid
+ key String
+ runId String @db.Uuid
+ action String
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ @@id([ownerId,key])
 }
 model HistoricalSyncRun {
   id String @id @db.Uuid
@@ -884,4 +893,30 @@ model SmeResearchSnapshot {
  recordedAt DateTime @default(now()) @db.Timestamptz(6)
  evidence Json
  @@index([listingId,knownAt(sort: Desc),recordedAt(sort: Desc)],map: "sme_research_known")
+}
+model BrokerConfiguration {
+ ownerId String @id @db.Uuid
+ revision String @unique @db.Uuid
+ accountKey String @db.VarChar(64)
+ fingerprint String @db.VarChar(64)
+ apiKeyMasked String
+ clientCodeMasked String
+ envelope Json
+ updatedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model BrokerConfigurationReceipt {
+ ownerId String @db.Uuid
+ key String
+ fingerprint String @db.VarChar(64)
+ revision String @db.Uuid
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ @@id([ownerId,key])
+}
+model BrokerConfigurationEvent {
+ id String @id @db.Uuid
+ ownerId String @db.Uuid
+ revision String @db.Uuid
+ previousRevision String? @db.Uuid
+ kind String
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
 }

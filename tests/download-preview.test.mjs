@@ -24,3 +24,8 @@ test('unknown calendars fail closed, bounded requests and strict range validatio
  assert.equal(previewDownloadRange({...input,calendar:null}).state,'UNKNOWN');assert.equal(previewDownloadRange({...input,calendar:input.calendar.slice(1)}).state,'UNKNOWN');
  for(const change of [{listingId:'bad'},{provider:''},{interval:'1h'},{mode:'ALL'},{fromDate:'2025-02-30'},{fromDate:'2010-01-01'},{providerFinalSession:'2025-01-01'}])assert.throws(()=>previewDownloadRange({...input,...change}));
 });
+
+test('IST midnight does not finalize the upcoming session or inflate the initial history target',()=>{
+ const input=fixture(),before=previewDownloadRange({...input,asOf:'2025-01-07T18:29:59.999Z',providerFinalSession:null}),after=previewDownloadRange({...input,asOf:'2025-01-07T18:30:00.000Z',providerFinalSession:null});
+ assert.equal(before.availableSessions,6);assert.equal(after.availableSessions,6);assert.equal(after.targetSessions,450);assert.equal(after.historyState,'INSUFFICIENT_AVAILABLE_HISTORY');assert.ok(after.excludedDates.some(d=>d.from==='2025-01-08'&&d.reason==='SESSION_NOT_FINALIZED'));assert.equal(after.state,'BLOCKED');
+});

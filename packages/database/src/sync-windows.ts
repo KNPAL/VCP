@@ -25,6 +25,8 @@ export async function claimSyncWindow(db:PrismaClient,runId:string,leaseMs=30000
  if(!Number.isSafeInteger(leaseMs)||leaseMs<1||leaseMs>600000)throw new Error('INVALID_SYNC_LEASE');
  return db.$transaction(async tx=>{
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${runId},1))`;
+  const parents=await tx.$queryRaw<{state:string;current:boolean}[]>`SELECT m."state",c."generation"=(SELECT max(other."generation") FROM "ManualDownloadChild" other WHERE other."manualRunId"=m."id") AS current FROM "ManualDownloadRun" m JOIN "ManualDownloadChild" c ON c."manualRunId"=m."id" WHERE c."syncRunId"=${runId}::uuid FOR UPDATE OF m`;
+  if(parents[0]&&(parents[0].state!=='RUNNING'||!parents[0].current))return null;
   const active=await tx.$queryRaw<{id:string}[]>`SELECT "id" FROM "HistoricalSyncWindow" WHERE "runId"=${runId}::uuid AND "state"='RUNNING' AND "leaseUntil">CURRENT_TIMESTAMP LIMIT 1`;
   if(active.length)return null;
   const rows=await tx.$queryRaw<SyncWindowRow[]>`SELECT * FROM "HistoricalSyncWindow" WHERE "runId"=${runId}::uuid AND (("state" IN ('PENDING','PARTIAL') AND "nextAttemptAt"<=CURRENT_TIMESTAMP) OR ("state"='RUNNING' AND "leaseUntil"<=CURRENT_TIMESTAMP)) ORDER BY "fromSession","id" LIMIT 1 FOR UPDATE SKIP LOCKED`;
