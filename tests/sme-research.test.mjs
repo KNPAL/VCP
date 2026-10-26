@@ -14,3 +14,7 @@ test('restricted, expired and unpermitted sources never become a clear SME obser
  const staleRestriction=smeResearch({...source,restrictions:{...source.restrictions,asm:true,validUntil:input.asOf}},input);assert.equal(staleRestriction.state,'UNKNOWN');assert.equal(staleRestriction.restrictions,null);assert.equal(smeResearch(source,{...input,asOf:source.source.validUntil}).lot,null);assert.equal(smeResearch({...source,segmentVerified:false},input).state,'UNKNOWN');assert.equal(smeResearch(null,input).state,'UNKNOWN');
  assert.throws(()=>validateSmeResearch({...source,lot:0}),/INVALID_SME_RESEARCH/);assert.throws(()=>validateSmeResearch({...source,restrictions:{...source.restrictions,asm:undefined}}),/INVALID_SME_RESEARCH/);
 });
+
+test('future or invalid liquidity is unknown rather than an observed restriction',()=>{
+ for(const change of [{liquidity:'0',liquiditySourceAt:source.source.validUntil},{liquidity:'-1'},{liquidity:'0',liquiditySourceAt:null}]){const result=smeResearch(source,{...input,...change});assert.equal(result.state,'UNKNOWN');assert.equal(result.liquidity,null);assert.equal(result.liquiditySourceAt,null);assert.equal(result.buyEligible,false)}
+});

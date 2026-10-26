@@ -3,12 +3,14 @@ import { randomUUID } from 'node:crypto';
 import { Catch, Controller, Get, Post, Delete, Param, Query, Req, Res, HttpException, Module, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { ArgumentsHost, ExceptionFilter, PipeTransform } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError } from '@vcp/domain';
+import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError, utcInstant } from '@vcp/domain';
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
 import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import {readInspector,inspectorListings} from '@vcp/database';
+import {compareBacktestSelection,type BacktestComparisonSelection,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '@vcp/database';
+import {readDataHealth,readBrokerHealth} from '@vcp/database';
 import {readPositionCards} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
@@ -76,6 +78,14 @@ export const openapi = {
     '/api/v1/positions/{isin}/timeline':{get:{operationId:'positionTimeline',security:[{session:[]}],responses:{'200':{description:'Owner immutable timeline, fifty records per cursor page'},'400':{description:'Invalid cursor'}}}},
     '/api/v1/positions/alerts/{id}/acknowledge':{post:{operationId:'acknowledgePositionAlert',security:[{session:[]}],responses:{'201':{description:'Immutable review acknowledgement; no execution or resolution'},'404':{description:'Alert not found for owner'},'409':{description:'Acknowledgement already exists with different note'}}}},
     '/api/v1/positions/sell-alerts':{get:{operationId:'sellAlerts',security:[{session:[]}],responses:{'200':{description:'Owner prioritized pending exits, remaining actual quantity, source revision and independent monitor freshness'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
+    '/api/v1/backtests/compare':{post:{operationId:'compareBacktestWindows',security:[{session:[]}],responses:{'201':{description:'Owner-scoped training, validation and out-of-sample comparison from stored runs; 10bps slippage and equal configuration/costs required'},'403':{description:'CSRF required'},'404':{description:'Own run not found'},'422':{description:'Invalid, overlapping or incomplete comparison evidence'}}}},
+    '/api/v1/data/health':{get:{operationId:'universeDataHealth',security:[{session:[]}],responses:{'200':{description:'Stored universe and supported listings, separate scan/job progress, G01-G10 gates and sync checkpoints'}}}},
+    '/api/v1/broker/angel-one/status':{get:{operationId:'brokerHealth',security:[{session:[]}],responses:{'200':{description:'Configured account circuit/expiry/credential presence and readiness gates; no credentials returned or broker request made'}}}},
+    '/api/v1/backtests':{get:{operationId:'backtestRuns',security:[{session:[]}],responses:{'200':{description:'Owner-scoped stored runs with pinned strategy, data, universe, calendar, dates and costs'}}}},
+    '/api/v1/backtests/{id}':{get:{operationId:'backtestResult',security:[{session:[]}],responses:{'200':{description:'Historical paper performance and blocked entry evidence at explicit asOf; missing ledger UNKNOWN'},'400':{description:'Invalid or out-of-snapshot reference'},'404':{description:'Own run not found'}}}},
+    '/api/v1/backtests/{id}/instruments/{isin}':{get:{operationId:'backtestInstrument',security:[{session:[]}],responses:{'200':{description:'Pinned adjusted historical candles and separate raw-price paper fills'},'404':{description:'Own run not found'}}}},
+    '/api/v1/research/sme':{get:{operationId:'smeResearchListings',security:[{session:[]}],responses:{'200':{description:'Stored SME metadata revisions; no BUY eligibility'}}}},
+    '/api/v1/research/sme/{id}':{get:{operationId:'smeResearch',security:[{session:[]}],responses:{'200':{description:'Permission-gated SME lot, liquidity and restriction evidence; BUY blocked and no guaranteed fills'},'400':{description:'Invalid listing UUID'}}}},
     '/api/v1/research/ipo':{get:{operationId:'ipoResearchListings',security:[{session:[]}],responses:{'200':{description:'Stored IPO research metadata revisions; no BUY eligibility'}}}},
     '/api/v1/research/ipo/{id}':{get:{operationId:'ipoResearch',security:[{session:[]}],responses:{'200':{description:'Revision-pinned short-history observations with permanently blocked live BUY'},'400':{description:'Invalid listing UUID'}}}},
     '/api/v1/positions/cards':{get:{operationId:'positionCards',security:[{session:[]}],responses:{'200':{description:'Owner actual holdings, FIFO costs, verified mark/P&L, initial R, current stop, EMA and source evidence'},'401':{description:'Authentication required'},'503':{description:'Evidence unavailable'}}}},
@@ -275,6 +285,33 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       return writeJournal(request,body as unknown as JournalCommand);
     }
   }
+  @Controller('data')
+  class DataHealthController {
+    @Get('health') health(){return readDataHealth(db)}
+  }
+  @Controller('broker/angel-one')
+  class BrokerHealthController {
+    @Get('status') status(){return readBrokerHealth(db,process.env['VCP_BROKER_ACCOUNT_KEY'])}
+  }
+  @Controller('backtests')
+  class BacktestController {
+    @Get() list(@Req() request:AuthRequest){return listBacktestRuns(db,request.ownerId!)}
+    @Post('compare') async compare(@Req() request:AuthRequest){
+      try{return await compareBacktestSelection(db,request.ownerId!,request.body as BacktestComparisonSelection)}catch(error){
+        if(error instanceof Error&&error.message==='REPLAY_RUN_NOT_FOUND')throw new NotFoundException('Own run not found');
+        if(error instanceof Error&&['INVALID_BACKTEST_SELECTION','BACKTEST_STANDARD_COSTS_REQUIRED','BACKTEST_CONFIGURATION_MISMATCH','WALK_FORWARD_WINDOW_OVERLAP','PAPER_LEDGER_NOT_FOUND','INVALID_WALK_FORWARD_WINDOW','WALK_FORWARD_TRADE_OUTSIDE_WINDOW','PERFORMANCE_OUTSIDE_SNAPSHOT','REPLAY_OUTSIDE_SNAPSHOT'].includes(error.message))throw new HttpException(error.message,422);
+        throw error;
+      }
+    }
+
+    async result(request:AuthRequest,id:string,asOf:string,isin?:string){
+      if(!/^[a-f0-9]{64}$/.test(id)||typeof asOf!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(asOf)||!Number.isFinite(Date.parse(asOf))||isin!==undefined&&!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin))throw new BadRequestException('Invalid historical reference');
+      try{utcInstant(asOf)}catch{throw new BadRequestException('UTC ISO cutoff required')}
+      try{return isin?await readBacktestInstrument(db,request.ownerId!,id,isin,asOf):await readBacktestResult(db,request.ownerId!,id,asOf)}catch(error){if(error instanceof Error&&error.message==='REPLAY_RUN_NOT_FOUND')throw new NotFoundException('Run not found');if(error instanceof Error&&['REPLAY_OUTSIDE_SNAPSHOT','PERFORMANCE_OUTSIDE_SNAPSHOT'].includes(error.message))throw new BadRequestException('Date outside pinned snapshot');throw error}
+    }
+    @Get(':id') read(@Req() request:AuthRequest,@Param('id') id:string,@Query('asOf') asOf:string){return this.result(request,id,asOf)}
+    @Get(':id/instruments/:isin') instrument(@Req() request:AuthRequest,@Param('id') id:string,@Param('isin') isin:string,@Query('asOf') asOf:string){return this.result(request,id,asOf,isin)}
+  }
   @Controller('research/sme')
   class SmeResearchController {
     @Get() list(){return listSmeResearch(db)}
@@ -319,7 +356,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await db.$disconnect()}}}]})
+  @Module({controllers:[DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   app.setGlobalPrefix('api/v1');

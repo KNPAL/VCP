@@ -66,3 +66,7 @@ export * from './sell-alerts.js';
 export * from './ipo-research.js';
 
 export * from './sme-research.js';
+export * from './backtest-results.js';
+export * from './backtest-comparison.js';
+export * from './data-health.js';
+export * from './download-preview.js';

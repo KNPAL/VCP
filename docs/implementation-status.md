@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-98 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–120, KAN-122–124, KAN-126, KAN-128, KAN-136, KAN-139.
+101 tickets are Coded: KAN-18–40, KAN-42–43, KAN-46, KAN-49–81, KAN-83, KAN-85, KAN-87–92, KAN-95, KAN-97–109, KAN-111–120, KAN-122–124, KAN-126–128, KAN-136–139.
 
-38 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-137. Working status never implies verified completion.
+35 tickets remain, including epics. In Progress: KAN-4–12, KAN-41, KAN-44–45, KAN-47, KAN-82, KAN-84, KAN-93–94, KAN-96, KAN-125. Working status never implies verified completion.
 
 ## Implemented areas
 
@@ -19,6 +19,22 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 - Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Other feature screens remain incomplete.
 
 ## Current pipeline work
+
+2026-10-26: KAN-144 moved to In Progress as a KAN-125 download-workflow dependency outside the original 136-ticket scope. A local missing-range/reconciliation planner now uses production calendar/candle validation and the existing 400-day window planner. Focused tests cover complete/gapped histories, holidays, pre-listing dates, conflicting and cross-listing bars, unfinished sessions, unknown calendars and strict input bounds. Persisted source permissions/revisions, universe canonicalization, preview identity/expiry and API integration remain outstanding. Original-scope totals remain 101 Coded / 35 remaining.
+
+2026-10-26: KAN-125 remains In Progress. Universe/data health, provider coverage, G01–G10 expiry, independent broker status and backfill checkpoint/retry reasons are implemented. Database/API/web builds, two isolated database tests and two browser/API suites passed, including mobile/keyboard review, anonymous rejection and broker-failure isolation. Future finalized/received candles cannot become the latest finalized EOD session. Manual download submission, aggregate run progress, broker login UI and manual retry remain outstanding; the UI explains this and disables submission. README links the operator setup and current limitations. This workspace change has not been deployed.
+
+2026-10-26: KAN-127 local deployment completed. Retrying Docker after its missing-parent-snapshot export failure produced the image successfully. API, web, worker, proxy, PostgreSQL and Redis are healthy; migration service reports all 55 migrations applied with none pending. The HTTPS OpenAPI document at localhost:8443 exposes the new backtest comparison endpoint. The final workspace lint/boundary check passes. KAN-138 local CLI additionally rejects a source proof older than the supplied series; all three focused tests passed after this check.
+
+2026-10-26: KAN-17 closeout review: child research implementations are Coded, but the epic explicitly requires evidence attached in Jira as well as demonstrated upstream integration. Local test and documentation evidence exists; attachment acceptance has not been fulfilled, so KAN-17 remains open. No Jira comment or external message was sent.
+
+2026-10-26: KAN-138 is Coded for the user-approved scope: an optional local research comparator implements final close strictly above the prior 100-session high and volume strictly above the prior 20-session mean, labels matches MOMENTUM_PROXY_BREAKOUT, and always blocks live BUY. The broader proxy remains UNKNOWN/PROXY_THRESHOLDS_UNCONFIGURED as authorized; no missing thresholds are invented. The documented CLI enforces source registry DISPLAY/DERIVE, freshness and coverage before computing; production adjusted-series validation rejects invalid histories. Strategy build, three boundary/source/CLI tests and lint passed. No data is downloaded or stored and no broker is contacted. KAN-127 image compilation passed but Docker failed during export with a missing parent snapshot; a build retry is underway. 101 Coded; 35 remain.
+
+2026-10-25: KAN-127 is Coded. Owner-scoped archived-run results and historical price/fill drilldowns now include explicit strategy/data/universe/calendar selection and training/validation/test windows. The backend enforces distinct ordered windows, identical strategy/code/cost assumptions and 10bps slippage per side; only training evidence determines eligibility. Missing ledgers reject comparisons and missing metrics remain UNKNOWN. Database/API/web builds, lint, two isolated PostgreSQL tests, two browser/API suites (17 routes), CSRF, repeat-request, revision, error-recovery, keyboard and mobile visual checks passed. The Jira results-screen scope uses the existing documented snapshot/replay/paper operator workflows for creating simulations. Local image deployment is underway; no new migration is needed. 100 Coded; 36 remain.
+
+2026-10-25: KAN-127 is In Progress. Owner-scoped stored-run results, pinned historical instrument drilldowns and a responsive read-only results screen are implemented. Missing ledgers/metrics remain UNKNOWN; nonstandard archived slippage is explicit. Database/API/web builds, lint, isolated PostgreSQL owner/revision/cutoff checks and two browser/API suites covering 17 routes passed. Mobile and keyboard review passed. Single-point chart visibility and archived evaluation cutoff selection were corrected and reverified. Interactive training/testing/run configuration remains outstanding. KAN-127 is not Coded and this partial results screen is not included in the deployed IPO/SME image.
+
+2026-10-25: KAN-137 is Coded. Verified segment/lot matching, append-only SME source revisions, STORE/DISPLAY/DERIVE permission gates, source expiry, raw liquidity and surveillance evidence are implemented. BUY eligibility and guaranteed fills remain disabled. Three boundary tests, isolated PostgreSQL checks, three browser/API suites covering 17 routes, mobile/keyboard review, builds and lint passed. Initial login failures were traced to stopped local containers; restarting the existing stack restored successful authentication. Migrations 54–55 are applied to both databases; the verified IPO/SME image is deployed at https://localhost:8443 with all services healthy. 99 Coded; 37 remain.
 
 2026-10-25: KAN-137 is In Progress. SME source metadata, effective instrument/lot matching, storage/display/derivation permission gates and always-blocked research projection are implemented. A read-only SME screen is connected; boundary/source tests and persistence/browser verification are underway. Migration 55 is not yet applied to either database.
 

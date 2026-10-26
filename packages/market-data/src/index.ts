@@ -6,6 +6,7 @@ export * from './adjustments.js';
 export * from './broker-retry.js';
 export * from './historical-transport.js';
 export * from './backfill.js';
+export * from './download-preview.js';
 export * from './historical-response.js';
 export * from './historical-probe.js';
 export * from './broker-credentials.js';

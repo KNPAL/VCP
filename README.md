@@ -131,6 +131,7 @@ Live access requires account/API entitlement, independently verified registered/
 - [Credential provisioning](docs/broker-credentials.md): protected PIN/TOTP input, `BROKER_KEY_DIRECTORY`, encrypted references and session renewal.
 - [Backfill setup](docs/backfill.md): submission input, pinned sources/mappings, bounded downloads and recovery.
 - [Historical probes](docs/historical-probes.md): observed coverage, account limits and truncation detection.
+- [Universe and data health](docs/data-health.md): stored coverage, scan progress, source gates and broker status; manual browser downloads and retry controls remain in progress.
 
 The operator provisioning/submission entry points require `DATABASE_URL` and `REDIS_HOST`/`REDIS_PORT` in their environment; they do not automatically use the local-server wrapper's settings. Pass protected input-file **paths**, never credentials as command-line values. Set `BROKER_KEY_DIRECTORY` in the worker environment before startup. Real credentials, encryption keys and verified live datasets are not bundled.
 
@@ -259,3 +260,7 @@ The [prioritized SELL screen](docs/sell-alerts.md) separates pending exit eviden
 [IPO research](docs/ipo-research.md) uses reviewed listing facts and at least 30 finalized sessions, with live BUY permanently blocked for this research profile.
 
 [SME research](docs/sme-research.md) keeps lot, liquidity, restrictions and source permissions explicit and never grants live BUY eligibility.
+
+Backtest results: [stored-run results and historical drilldown](docs/backtest-results.md) (includes strategy/source selection and training, validation and out-of-sample comparison of stored runs).
+
+Optional research comparator: [exact 100-day breakout, licensed-source gates and UNKNOWN proxy rules](docs/proxy-research.md).

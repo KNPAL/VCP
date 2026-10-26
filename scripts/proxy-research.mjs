@@ -1,0 +1,14 @@
+import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {momentumProxyResearch} from '../packages/strategy/dist/index.js';
+import {sourcePermission} from '../packages/market-data/dist/index.js';
+const [path,asOf]=process.argv.slice(2);
+if(!path||!asOf||process.argv.length!==4)throw new Error('Usage: node scripts/proxy-research.mjs <reviewed-series.json> <as-of-UTC>');
+const bytes=await readFile(path);if(bytes.length>50*1024*1024)throw new Error('PROXY_INPUT_TOO_LARGE');
+const input=JSON.parse(bytes.toString('utf8'));
+const display=sourcePermission(input.source??null,'DISPLAY',asOf),derive=sourcePermission(input.source??null,'DERIVE',asOf);
+const permitted=display.status==='PASS'&&derive.status==='PASS';
+const coverage=permitted&&input.source.coverage.available>0&&input.source.coverage.available>=input.series?.bars?.length&&Date.parse(input.series.asOf)<=Date.parse(input.source.asOf)&&Date.parse(input.series.asOf)<=Date.parse(input.source.knownAt);
+const proof=coverage?{sourceReference:input.source.endpointOrFile,permissionReference:input.source.licenseRef,knownAt:input.source.knownAt,validUntil:input.source.validUntil,verified:true,displayAllowed:true,deriveAllowed:true}:null;
+const result=momentumProxyResearch(coverage?input.series:null,proof,asOf);
+console.log(JSON.stringify({...result,inputHash:createHash('sha256').update(bytes).digest('hex'),sourceGate:{display:display.status,derive:derive.status,coverage:coverage?'KNOWN':'UNKNOWN',reasons:[...new Set([...display.reasons,...derive.reasons])]}},null,2));

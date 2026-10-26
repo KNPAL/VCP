@@ -24,3 +24,5 @@
 .skip:not(:focus){clip-path:inset(50%);width:1px;height:1px;overflow:hidden;padding:0}
 
 .ipo-research .panel{margin-top:20px}.ipo-research table{min-width:900px}.ipo-research td{white-space:nowrap}.ipo-research select{max-width:100%;display:block;margin-top:8px;padding:10px;background:var(--panel);color:var(--text)}.ipo-research dd{margin:6px 0 16px;overflow-wrap:anywhere}
+
+.backtest-results fieldset{min-width:0;margin:16px 0;padding:16px;border:1px solid var(--border);border-radius:8px}.backtest-results fieldset select{width:100%;min-width:0}.backtest-results legend{padding:0 6px}
