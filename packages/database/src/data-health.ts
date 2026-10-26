@@ -4,7 +4,7 @@ import type {CompletedScan} from '@vcp/strategy';
 import {getReadiness} from './readiness.js';
 import {syncJobs} from './sync-progress.js';
 import {eodScanProgress} from './eod-scan.js';
-export async function readBrokerHealth(db:PrismaClient,accountKey?:string){
+export async function readBrokerHealth(db:Pick<PrismaClient,'$queryRaw'>,accountKey?:string){
  const asOf=new Date().toISOString(),readiness=await getReadiness(db,asOf),gates=readiness.items.filter(g=>['G01','G07'].includes(g.gate));
  const unavailable={asOf,state:'NOT_CONFIGURED',authenticated:false,historyReady:false,sourceAt:null,validUntil:null,reasons:['BROKER_ACCOUNT_NOT_CONFIGURED'],gates,executable:false};
  if(!accountKey)return unavailable;

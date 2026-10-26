@@ -412,6 +412,34 @@ model BrokerRequestAttempt {
   retryInMs Int?
   @@id([accountKey,requestId,attempt])
 }
+model ManualDownloadRun {
+ id String @id @db.Uuid
+ ownerId String @db.Uuid
+ requestHash String @db.VarChar(64)
+ state String
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model ManualDownloadSubmission {
+ ownerId String @db.Uuid
+ key String
+ requestHash String @db.VarChar(64)
+ runId String @db.Uuid
+ @@id([ownerId,key])
+}
+model ManualDownloadEvent {
+ id String @id @db.Uuid
+ runId String @db.Uuid
+ state String
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model ManualDownloadChild {
+ manualRunId String @db.Uuid
+ listingId String @db.Uuid
+ syncRunId String @unique @db.Uuid
+ @@id([manualRunId,listingId])
+}
 model HistoricalSyncRun {
   id String @id @db.Uuid
   listingId String @db.Uuid

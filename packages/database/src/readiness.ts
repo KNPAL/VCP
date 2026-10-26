@@ -18,7 +18,7 @@ export async function persistReadiness(db:PrismaClient,proof:Omit<GateProof,'id'
  const json=canonical(event);await db.$executeRaw`INSERT INTO "ReadinessProof" ("id","gate","status","probeAt","sourceAt","expiresAt","evidence") VALUES (${id},${proof.gate},${proof.status},${utcInstant(proof.probeAt)},${proof.sourceAt?utcInstant(proof.sourceAt):null},${utcInstant(proof.expiresAt)},${json}::jsonb) ON CONFLICT ("id") DO NOTHING`;
  return event;
 }
-export async function getReadiness(db:PrismaClient,asOf=new Date().toISOString()){
+export async function getReadiness(db:Pick<PrismaClient,'$queryRaw'>,asOf=new Date().toISOString()){
  const rows=await db.$queryRaw<{evidence:GateProof}[]>`SELECT DISTINCT ON ("gate") "evidence" FROM "ReadinessProof" WHERE "probeAt"<=${utcInstant(asOf)} ORDER BY "gate","probeAt" DESC,"id" ASC`;
  return readiness(rows.map(row=>row.evidence),asOf);
 }

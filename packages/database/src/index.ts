@@ -70,3 +70,6 @@ export * from './backtest-results.js';
 export * from './backtest-comparison.js';
 export * from './data-health.js';
 export * from './download-preview.js';
+export * from './download-authorization.js';
+export * from './manual-download.js';
+export * from './manual-download-dispatch.js';

@@ -132,6 +132,8 @@ Live access requires account/API entitlement, independently verified registered/
 - [Backfill setup](docs/backfill.md): submission input, pinned sources/mappings, bounded downloads and recovery.
 - [Historical probes](docs/historical-probes.md): observed coverage, account limits and truncation detection.
 - [Universe and data health](docs/data-health.md): stored coverage, scan progress, source gates and broker status; manual browser downloads and retry controls remain in progress.
+- [Preview authorization](docs/download-authorization.md): optional protected signing-key setup, five-minute owner/evidence binding and remaining download submission work.
+- [Manual download acceptance](docs/manual-downloads.md): internal durable request handling and remaining queue/cancellation/retry integration; public submission is not yet available.
 
 The operator provisioning/submission entry points require `DATABASE_URL` and `REDIS_HOST`/`REDIS_PORT` in their environment; they do not automatically use the local-server wrapper's settings. Pass protected input-file **paths**, never credentials as command-line values. Set `BROKER_KEY_DIRECTORY` in the worker environment before startup. Real credentials, encryption keys and verified live datasets are not bundled.
 
@@ -264,3 +266,5 @@ The [prioritized SELL screen](docs/sell-alerts.md) separates pending exit eviden
 Backtest results: [stored-run results and historical drilldown](docs/backtest-results.md) (includes strategy/source selection and training, validation and out-of-sample comparison of stored runs).
 
 Optional research comparator: [exact 100-day breakout, licensed-source gates and UNKNOWN proxy rules](docs/proxy-research.md).
+
+For an API test-port conflict, set `WEB_TEST_API_PORT` (for example `3101`) and `WEB_TEST_PORT` (for example `3102`). Build the web app with `API_INTERNAL_URL=http://127.0.0.1:3101` for that test run because Next.js stores HTTP rewrites at build time. Rebuild with your normal API origin before returning to normal local use. The test harness waits for the web authentication proxy to return 401 before starting tests. Do not stop unrelated applications to free their ports.

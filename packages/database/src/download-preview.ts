@@ -14,7 +14,7 @@ export function validateDownloadPreviewRequest(value:unknown):DownloadPreviewReq
  return r;
 }
 /** Local evidence only: no provider call, queue dispatch or candle mutation. */
-export async function readDownloadPreview(db:PrismaClient,ownerId:string,value:unknown,accountKey?:string){
+export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,ownerId:string,value:unknown,accountKey?:string){
  const request=validateDownloadPreviewRequest(value),checkedAt=new Date().toISOString(),at=new Date(checkedAt);
  const [universes,instruments,sources,broker]=await Promise.all([
  db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "knownAt"<=${at}`,
@@ -48,7 +48,7 @@ export async function readDownloadPreview(db:PrismaClient,ownerId:string,value:u
  }
  for(const id of selected)if(!members.some(m=>m.primary?.listingId===id))blocked.push({listingId:id,isin:null,reason:'NOT_CANONICAL_UNIVERSE_LISTING'});
  const dataRevision=createHash('sha256').update(canonical(revisions)).digest('hex'),expiresAt=new Date(at.valueOf()+300000).toISOString();
- const warnings=[...(!broker.historyReady?['BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY']:[]),...(universe.state!=='KNOWN'?['UNIVERSE_UNKNOWN']:[]),...(!items.length?['NO_ELIGIBLE_LISTINGS']:[]),...items.flatMap(i=>i.reasons)];
- const evidence={request,checkedAt,expiresAt,universeSnapshotId:universe.snapshotId,instrumentSnapshotId:mapping?.id??null,sourceSnapshotId:sources[0]?.id??null,dataRevision,sourcePermissions:permissions,eligibleCount:items.length,blockedInstruments:blocked,items,alreadyStoredCount:items.reduce((n,i)=>n+i.alreadyStoredCount,0),missingCount:items.some(i=>i.missingCount===null)||blocked.length?null:items.reduce((n,i)=>n+(i.missingCount??0),0),planWindowCount:items.reduce((n,i)=>n+i.planWindowCount,0),warnings:[...new Set(warnings)],quotaNote:'Estimates only; all jobs share account limits of at most 1 request/second, 60/minute and 3000/hour.',executable:false};
+ const warnings=[...(!broker.historyReady?['BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY']:[]),...(universe.state!=='KNOWN'?['UNIVERSE_UNKNOWN']:[]),...(!items.length?['NO_ELIGIBLE_LISTINGS']:[]),...Object.entries(permissions).flatMap(([use,p])=>p.status==='PASS'?[]:[use+':'+p.reasons.join(',')]),...items.flatMap(i=>i.reasons)];
+ const evidence={request,checkedAt,expiresAt,universeSnapshotId:universe.snapshotId,instrumentSnapshotId:mapping?.id??null,sourceSnapshotId:sources[0]?.id??null,dataRevision,sourcePermissions:permissions,eligibleCount:items.length,blockedInstruments:blocked,items,alreadyStoredCount:items.reduce((n,i)=>n+i.alreadyStoredCount,0),missingCount:!items.length||universe.state!=='KNOWN'||items.some(i=>i.missingCount===null)||blocked.length?null:items.reduce((n,i)=>n+(i.missingCount??0),0),planWindowCount:items.reduce((n,i)=>n+i.planWindowCount,0),warnings:[...new Set(warnings)],quotaNote:'Estimates only; all jobs share account limits of at most 1 request/second, 60/minute and 3000/hour.',executable:false};
  return {previewId:createHash('sha256').update(canonical({ownerId,...evidence})).digest('hex'),...evidence};
 }
