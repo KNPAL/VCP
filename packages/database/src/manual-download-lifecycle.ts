@@ -4,7 +4,7 @@ import {verifiedCalendar,dateAfter,type CalendarDay} from '@vcp/market-data';
 import {canonical} from './indicators.js';
 import {readDownloadPreview,type DownloadPreviewRequest} from './download-preview.js';
 import {readBrokerHealth} from './data-health.js';
-type Evidence={accountKey:string;request:DownloadPreviewRequest;instrumentSnapshotId:string;universeSnapshotId:string;sourceSnapshotId:string;items:{listingId:string;calendarId:string;excludedDates:{from:string;to:string;reason:string}[]}[]};
+type Evidence={brokerConfigurationRevision?:string|null;accountKey:string;request:DownloadPreviewRequest;instrumentSnapshotId:string;universeSnapshotId:string;sourceSnapshotId:string;items:{listingId:string;calendarId:string;excludedDates:{from:string;to:string;reason:string}[]}[]};
 async function transition(tx:Prisma.TransactionClient,id:string,from:string,to:string,reason:string){
  if(from===to)return;
  await tx.$executeRaw`UPDATE "ManualDownloadRun" SET "state"=${to} WHERE "id"=${id}::uuid`;
@@ -39,6 +39,7 @@ export async function retryManualDownload(db:PrismaClient,ownerId:string,runId:s
   if(active.length)throw new Error('DOWNLOAD_REQUEST_STILL_RUNNING');
   if(run.state==='PAUSED_QUOTA'){const waits=await tx.$queryRaw<{id:string}[]>`SELECT w."id" FROM "HistoricalSyncWindow" w JOIN "ManualDownloadChild" c ON c."syncRunId"=w."runId" WHERE c."manualRunId"=${runId}::uuid AND c."generation"=(SELECT max(other."generation") FROM "ManualDownloadChild" other WHERE other."manualRunId"=${runId}::uuid) AND w."reason"='RATE_LIMITED' AND w."nextAttemptAt">clock_timestamp()`;if(waits.length)throw new Error('DOWNLOAD_QUOTA_WAIT')}
   const current=await readDownloadPreview(tx,ownerId,run.evidence.request,run.evidence.accountKey);
+  if(current.brokerConfigurationRevision!==(run.evidence.brokerConfigurationRevision??null))throw new Error('DOWNLOAD_PREVIEW_CHANGED');
   if(current.instrumentSnapshotId!==run.evidence.instrumentSnapshotId||current.universeSnapshotId!==run.evidence.universeSnapshotId||current.sourceSnapshotId!==run.evidence.sourceSnapshotId)throw new Error('DOWNLOAD_PREVIEW_CHANGED');
   if(!current.items.length||current.blockedInstruments.length||current.items.some(i=>i.state!=='KNOWN')||Object.values(current.sourcePermissions).some(p=>p.status!=='PASS')||current.warnings.includes('BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY'))throw new Error('DOWNLOAD_PREREQUISITES_UNAVAILABLE');
   await tx.$executeRaw`INSERT INTO "ManualDownloadAction" ("ownerId","key","runId","action") VALUES (${ownerId}::uuid,${key},${runId}::uuid,'RETRY')`;

@@ -128,6 +128,7 @@ For a web-test port conflict, set `WEB_TEST_PORT=3002` before `test-web` (PowerS
 
 Live access requires account/API entitlement, independently verified registered/static outbound IP, source licensing, verified instruments/calendars and encryption keys. Broker requests originate only in the backend.
 
+- [Interactive broker login lifecycle](docs/broker-login.md): HTTPS login/logout APIs, required runtime keys/network proof, persisted rate limits and remaining acceptance work.
 - [Broker configuration](docs/broker-configuration.md): encrypted setup API, HTTPS/key requirements and current integration limitations.
 - [Credential provisioning](docs/broker-credentials.md): protected PIN/TOTP input, `BROKER_KEY_DIRECTORY`, encrypted references and session renewal.
 - [Backfill setup](docs/backfill.md): submission input, pinned sources/mappings, bounded downloads and recovery.

@@ -76,3 +76,6 @@ export * from './manual-download-dispatch.js';
 export * from './manual-download-lifecycle.js';
 export * from './broker-configuration.js';
 export * from './broker-connection-status.js';
+export * from './broker-login.js';
+
+export * from './broker-keys.js';

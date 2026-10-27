@@ -8,7 +8,7 @@ const jwt=token(Date.parse('2026-10-19T12:00:00Z')/1000);
 const json=data=>new Response(JSON.stringify({status:true,data}),{headers:{'content-type':'application/json'}});
 function fixture(response){let count=0,reservations=0;const requests=[];return {requests,reservations:()=>reservations,deps:{now,reserve:async()=>{reservations++;return {allowed:true}},fetcher:async(url,options)=>{requests.push({url,options});return response?response(count++):count++===0?json({jwtToken:jwt,refreshToken:'unused-refresh'}):json({clientcode:login.clientCode})}}}}
 test('login and profile are independently budgeted; verified sessions expire by exchange midnight',async()=>{
- const f=fixture(),result=await authenticateBroker(login,proof,f.deps);assert.equal(f.reservations(),2);assert.equal(result.accountKey,brokerAccountKey(login.clientCode));assert.equal(result.expiresAt,'2026-10-18T18:30:00.000Z');assert.equal(result.secrets.accessToken,jwt);assert.ok(!JSON.stringify(result).includes('unused-refresh'));assert.ok(!('pin' in result.secrets));
+ const f=fixture(),result=await authenticateBroker(login,proof,f.deps);assert.equal(f.reservations(),2);assert.equal(result.accountKey,brokerAccountKey(login.clientCode));assert.equal(result.expiresAt,'2026-10-18T18:30:00.000Z');assert.equal(result.secrets.accessToken,jwt);assert.equal(result.secrets.refreshToken,'unused-refresh');assert.ok(!('pin' in result.secrets));
  assert.ok(f.requests[0].url.endsWith('/loginByPassword'));assert.ok(f.requests[1].url.endsWith('/getProfile'));assert.ok(f.requests.every(r=>r.options.redirect==='error'));assert.equal(f.requests[1].options.headers.Authorization,'Bearer '+jwt);
 });
 test('invalid or unknown static IP proof blocks requests before quota reservation',async()=>{

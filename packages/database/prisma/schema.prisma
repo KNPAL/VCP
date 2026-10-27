@@ -920,3 +920,23 @@ model BrokerConfigurationEvent {
  kind String
  createdAt DateTime @default(now()) @db.Timestamptz(6)
 }
+model BrokerLoginAttempt {
+ id String @id @db.Uuid
+ ownerId String @db.Uuid
+ configurationRevision String @db.Uuid
+ accountKey String @db.VarChar(64)
+ state String
+ errorCode String?
+ startedAt DateTime @default(now()) @db.Timestamptz(6)
+ expiresAt DateTime @db.Timestamptz(6)
+ finishedAt DateTime? @db.Timestamptz(6)
+ sessionRevision String? @db.Uuid
+ @@index([ownerId,startedAt],map:"broker_login_owner_time")
+}
+model BrokerLoginEvent {
+ id String @id @db.Uuid
+ attemptId String @db.Uuid
+ state String
+ errorCode String?
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}

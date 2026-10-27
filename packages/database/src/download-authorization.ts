@@ -5,7 +5,7 @@ import {validateDownloadPreviewRequest,type readDownloadPreview} from './downloa
 type Preview=Awaited<ReturnType<typeof readDownloadPreview>>;
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 function binding(preview:Preview){
- return createHash('sha256').update(canonical({request:preview.request,universeSnapshotId:preview.universeSnapshotId,instrumentSnapshotId:preview.instrumentSnapshotId,sourceSnapshotId:preview.sourceSnapshotId,dataRevision:preview.dataRevision,blockedInstruments:preview.blockedInstruments,items:preview.items.map(i=>({listingId:i.listingId,calendarId:i.calendarId,state:i.state,reasons:i.reasons,rangesToFetch:i.rangesToFetch,missingCount:i.missingCount,alreadyStoredCount:i.alreadyStoredCount}))})).digest('hex');
+ return createHash('sha256').update(canonical({request:preview.request,brokerConfigurationRevision:preview.brokerConfigurationRevision??null,universeSnapshotId:preview.universeSnapshotId,instrumentSnapshotId:preview.instrumentSnapshotId,sourceSnapshotId:preview.sourceSnapshotId,dataRevision:preview.dataRevision,blockedInstruments:preview.blockedInstruments,items:preview.items.map(i=>({listingId:i.listingId,calendarId:i.calendarId,state:i.state,reasons:i.reasons,rangesToFetch:i.rangesToFetch,missingCount:i.missingCount,alreadyStoredCount:i.alreadyStoredCount}))})).digest('hex');
 }
 function signingKey(key:Uint8Array){if(key.byteLength!==32)throw new Error('DOWNLOAD_PREVIEW_KEY_INVALID');return key}
 /** Five-minute, owner-bound evidence authorization. No database write or download dispatch. */

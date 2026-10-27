@@ -3,6 +3,7 @@ import type {PrismaClient} from '@prisma/client';
 import {sessionDate} from '@vcp/domain';
 import {canonicalListings,universeAt,previewDownloadRange,backfillHorizon,sourcePermission,HISTORICAL_ENDPOINT,candleHash,type InstrumentSnapshot,type UniverseSnapshot,type SourceRecord,type CalendarDay,type DailyCandle} from '@vcp/market-data';
 import {canonical} from './indicators.js';
+import {ownerBrokerBinding} from './broker-configuration.js';
 import {readBrokerHealth} from './data-health.js';
 export interface DownloadPreviewRequest {universeId:string;listingIds?:string[];interval:'1d';fromDate:string;toDate:string;mode:'MISSING_ONLY'|'RECONCILE'}
 export function validateDownloadPreviewRequest(value:unknown):DownloadPreviewRequest {
@@ -16,11 +17,13 @@ export function validateDownloadPreviewRequest(value:unknown):DownloadPreviewReq
 /** Local evidence only: no provider call, queue dispatch or candle mutation. */
 export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,ownerId:string,value:unknown,accountKey?:string){
  const request=validateDownloadPreviewRequest(value),checkedAt=new Date().toISOString(),at=new Date(checkedAt);
+ const ownerBinding=await ownerBrokerBinding(db,ownerId,accountKey);accountKey=ownerBinding.accountKey;
  const [universes,instruments,sources,broker]=await Promise.all([
  db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "knownAt"<=${at}`,
  db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`,
  db.$queryRaw<{id:string;evidence:SourceRecord}[]>`SELECT "id","evidence" FROM "SourceSnapshot" WHERE "dataset"='DAILY_CANDLES' AND "knownAt"<=${at} AND "evidence"->>'provider'='ANGEL_ONE' AND "evidence"->>'endpointOrFile'=${HISTORICAL_ENDPOINT} ORDER BY "knownAt" DESC,"id" LIMIT 1`,
  readBrokerHealth(db,accountKey)]);
+ if(ownerBinding.configuredAt&&(!broker.sourceAt||Date.parse(broker.sourceAt)<=Date.parse(ownerBinding.configuredAt)))broker.historyReady=false;
  const universe=universeAt(universes.map(r=>r.evidence),checkedAt);
  if(request.universeId!=='NIFTY_500'&&request.universeId!==universe.snapshotId)throw new Error('DOWNLOAD_UNIVERSE_NOT_FOUND');
  const mapping=instruments[0]?.evidence,source=sources[0]?.evidence??null;
@@ -51,6 +54,6 @@ export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,owne
  for(const id of selected)if(!members.some(m=>m.primary?.listingId===id))blocked.push({listingId:id,isin:null,reason:'NOT_CANONICAL_UNIVERSE_LISTING'});
  const dataRevision=createHash('sha256').update(canonical(revisions)).digest('hex'),expiresAt=new Date(at.valueOf()+300000).toISOString();
  const warnings=[...(!broker.historyReady?['BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY']:[]),...(universe.state!=='KNOWN'?['UNIVERSE_UNKNOWN']:[]),...(!items.length?['NO_ELIGIBLE_LISTINGS']:[]),...Object.entries(permissions).flatMap(([use,p])=>p.status==='PASS'?[]:[use+':'+p.reasons.join(',')]),...items.flatMap(i=>i.reasons)];
- const evidence={request,checkedAt,expiresAt,universeSnapshotId:universe.snapshotId,instrumentSnapshotId:mapping?.id??null,sourceSnapshotId:sources[0]?.id??null,dataRevision,sourcePermissions:permissions,eligibleCount:items.length,blockedInstruments:blocked,items,alreadyStoredCount:items.reduce((n,i)=>n+i.alreadyStoredCount,0),missingCount:!items.length||universe.state!=='KNOWN'||items.some(i=>i.missingCount===null)||blocked.length?null:items.reduce((n,i)=>n+(i.missingCount??0),0),planWindowCount:items.reduce((n,i)=>n+i.planWindowCount,0),warnings:[...new Set(warnings)],quotaNote:'Estimates only; all jobs share account limits of at most 1 request/second, 60/minute and 3000/hour.',executable:false};
+ const evidence={request,checkedAt,expiresAt,brokerConfigurationRevision:ownerBinding.configurationRevision,universeSnapshotId:universe.snapshotId,instrumentSnapshotId:mapping?.id??null,sourceSnapshotId:sources[0]?.id??null,dataRevision,sourcePermissions:permissions,eligibleCount:items.length,blockedInstruments:blocked,items,alreadyStoredCount:items.reduce((n,i)=>n+i.alreadyStoredCount,0),missingCount:!items.length||universe.state!=='KNOWN'||items.some(i=>i.missingCount===null)||blocked.length?null:items.reduce((n,i)=>n+(i.missingCount??0),0),planWindowCount:items.reduce((n,i)=>n+i.planWindowCount,0),warnings:[...new Set(warnings)],quotaNote:'Estimates only; all jobs share account limits of at most 1 request/second, 60/minute and 3000/hour.',executable:false};
  return {previewId:createHash('sha256').update(canonical({ownerId,...evidence})).digest('hex'),...evidence};
 }

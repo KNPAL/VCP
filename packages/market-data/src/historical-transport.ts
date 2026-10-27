@@ -1,5 +1,5 @@
 import {sessionDate} from '@vcp/domain';
-export interface BrokerSecrets {accessToken:string;apiKey:string;clientLocalIp:string;clientPublicIp:string;macAddress:string;clientCode?:string;feedToken?:string}
+export interface BrokerSecrets {accessToken:string;apiKey:string;clientLocalIp:string;clientPublicIp:string;macAddress:string;clientCode?:string;feedToken?:string;refreshToken?:string}
 export interface HistoricalWindow {exchange:'NSE'|'BSE';symbolToken:string;from:string;to:string}
 export const HISTORICAL_ENDPOINT='https://apiconnect.angelone.in/rest/secure/angelbroking/historical/v1/getCandleData';
 /** Only this fixed read-only endpoint is exposed. Redirects cannot forward broker secrets. */

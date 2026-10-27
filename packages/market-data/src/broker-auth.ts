@@ -5,7 +5,7 @@ import type {BrokerSecrets} from './historical-transport.js';
 export interface BrokerLogin {clientCode:string;pin:string;totp:string;apiKey:string;clientLocalIp:string;clientPublicIp:string;macAddress:string}
 export interface StaticIpProof {address:string;verifiedAt:string;expiresAt:string;sourceReference:string}
 export const brokerAccountKey=(clientCode:string)=>createHash('sha256').update('ANGEL_ONE|'+clientCode).digest('hex');
-/** Only login and read-only profile verification; PIN/TOTP/refresh tokens are never retained. */
+/** Only login and read-only profile verification; PIN/TOTP are never retained; tokens are returned only to the server vault. */
 export async function authenticateBroker(input:BrokerLogin,proof:StaticIpProof,deps:{reserve:()=>Promise<{allowed:boolean}>;fetcher?:typeof fetch;now?:()=>string;timeoutMs?:number}){
  const now=deps.now??(()=>new Date().toISOString()),fetcher=deps.fetcher??fetch,timeout=deps.timeoutMs??20000;
  const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
@@ -37,6 +37,7 @@ export async function authenticateBroker(input:BrokerLogin,proof:StaticIpProof,d
    if(utcInstant(verifiedAt).valueOf()<at||expiry<=utcInstant(verifiedAt).valueOf()||controller.signal.aborted)throw new Error();
    const secrets:BrokerSecrets={accessToken:token,apiKey:input.apiKey,clientLocalIp:input.clientLocalIp,clientPublicIp:input.clientPublicIp,macAddress:input.macAddress};
    if(typeof login['feedToken']==='string'&&login['feedToken'].trim()&&login['feedToken'].length<=16000&&!/[\r\n]/.test(login['feedToken'])){secrets.clientCode=input.clientCode;secrets.feedToken=login['feedToken']}
+   if(login['refreshToken']!==undefined){const refresh=login['refreshToken'];if(typeof refresh!=='string'||!refresh.trim()||refresh.length>16000||/[\r\n]/.test(refresh))throw new Error();secrets.refreshToken=refresh}
    return {accountKey:brokerAccountKey(input.clientCode),verifiedAt,expiresAt:new Date(expiry).toISOString(),secrets};
   };
   return await Promise.race([work(),new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error())},timeout)})]);

@@ -7,11 +7,12 @@ import {readDownloadPreview,type DownloadPreviewRequest} from './download-previe
 /** Atomically materialize one accepted request into the existing durable backfill pipeline. */
 export async function prepareManualDownload(db:PrismaClient){
  return db.$transaction(async tx=>{
-  const runs=await tx.$queryRaw<{id:string;ownerId:string;evidence:{accountKey:string;request:DownloadPreviewRequest;instrumentSnapshotId:string;universeSnapshotId:string;sourceSnapshotId:string;items:{listingId:string;rangesToFetch:{sessions:string[]}[]}[]}}[]>`SELECT "id","ownerId","evidence" FROM "ManualDownloadRun" WHERE "state"='QUEUED' ORDER BY "createdAt","id" LIMIT 1 FOR UPDATE SKIP LOCKED`;
+  const runs=await tx.$queryRaw<{id:string;ownerId:string;evidence:{brokerConfigurationRevision?:string|null;accountKey:string;request:DownloadPreviewRequest;instrumentSnapshotId:string;universeSnapshotId:string;sourceSnapshotId:string;items:{listingId:string;rangesToFetch:{sessions:string[]}[]}[]}}[]>`SELECT "id","ownerId","evidence" FROM "ManualDownloadRun" WHERE "state"='QUEUED' ORDER BY "createdAt","id" LIMIT 1 FOR UPDATE SKIP LOCKED`;
   const run=runs[0];if(!run)return {state:'IDLE',children:0};
   const at=new Date().toISOString(),accepted=run.evidence;
   const change=async(state:string,reason:string,children=0)=>{await tx.$executeRaw`UPDATE "ManualDownloadRun" SET "state"=${state} WHERE "id"=${run.id}::uuid`;await tx.$executeRaw`INSERT INTO "ManualDownloadEvent" ("id","runId","state","evidence") VALUES (${randomUUID()}::uuid,${run.id}::uuid,${state},${canonical({reason,children})}::jsonb)`;return {state,runId:run.id,children}};
   let current;try{current=await readDownloadPreview(tx,run.ownerId,accepted.request,accepted.accountKey)}catch(error){if(error instanceof Error&&['DOWNLOAD_PREVIEW_PERMISSION_DENIED','DOWNLOAD_UNIVERSE_NOT_FOUND'].includes(error.message))return change('PARTIAL','PINNED_CONTEXT_UNAVAILABLE');throw error}
+  if(current.brokerConfigurationRevision!==(accepted.brokerConfigurationRevision??null))return change('PARTIAL','BROKER_CONFIGURATION_CHANGED');
   if(current.warnings.includes('BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY'))return change('PAUSED_AUTH','BROKER_HISTORY_UNAVAILABLE');
   if(current.instrumentSnapshotId!==accepted.instrumentSnapshotId||current.universeSnapshotId!==accepted.universeSnapshotId||current.sourceSnapshotId!==accepted.sourceSnapshotId)return change('PARTIAL','PINNED_CONTEXT_CHANGED');
   if(!current.items.length||current.blockedInstruments.length||current.items.some(i=>i.state!=='KNOWN')||Object.values(current.sourcePermissions).some(p=>p.status!=='PASS'))return change('PARTIAL','DOWNLOAD_EVIDENCE_UNAVAILABLE');

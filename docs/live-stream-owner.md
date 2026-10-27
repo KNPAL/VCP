@@ -8,7 +8,7 @@ The transport uses the fixed SmartAPI V2 endpoint, verified TLS, no redirects, a
 
 ## Configuration
 
-Provision authentication using [broker-credentials.md](broker-credentials.md). A new successful login retains the returned feed token and verified client code in the existing encrypted credential envelope. Older credentials without feed fields remain valid for historical requests but require reauthentication for live streaming. PIN, TOTP and refresh tokens remain unpersisted. The owner re-reads the current circuit/session on every cycle; revoked, expired or unavailable credentials stop monitoring.
+Provision authentication using [broker-credentials.md](broker-credentials.md). A new successful login retains the returned feed token and verified client code in the existing encrypted credential envelope. Older credentials without feed fields remain valid for historical requests but require reauthentication for live streaming. PIN and TOTP remain unpersisted. Returned refresh tokens are retained only inside the encrypted session envelope and never extend its expiry. The owner re-reads the current circuit/session on every cycle; revoked, expired or unavailable credentials stop monitoring.
 
 Set these variables on the worker process:
 

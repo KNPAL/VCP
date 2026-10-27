@@ -13,7 +13,7 @@ test('signed preview is owner bound, tamper evident and expires exactly after fi
 });
 test('current revisions, permissions, readiness and source ranges are revalidated independently of signature',()=>{
  const preview=fixture(),token=signDownloadPreview(preview,owner,key);assert.doesNotThrow(()=>authorizeDownloadPreview(token,owner,key,preview,now));
- for(const field of ['dataRevision','universeSnapshotId','instrumentSnapshotId','sourceSnapshotId'])assert.throws(()=>authorizeDownloadPreview(token,owner,key,{...preview,[field]:'changed'},now),/CHANGED/);
+ for(const field of ['brokerConfigurationRevision','dataRevision','universeSnapshotId','instrumentSnapshotId','sourceSnapshotId'])assert.throws(()=>authorizeDownloadPreview(token,owner,key,{...preview,[field]:'changed'},now),/CHANGED/);
  assert.throws(()=>authorizeDownloadPreview(token,owner,key,{...preview,items:[{...preview.items[0],calendarId:'changed'}]},now),/CHANGED/);
  assert.throws(()=>authorizeDownloadPreview(token,owner,key,{...preview,sourcePermissions:{...preview.sourcePermissions,DOWNLOAD:{status:'FAIL'}}},now),/PREREQUISITES/);
  assert.throws(()=>authorizeDownloadPreview(token,owner,key,{...preview,warnings:['BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY']},now),/PREREQUISITES/);

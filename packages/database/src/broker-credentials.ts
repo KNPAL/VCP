@@ -1,15 +1,15 @@
-import type {PrismaClient} from '@prisma/client';
+import type {PrismaClient,Prisma} from '@prisma/client';
 import {encryptBrokerCredentials,decryptBrokerCredentials,type CredentialBinding,type EncryptedCredential,type BrokerSecrets} from '@vcp/market-data';
 import {restoreBrokerCircuit} from './broker-circuit.js';
 export type BrokerKeyResolver=(keyId:string)=>Promise<Buffer>;
 /** Internal authentication boundary: caller supplies independently verified auth/static-IP proof. */
-export async function installBrokerSession(db:PrismaClient,binding:CredentialBinding,secrets:BrokerSecrets,proof:{authenticated:boolean;staticIpVerified:boolean;verifiedAt:string},loadKey:BrokerKeyResolver,now=new Date().toISOString()){
+export async function installBrokerSession(db:PrismaClient,binding:CredentialBinding,secrets:BrokerSecrets,proof:{authenticated:boolean;staticIpVerified:boolean;verifiedAt:string},loadKey:BrokerKeyResolver,now=new Date().toISOString(),beforeRestore?:(tx:Prisma.TransactionClient)=>Promise<void>){
  try{
   const key=Buffer.from(await loadKey(binding.keyId));let envelope:EncryptedCredential;
   try{envelope=encryptBrokerCredentials(binding,secrets,key)}finally{key.fill(0)}
   await restoreBrokerCircuit(db,binding.accountKey,{...proof,sessionRevision:binding.sessionRevision,expiresAt:binding.expiresAt},now,async tx=>{
    await tx.$executeRaw`INSERT INTO "BrokerCredential" ("reference","accountKey","sessionRevision","keyId","expiresAt","envelope") VALUES (${binding.reference}::uuid,${binding.accountKey},${binding.sessionRevision}::uuid,${binding.keyId},${new Date(binding.expiresAt)},${JSON.stringify({binding,envelope})}::jsonb)`;
-  });
+  },beforeRestore);
   return {reference:binding.reference,accountKey:binding.accountKey,sessionRevision:binding.sessionRevision,expiresAt:binding.expiresAt};
  }catch{throw new Error('BROKER_UNAVAILABLE')}
 }

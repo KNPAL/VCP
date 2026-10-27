@@ -1,3 +1,4 @@
+import {loginOwnerBroker,type BrokerLoginDependencies} from './broker-login.js';
 import 'reflect-metadata';
 import {isIP} from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -12,7 +13,7 @@ import type { PrismaClient } from '@vcp/database';
 import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import {readInspector,inspectorListings} from '@vcp/database';
 import {compareBacktestSelection,type BacktestComparisonSelection,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '@vcp/database';
-import {readDataHealth,readBrokerConnection,saveBrokerConfiguration} from '@vcp/database';
+import {readDataHealth,readBrokerConnection,saveBrokerConfiguration,ownerBrokerBinding,logoutBroker} from '@vcp/database';
 import {readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualDownload,listManualDownloads,cancelManualDownload,retryManualDownload} from '@vcp/database';
 import {readPositionCards} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
@@ -90,6 +91,8 @@ export const openapi = {
     '/api/v1/data/health':{get:{operationId:'universeDataHealth',security:[{session:[]}],responses:{'200':{description:'Stored universe and supported listings, separate scan/job progress, G01-G10 gates and sync checkpoints'}}}},
     '/api/v1/broker/angel-one/config':{put:{operationId:'saveBrokerConfiguration',security:[{session:[]}],responses:{'200':{description:'Idempotent encrypted configuration revision; HTTPS, CSRF and Idempotency-Key required'},'403':{description:'HTTPS or CSRF required'},'409':{description:'Conflicting idempotency receipt'},'422':{description:'Invalid configuration'},'503':{description:'Protected encryption key unavailable'}}}},
     '/api/v1/broker/angel-one/status':{get:{operationId:'brokerHealth',security:[{session:[]}],responses:{'200':{description:'Configured account circuit/expiry/credential presence and readiness gates; no credentials returned or broker request made'}}}},
+    '/api/v1/broker/angel-one/login':{post:{operationId:'brokerLogin',security:[{session:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['pin','totp'],properties:{pin:{type:'string',pattern:'^[0-9]{4,8}$',writeOnly:true},totp:{type:'string',pattern:'^[0-9]{6}$',writeOnly:true}}}}}},responses:{'201':{description:'Verified encrypted session; metadata only'},'403':{description:'HTTPS and CSRF required'},'409':{description:'Login already in progress'},'422':{description:'Invalid PIN/TOTP format'},'429':{description:'Persisted owner login limit exceeded'},'503':{description:'Configuration, static-IP proof or provider unavailable'}}}},
+    '/api/v1/broker/angel-one/logout':{post:{operationId:'brokerLogout',security:[{session:[]}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false}}}},responses:{'201':{description:'Local broker access revoked; app session and stored history retained'},'403':{description:'HTTPS and CSRF required'}}}},
     '/api/v1/backtests':{get:{operationId:'backtestRuns',security:[{session:[]}],responses:{'200':{description:'Owner-scoped stored runs with pinned strategy, data, universe, calendar, dates and costs'}}}},
     '/api/v1/backtests/{id}':{get:{operationId:'backtestResult',security:[{session:[]}],responses:{'200':{description:'Historical paper performance and blocked entry evidence at explicit asOf; missing ledger UNKNOWN'},'400':{description:'Invalid or out-of-snapshot reference'},'404':{description:'Own run not found'}}}},
     '/api/v1/backtests/{id}/instruments/{isin}':{get:{operationId:'backtestInstrument',security:[{session:[]}],responses:{'200':{description:'Pinned adjusted historical candles and separate raw-price paper fills'},'404':{description:'Own run not found'}}}},
@@ -140,7 +143,7 @@ class SystemController {
   @Get('health') health() { return { status: 'UP', strategyVersion: STRATEGY_VERSION, at: new Date().toISOString() }; }
   @Get('openapi.json') specification() { return openapi; }
 }
-export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink} = {}) {
+export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink;brokerLoginDependencies?:()=>Promise<BrokerLoginDependencies>} = {}) {
   const db = options.db ?? await databaseFromEnvironment();
   const trustedProxies=(process.env['VCP_TRUSTED_PROXY_IPS']??'').split(',').map(s=>s.trim()).filter(Boolean);if(trustedProxies.some(ip=>!isIP(ip)))throw new Error('INVALID_TRUSTED_PROXY_IP');
   const auth = new AuthService(db, options.origin ?? process.env['APP_ORIGIN'] ?? 'http://localhost:3000', options.secure ?? process.env['COOKIE_SECURE'] !== 'false');
@@ -308,7 +311,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       if(process.env['VCP_ENABLE_MANUAL_DOWNLOADS']!=='true')throw new HttpException('MANUAL_DOWNLOADS_DISABLED',503);
       const body=strictBody(request,['previewId','mode']),idempotencyKey=request.headers['idempotency-key'];
       if(typeof body['previewId']!=='string'||!['MISSING_ONLY','RECONCILE'].includes(String(body['mode']))||typeof idempotencyKey!=='string')throw new BadRequestException('Signed preview, mode and Idempotency-Key required');
-      const keyFile=process.env['VCP_DOWNLOAD_PREVIEW_KEY_FILE'],accountKey=process.env['VCP_BROKER_ACCOUNT_KEY'];if(!keyFile||!accountKey)throw new HttpException('DOWNLOAD_CONFIGURATION_UNAVAILABLE',503);
+      const keyFile=process.env['VCP_DOWNLOAD_PREVIEW_KEY_FILE'],{accountKey}=await ownerBrokerBinding(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY']);if(!keyFile||!accountKey)throw new HttpException('DOWNLOAD_CONFIGURATION_UNAVAILABLE',503);
       let key:Buffer;try{key=await readFile(keyFile);if(key.length!==32){key.fill(0);throw new Error()}}catch{throw new HttpException('DOWNLOAD_CONFIGURATION_UNAVAILABLE',503)}
       try{return await this.mapped(async()=>{const result=await acceptManualDownload(db,request.ownerId!,{previewToken:body['previewId'] as string,mode:body['mode'] as 'MISSING_ONLY'|'RECONCILE',idempotencyKey},key,accountKey),run=await readManualDownload(db,request.ownerId!,result.runId);response.status(202);return {runId:result.runId,status:run.status,statusUrl:'/api/v1/history/downloads/'+result.runId}})}finally{key.fill(0)}
     }
@@ -332,7 +335,14 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('broker/angel-one')
   class BrokerHealthController {
+    @Post('logout') async logout(@Req() request:AuthRequest&{secure?:boolean}){
+      if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);
+      strictBody(request,[]);await logoutBroker(db,request.ownerId!);return readBrokerConnection(db,request.ownerId!);
+    }
     @Get('status') status(@Req() request:AuthRequest){return readBrokerConnection(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'])}
+    @Post('login') async login(@Req() request:AuthRequest&{secure?:boolean}){
+      try{if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);const body=strictBody(request,['pin','totp']);await loginOwnerBroker(db,request.ownerId!,body,options.brokerLoginDependencies);return await readBrokerConnection(db,request.ownerId!)}catch(error){if(error instanceof HttpException)throw error;const candidate=error instanceof Error?error.message:'',code=['BROKER_LOGIN_RATE_LIMITED','BROKER_LOGIN_IN_PROGRESS','BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN','APP_CONFIG_INVALID','STATIC_IP_NOT_VERIFIED','PROVIDER_UNAVAILABLE'].includes(candidate)?candidate:'PROVIDER_UNAVAILABLE';throw new HttpException(code,code==='BROKER_LOGIN_RATE_LIMITED'?429:code==='BROKER_LOGIN_IN_PROGRESS'?409:['BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN'].includes(code)?422:503)}finally{request.body=undefined}
+    }
     @Put('config') async configure(@Req() request:AuthRequest&{secure?:boolean}){
       if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);
       const body=strictBody(request,['apiKey','clientCode']),receipt=request.headers['idempotency-key'];if(typeof receipt!=='string')throw new BadRequestException('Idempotency-Key required');

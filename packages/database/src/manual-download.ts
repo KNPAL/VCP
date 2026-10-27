@@ -1,3 +1,4 @@
+import {ownerBrokerBinding} from './broker-configuration.js';
 import {manualDownloadProgress} from './manual-download-progress.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {Prisma,type PrismaClient} from '@prisma/client';
@@ -11,15 +12,18 @@ export async function acceptManualDownload(db:PrismaClient,ownerId:string,input:
  if(input.mode!==proof.request.mode)throw new Error('DOWNLOAD_MODE_MISMATCH');
  const requestHash=createHash('sha256').update(canonical({accountKey,request:proof.request,binding:proof.binding})).digest('hex');
  for(let attempt=0;attempt<4;attempt++)try{return await db.$transaction(async tx=>{
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},140))`;
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},145))`;
+  const binding=await ownerBrokerBinding(tx,ownerId,accountKey);if(binding.accountKey!==accountKey)throw new Error('DOWNLOAD_PREVIEW_CHANGED');
   const prior=await tx.$queryRaw<{requestHash:string;runId:string}[]>`SELECT "requestHash","runId" FROM "ManualDownloadSubmission" WHERE "ownerId"=${ownerId}::uuid AND "key"=${input.idempotencyKey}`;
   if(prior[0]){if(prior[0].requestHash!==requestHash)throw new Error('DOWNLOAD_IDEMPOTENCY_CONFLICT');return {runId:prior[0].runId,reused:true}}
   verifyDownloadPreview(input.previewToken,ownerId,key);
-  const existing=await tx.$queryRaw<{id:string}[]>`SELECT "id" FROM "ManualDownloadRun" WHERE "ownerId"=${ownerId}::uuid AND "requestHash"=${requestHash} AND "state" IN ('QUEUED','RUNNING','PAUSED_AUTH','PAUSED_QUOTA','CANCEL_REQUESTED','PARTIAL')`;
+  const existing=await tx.$queryRaw<{id:string;configurationRevision:string|null}[]>`SELECT "id","evidence"->>'brokerConfigurationRevision' AS "configurationRevision" FROM "ManualDownloadRun" WHERE "ownerId"=${ownerId}::uuid AND "requestHash"=${requestHash} AND "state" IN ('QUEUED','RUNNING','PAUSED_AUTH','PAUSED_QUOTA','CANCEL_REQUESTED','PARTIAL')`;
+  if(existing[0]&&existing[0].configurationRevision!==binding.configurationRevision)throw new Error('DOWNLOAD_PREVIEW_CHANGED');
   const runId=existing[0]?.id??randomUUID();
   if(!existing.length){
    const current=await readDownloadPreview(tx,ownerId,proof.request,accountKey);authorizeDownloadPreview(input.previewToken,ownerId,key,current);
-   const evidence=canonical({accountKey,request:proof.request,previewBinding:proof.binding,previewId:current.previewId,universeSnapshotId:current.universeSnapshotId,instrumentSnapshotId:current.instrumentSnapshotId,sourceSnapshotId:current.sourceSnapshotId,dataRevision:current.dataRevision,items:current.items,acceptedAt:new Date().toISOString()});
+   const evidence=canonical({accountKey,brokerConfigurationRevision:current.brokerConfigurationRevision,request:proof.request,previewBinding:proof.binding,previewId:current.previewId,universeSnapshotId:current.universeSnapshotId,instrumentSnapshotId:current.instrumentSnapshotId,sourceSnapshotId:current.sourceSnapshotId,dataRevision:current.dataRevision,items:current.items,acceptedAt:new Date().toISOString()});
    await tx.$executeRaw`INSERT INTO "ManualDownloadRun" ("id","ownerId","requestHash","state","evidence") VALUES (${runId}::uuid,${ownerId}::uuid,${requestHash},'QUEUED',${evidence}::jsonb)`;
    await tx.$executeRaw`INSERT INTO "ManualDownloadEvent" ("id","runId","state","evidence") VALUES (${randomUUID()}::uuid,${runId}::uuid,'QUEUED','{"reason":"USER_SUBMISSION_ACCEPTED"}'::jsonb)`;
   }

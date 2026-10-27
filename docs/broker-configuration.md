@@ -1,10 +1,10 @@
 # Broker configuration — KAN-140 In Progress
 
-The workspace supports encrypted owner configuration and a masked status projection. Interactive PIN/TOTP login, complete live-readiness reporting and connection-screen integration remain unfinished; configuration alone does not establish a broker session. No provider login or order request is made by configuration saves.
+The workspace supports encrypted owner configuration and a masked status projection. The internal [login lifecycle](broker-login.md) now tracks attempts and rejects stale responses. Public PIN/TOTP login, complete live-readiness reporting and connection-screen integration remain unfinished; configuration alone does not establish a broker session. No provider login or order request is made by configuration saves.
 
 ## Deployment prerequisites
 
-Migration 60 is applied to **vcp_test only**. The deployed application database remains at migration 55. Build the database and API packages and apply all pending migrations through the normal deployment workflow before using the new code.
+Migrations 60–61 are applied to **vcp_test only**. The deployed application database remains at migration 55. Build the database and API packages and apply all pending migrations through the normal deployment workflow before using the new code.
 
 Create a dedicated 32-byte key in a protected directory whose parent already exists:
 
@@ -25,7 +25,9 @@ Same-input saves reuse the current revision. A repeated receipt returns its orig
 
 `GET /api/v1/broker/angel-one/status` adds masked configuration, revision, provider, sessionState and capability fields to existing health metadata. A session must have been verified after the saved configuration to qualify as CONNECTED. First save and replacement require login. Live readiness remains false pending the KAN-141/143 integration; no false live-monitoring guarantee is made. Existing operator-configured account health remains available when no owner configuration exists.
 
-Remaining work includes owner-configured-account propagation through downloads/streaming, complete session/static-IP/live capability state transitions, interactive login/logout, safe subscription invalidation verification and deployment. KAN-140 remains In Progress.
+Download preview and submission now select the owner configuration before the legacy environment account. Signed previews and persisted runs bind its revision. Changing configuration pauses queued/running manual jobs atomically; new claims stop, and explicit retry or a new receipt cannot bypass the revision change. A fresh preview is required. Existing accepted idempotency receipts remain receipts for their original job.
+
+Remaining work includes owner-configured-account propagation through streaming, complete session/static-IP/live capability state transitions, interactive login/logout, safe subscription invalidation verification and deployment. KAN-140 remains In Progress.
 
 ## Verification
 

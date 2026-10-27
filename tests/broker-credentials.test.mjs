@@ -30,3 +30,10 @@ test('expired sessions, short keys, injected headers and extra secret fields are
  assert.throws(()=>encryptBrokerCredentials(binding,{...secrets,accessToken:'bad\r\nheader'},key),/BROKER_UNAVAILABLE/);
  assert.throws(()=>encryptBrokerCredentials(binding,{...secrets,password:'unused'},key),/BROKER_UNAVAILABLE/);
 });
+
+test('refresh token stays in authenticated ciphertext and cannot outlive the broker session',()=>{
+ const key=randomBytes(32),value={...secrets,refreshToken:'synthetic-refresh-token'},envelope=encryptBrokerCredentials(binding,value,key);
+ assert.ok(!JSON.stringify(envelope).includes(value.refreshToken));assert.deepEqual(decryptBrokerCredentials(binding,envelope,key,now),value);
+ assert.throws(()=>decryptBrokerCredentials(binding,envelope,key,binding.expiresAt),/BROKER_UNAVAILABLE/);
+ for(const refreshToken of ['',null,'bad\r\nheader','x'.repeat(16001)])assert.throws(()=>encryptBrokerCredentials(binding,{...secrets,refreshToken},key),/BROKER_UNAVAILABLE/);
+});

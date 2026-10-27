@@ -8,7 +8,7 @@ Manual download execution is off by default. Before enabling it in an isolated t
 
 1. Apply migrations through **59** using the normal database deployment command described in the root README. Migrations 56–59 are currently applied to **vcp_test only**; the application database remains at 55.
 2. Build database, API, worker and web packages. Run API and worker against the same database and Redis.
-3. Generate and configure the dedicated signing key using [download authorization](download-authorization.md). Set `VCP_DOWNLOAD_PREVIEW_KEY_FILE` on the API and configure `VCP_BROKER_ACCOUNT_KEY`.
+3. Generate and configure the dedicated signing key using [download authorization](download-authorization.md). Set `VCP_DOWNLOAD_PREVIEW_KEY_FILE` on the API and configure the owner broker account. `VCP_BROKER_ACCOUNT_KEY` is a legacy fallback only when no saved owner configuration exists.
 4. Set `VCP_ENABLE_MANUAL_DOWNLOADS=true` on both API and worker. Enabling only the API accepts requests that no enabled worker will prepare. The flag does not establish source permission or broker readiness.
 5. Provide verified universe, instrument, calendar and source evidence, current broker authentication and readiness proofs. The preview still blocks unpopulated ranges without authoritative provider-final-session evidence.
 
@@ -26,6 +26,8 @@ All routes require the owner session. Writes also require CSRF. Submission, canc
 - `POST /api/v1/history/downloads/{runId}/retry` with `{}`: requires valid current context and authentication, and respects an outstanding quota delay. Only incomplete requested sessions are prepared.
 
 The preview screen retains the same submission key after a failed response. Job pages poll every five seconds, show UTC evidence formatted in IST, and expose eligible cancel/retry controls. The API remains authoritative for every action. `retryEnabled` indicates the API feature flag, not guaranteed authentication or quota availability. `dispatchAvailable: false` in the legacy read projection is not a worker heartbeat and should not be used as an operational health signal.
+
+Changing saved broker configuration pauses queued/running jobs and blocks further claims. Their pinned configuration revision cannot be replaced by retrying; create a fresh preview for the new configuration. An already active provider request may finish its checkpoint safely.
 
 ## Durability and worker behavior
 
