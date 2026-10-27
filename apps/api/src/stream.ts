@@ -2,7 +2,7 @@ import {createHash} from 'node:crypto';
 import type {Server as HttpServer} from 'node:http';
 import {Server} from 'socket.io';
 import {Queue} from 'bullmq';
-import {materializeStreamTimeline,readStreamTimeline,permittedStreamListings,type PrismaClient} from '@vcp/database';
+import {ownerStreamBinding,materializeStreamTimeline,readStreamTimeline,permittedStreamListings,type PrismaClient} from '@vcp/database';
 import {readQuoteCache,assessHeldQuote,canonicalListings,type CalendarDay,type InstrumentSnapshot} from '@vcp/market-data';
 import {AuthService,type AuthRequest} from './auth.js';
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -41,7 +41,7 @@ export function attachStream(server:HttpServer,db:PrismaClient,auth:AuthService)
     if(!listings.length)return;
     const mappingRows=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
     const calendarRows=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;
-    const mapping=mappingRows[0]?.evidence??null,account=process.env['VCP_STREAM_ACCOUNT_KEY'],owner=account?'smartapi-'+account:process.env['VCP_STREAM_OWNER'];
+    const mapping=mappingRows[0]?.evidence??null,routing=await ownerStreamBinding(db,request.ownerId!,process.env['VCP_STREAM_ACCOUNT_KEY'],process.env['VCP_STREAM_OWNER']),owner=routing.name;
     for(const listingId of listings){
      if(closed)return;
      const at=new Date().toISOString(),listing=canonicalListings(mapping?[mapping]:[],mapping?.rows.map(r=>r.isin)??[],at).find(r=>r.primary?.listingId===listingId)?.primary;

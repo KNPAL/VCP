@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {authenticateBroker,brokerAccountKey} from '../packages/market-data/dist/index.js';
+import {BrokerAuthenticationError,authenticateBroker,brokerAccountKey} from '../packages/market-data/dist/index.js';
 const now=()=> '2026-10-18T12:00:00Z',login={clientCode:'TEST123',pin:'1234',totp:'123456',apiKey:'synthetic-key',clientLocalIp:'127.0.0.1',clientPublicIp:'192.0.2.1',macAddress:'00:00:00:00:00:00'};
 const proof={address:login.clientPublicIp,sourceReference:'synthetic-registered-ip',verifiedAt:'2026-10-18T00:00:00Z',expiresAt:'2026-10-20T00:00:00Z'};
 const token=exp=>'e30.'+Buffer.from(JSON.stringify({exp})).toString('base64url')+'.synthetic';
@@ -30,3 +30,9 @@ test('expired claims and bounded timeout fail closed without leaking transport e
  const denied=fixture();await assert.rejects(authenticateBroker(login,proof,{...denied.deps,reserve:async()=>({allowed:false})}),/BROKER_UNAVAILABLE/);assert.equal(denied.requests.length,0);
 });
 
+
+test('documented provider errors expose only fixed classifications, never provider text',async()=>{
+ for(const [provider,code] of [['AB1050','BAD_TOTP'],['AB1000','BAD_CREDENTIALS'],['AG8002','SESSION_EXPIRED'],['AB1007','PROVIDER_UNAVAILABLE'],['UNKNOWN','PROVIDER_UNAVAILABLE']]){
+  for(const status of [200,400,401,403]){const f=fixture(()=>new Response(JSON.stringify({status:false,errorcode:provider,message:'sensitive-provider-message',data:null}),{status,headers:{'content-type':'application/json'}}));await assert.rejects(authenticateBroker(login,proof,f.deps),e=>e instanceof BrokerAuthenticationError&&e.code===code&&e.message==='BROKER_UNAVAILABLE'&&!JSON.stringify(e).includes('sensitive-provider-message'))}
+ }
+});

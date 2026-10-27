@@ -128,12 +128,14 @@ For a web-test port conflict, set `WEB_TEST_PORT=3002` before `test-web` (PowerS
 
 Live access requires account/API entitlement, independently verified registered/static outbound IP, source licensing, verified instruments/calendars and encryption keys. Broker requests originate only in the backend.
 
+- [Broker health and reconnect](docs/broker-health.md): shared status, readiness expiry, download gating and stored-data access during outages.
 - [Interactive broker login lifecycle](docs/broker-login.md): HTTPS login/logout APIs, required runtime keys/network proof, persisted rate limits and remaining acceptance work.
 - [Broker configuration](docs/broker-configuration.md): encrypted setup API, HTTPS/key requirements and current integration limitations.
 - [Credential provisioning](docs/broker-credentials.md): protected PIN/TOTP input, `BROKER_KEY_DIRECTORY`, encrypted references and session renewal.
 - [Backfill setup](docs/backfill.md): submission input, pinned sources/mappings, bounded downloads and recovery.
 - [Historical probes](docs/historical-probes.md): observed coverage, account limits and truncation detection.
-- [Universe and data health](docs/data-health.md): stored coverage, scan progress, source gates and broker status; manual browser downloads and retry controls remain in progress.
+- [Universe and data health](docs/data-health.md): stored coverage, scan progress, source gates, broker status and manual download/retry controls.
+- [BUY signals](docs/buy-signals.md): persisted breakout evidence and plan revalidation; full live entry eligibility remains in progress.
 - [Preview authorization](docs/download-authorization.md): optional protected signing-key setup, five-minute owner/evidence binding and remaining download submission work.
 - [Manual downloads](docs/manual-downloads.md): opt-in submission, job history, cancellation and retry setup, migration requirements and remaining delivery verification.
 

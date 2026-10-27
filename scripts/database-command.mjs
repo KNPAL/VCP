@@ -11,7 +11,7 @@ if(mode==='migrate'||mode==='test')run([prisma,'migrate','deploy','--schema','pa
 if(mode==='seed')run(['packages/database/dist/seed.js']);
 if(mode==='scan')run(['scripts/prepare-eod-scan.mjs',...process.argv.slice(3)]);
 if(mode==='test'){
- const suites=['database','eod-scan','indicator-replay','rs-replay','scheduler','alerts','lifecycle','position-monitor','reconciliation','protective-stops','portfolio-risk','entry-risk','loss-streak','shadow-audit','position-trail','partial-profit','position-status','stream-context','stream','backtest-snapshot','backtest-results','data-health','broker-configuration','broker-login','broker-login-api','download-preview','dashboard','inspector','position-cards','position-detail','ipo-research','sme-research'],requested=process.argv.slice(3);
+ const suites=['database','eod-scan','indicator-replay','rs-replay','scheduler','alerts','lifecycle','position-monitor','reconciliation','protective-stops','portfolio-risk','entry-risk','loss-streak','shadow-audit','position-trail','partial-profit','position-status','stream-context','stream','backtest-snapshot','backtest-results','data-health','broker-configuration','broker-status','broker-login','broker-login-api','download-preview','dashboard','inspector','position-cards','position-detail','ipo-research','sme-research'],requested=process.argv.slice(3);
  if(requested.some(name=>!suites.includes(name)))throw new Error('Unknown integration suite');
  run(['--test','--test-concurrency=1',...(requested.length?requested:suites).map(name=>'tests/'+name+'.integration.mjs')]);
 }

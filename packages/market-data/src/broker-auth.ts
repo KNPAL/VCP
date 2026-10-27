@@ -5,6 +5,14 @@ import type {BrokerSecrets} from './historical-transport.js';
 export interface BrokerLogin {clientCode:string;pin:string;totp:string;apiKey:string;clientLocalIp:string;clientPublicIp:string;macAddress:string}
 export interface StaticIpProof {address:string;verifiedAt:string;expiresAt:string;sourceReference:string}
 export const brokerAccountKey=(clientCode:string)=>createHash('sha256').update('ANGEL_ONE|'+clientCode).digest('hex');
+export type BrokerAuthenticationCode='BAD_CREDENTIALS'|'BAD_TOTP'|'SESSION_EXPIRED'|'PROVIDER_UNAVAILABLE';
+export class BrokerAuthenticationError extends Error {constructor(readonly code:BrokerAuthenticationCode){super('BROKER_UNAVAILABLE');this.name='BrokerAuthenticationError'}}
+function providerCode(code:unknown):BrokerAuthenticationCode {
+ if(code==='AB1050')return 'BAD_TOTP';
+ if(['AB1000','AB1001','AB1002','AB1032'].includes(String(code)))return 'BAD_CREDENTIALS';
+ if(['AG8001','AG8002','AG8003','AB1010','AB1011'].includes(String(code)))return 'SESSION_EXPIRED';
+ return 'PROVIDER_UNAVAILABLE';
+}
 /** Only login and read-only profile verification; PIN/TOTP are never retained; tokens are returned only to the server vault. */
 export async function authenticateBroker(input:BrokerLogin,proof:StaticIpProof,deps:{reserve:()=>Promise<{allowed:boolean}>;fetcher?:typeof fetch;now?:()=>string;timeoutMs?:number}){
  const now=deps.now??(()=>new Date().toISOString()),fetcher=deps.fetcher??fetch,timeout=deps.timeoutMs??20000;
@@ -19,11 +27,12 @@ export async function authenticateBroker(input:BrokerLogin,proof:StaticIpProof,d
    async function request(path:string,method:string,body?:string,token?:string){
     if(!(await deps.reserve()).allowed||controller.signal.aborted)throw new Error();
     const response=await fetcher('https://apiconnect.angelone.in'+path,{method,redirect:'error',signal:controller.signal,headers:{...base,...(token?{Authorization:'Bearer '+token}:{})},...(body?{body}:{})});
-    if(response.status!==200||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')??'')){await response.body?.cancel();throw new Error()}
+    if(![200,400,401,403].includes(response.status)||!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type')??'')){await response.body?.cancel();throw new Error()}
     const reader=response.body?.getReader();if(!reader)throw new Error();let size=0;const chunks:Uint8Array[]=[];
     try{while(true){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>262144){await reader.cancel();throw new Error()}chunks.push(part.value)}}finally{reader.releaseLock()}
     const result=JSON.parse(Buffer.concat(chunks).toString('utf8')) as {status?:unknown;data?:Record<string,unknown>;errorcode?:unknown};
-    if(!result||result.status!==true||!result.data||typeof result.data!=='object'||Array.isArray(result.data)||(result.errorcode!==undefined&&result.errorcode!==''&&result.errorcode!==null))throw new Error();return result.data;
+    if(result&&(result.status===false||result.status==='false'))throw new BrokerAuthenticationError(providerCode(result.errorcode));
+    if(response.status!==200||!result||result.status!==true||!result.data||typeof result.data!=='object'||Array.isArray(result.data)||(result.errorcode!==undefined&&result.errorcode!==''&&result.errorcode!==null))throw new Error();return result.data;
    }
    const login=await request('/rest/auth/angelbroking/user/v1/loginByPassword','POST',JSON.stringify({clientcode:input.clientCode,password:input.pin,totp:input.totp}));
    const token=login['jwtToken'];if(typeof token!=='string'||token.length>16000||! /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token))throw new Error();
@@ -41,5 +50,5 @@ export async function authenticateBroker(input:BrokerLogin,proof:StaticIpProof,d
    return {accountKey:brokerAccountKey(input.clientCode),verifiedAt,expiresAt:new Date(expiry).toISOString(),secrets};
   };
   return await Promise.race([work(),new Promise<never>((_resolve,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error())},timeout)})]);
- }catch{throw new Error('BROKER_UNAVAILABLE')}finally{if(timer)clearTimeout(timer)}
+ }catch(error){if(error instanceof BrokerAuthenticationError)throw error;throw new BrokerAuthenticationError('PROVIDER_UNAVAILABLE')}finally{if(timer)clearTimeout(timer)}
 }

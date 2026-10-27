@@ -1,3 +1,4 @@
+import {readRuntimeBrokerStatus,type BrokerStatusDependencies} from './broker-status.js';
 import {loginOwnerBroker,type BrokerLoginDependencies} from './broker-login.js';
 import 'reflect-metadata';
 import {isIP} from 'node:net';
@@ -18,7 +19,7 @@ import {readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualD
 import {readPositionCards} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
-import {recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
+import {readMarketSignals,recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
 import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops,readPositionStatus,dismissPartialProfit} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
@@ -64,6 +65,7 @@ export const openapi = {
     '/api/v1/watchlists/{id}/items/{listingId}':{delete:{operationId:'removeWatchlistItem',security:[{session:[]}],responses:{'200':{description:'Idempotent removal; immutable audit retained; CSRF required'},'404':{description:'List not owned by caller'}}}},
     '/api/v1/sources/readiness':{get:{operationId:'sourceReadiness',security:[{session:[]}],responses:{'200':{description:'All G01–G10 proof statuses, source timestamps, expiry, blocked capabilities and exact failure policies'},'401':{description:'Authentication required'}}}},
     '/api/v1/portfolio':{get:{operationId:'portfolioJournal',security:[{session:[]}],responses:{'200':{description:'Actual signed cash, FIFO positions, immutable journal, feed monitoring, reconciliation and current verified valuation or explicit unknowns'}}}},
+    '/api/v1/portfolio/signals':{get:{operationId:'marketSignals',security:[{session:[]}],responses:{'200':{description:'Latest 50 known breakout events, one revision per logical event; no owner permission or order implied'},'401':{description:'Authentication required'}}}},
     '/api/v1/portfolio/risk':{get:{operationId:'portfolioRisk',security:[{session:[]}],responses:{'200':{description:'Journal-bound valuation, mark ages, company/sector exposure, planned downside, snapshot deadline and separate blocked entry-plan reasons'}}}},
     '/api/v1/portfolio/loss-streak':{get:{operationId:'portfolioLossStreak',security:[{session:[]}],responses:{'200':{description:'Real-position closure P&L, three-loss cooldown, unknown-input reasons and allocation audit history'}}}},
     '/api/v1/portfolio/cash-allocations':{post:{operationId:'allocatePositionCash',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Immutable cash attribution version saved without changing journal cash or fills'},'409':{description:'Conflicting retry payload'},'422':{description:'Invalid cash event or episode'}}}},
@@ -143,7 +145,7 @@ class SystemController {
   @Get('health') health() { return { status: 'UP', strategyVersion: STRATEGY_VERSION, at: new Date().toISOString() }; }
   @Get('openapi.json') specification() { return openapi; }
 }
-export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink;brokerLoginDependencies?:()=>Promise<BrokerLoginDependencies>} = {}) {
+export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink;brokerLoginDependencies?:()=>Promise<BrokerLoginDependencies>;brokerStatusDependencies?:BrokerStatusDependencies} = {}) {
   const db = options.db ?? await databaseFromEnvironment();
   const trustedProxies=(process.env['VCP_TRUSTED_PROXY_IPS']??'').split(',').map(s=>s.trim()).filter(Boolean);if(trustedProxies.some(ip=>!isIP(ip)))throw new Error('INVALID_TRUSTED_PROXY_IP');
   const auth = new AuthService(db, options.origin ?? process.env['APP_ORIGIN'] ?? 'http://localhost:3000', options.secure ?? process.env['COOKIE_SECURE'] !== 'false');
@@ -278,6 +280,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       try{return await recordCashAllocation(db,request.ownerId!,key,body as unknown as Parameters<typeof recordCashAllocation>[3])}
       catch(error){if(!(error instanceof Error)||!['STALE_CONFLICT','INVALID_CASH_ALLOCATION'].includes(error.message))throw error;throw new HttpException({code:error.message==='STALE_CONFLICT'?'STALE_CONFLICT':'INVALID_INPUT',message:'Cash allocation is invalid or conflicts with an existing request'},error.message==='STALE_CONFLICT'?409:422)}
     }
+    @Get('signals') signals(){return readMarketSignals(db)}
     @Get('risk/plans') plans(@Req() request:AuthRequest){return readEntryRisk(db,request.ownerId!)}
     @Post('risk/plans') async plan(@Req() request:AuthRequest){
       const body=strictBody(request,['marketEventId','snapshotId','estimatedFees','topUpQuantity']),key=request.headers['idempotency-key'];
@@ -339,9 +342,9 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);
       strictBody(request,[]);await logoutBroker(db,request.ownerId!);return readBrokerConnection(db,request.ownerId!);
     }
-    @Get('status') status(@Req() request:AuthRequest){return readBrokerConnection(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'])}
+    @Get('status') status(@Req() request:AuthRequest){return readRuntimeBrokerStatus(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'],options.brokerStatusDependencies)}
     @Post('login') async login(@Req() request:AuthRequest&{secure?:boolean}){
-      try{if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);const body=strictBody(request,['pin','totp']);await loginOwnerBroker(db,request.ownerId!,body,options.brokerLoginDependencies);return await readBrokerConnection(db,request.ownerId!)}catch(error){if(error instanceof HttpException)throw error;const candidate=error instanceof Error?error.message:'',code=['BROKER_LOGIN_RATE_LIMITED','BROKER_LOGIN_IN_PROGRESS','BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN','APP_CONFIG_INVALID','STATIC_IP_NOT_VERIFIED','PROVIDER_UNAVAILABLE'].includes(candidate)?candidate:'PROVIDER_UNAVAILABLE';throw new HttpException(code,code==='BROKER_LOGIN_RATE_LIMITED'?429:code==='BROKER_LOGIN_IN_PROGRESS'?409:['BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN'].includes(code)?422:503)}finally{request.body=undefined}
+      try{if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);const body=strictBody(request,['pin','totp']);await loginOwnerBroker(db,request.ownerId!,body,options.brokerLoginDependencies);return await readBrokerConnection(db,request.ownerId!)}catch(error){if(error instanceof HttpException)throw error;const candidate=error instanceof Error?error.message:'',code=['BROKER_LOGIN_RATE_LIMITED','BROKER_LOGIN_IN_PROGRESS','BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN','APP_CONFIG_INVALID','STATIC_IP_NOT_VERIFIED','SESSION_EXPIRED','PROVIDER_UNAVAILABLE'].includes(candidate)?candidate:'PROVIDER_UNAVAILABLE';throw new HttpException(code,code==='BROKER_LOGIN_RATE_LIMITED'?429:code==='BROKER_LOGIN_IN_PROGRESS'?409:['BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN'].includes(code)?422:503)}finally{request.body=undefined}
     }
     @Put('config') async configure(@Req() request:AuthRequest&{secure?:boolean}){
       if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);

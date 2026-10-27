@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {isIP} from 'node:net';
 import {Queue} from 'bullmq';
-import {authenticateBroker,reserveBrokerBudget,type StaticIpProof} from '@vcp/market-data';
+import {BrokerAuthenticationError,authenticateBroker,reserveBrokerBudget,type StaticIpProof} from '@vcp/market-data';
 import {beginBrokerLogin,failBrokerLogin,completeBrokerLogin,resolveBrokerConfiguration,directoryBrokerKeys,type PrismaClient,type BrokerKeyResolver,type BrokerLoginError} from '@vcp/database';
 export interface BrokerLoginDependencies {
  configurationKey:Buffer;sessionKeyId:string;loadSessionKey:BrokerKeyResolver;
@@ -37,7 +37,7 @@ export async function loginOwnerBroker(db:PrismaClient,ownerId:string,value:unkn
   const binding={reference:randomUUID(),accountKey:authenticated.accountKey,sessionRevision:randomUUID(),keyId:deps.sessionKeyId,expiresAt:authenticated.expiresAt};
   await completeBrokerLogin(db,ownerId,attempt.attemptId,binding,authenticated.secrets,{authenticated:true,staticIpVerified:true,verifiedAt:authenticated.verifiedAt},deps.loadSessionKey);
  }catch(error){
-  const message=error instanceof Error?error.message:'',code:BrokerLoginError=message==='STATIC_IP_NOT_VERIFIED'?'STATIC_IP_NOT_VERIFIED':['APP_CONFIG_INVALID','BROKER_NOT_CONFIGURED','BROKER_CONFIGURATION_UNAVAILABLE'].includes(message)?'APP_CONFIG_INVALID':'PROVIDER_UNAVAILABLE';
+  const message=error instanceof Error?error.message:'',code:BrokerLoginError=error instanceof BrokerAuthenticationError?error.code:message==='STATIC_IP_NOT_VERIFIED'?'STATIC_IP_NOT_VERIFIED':['APP_CONFIG_INVALID','BROKER_NOT_CONFIGURED','BROKER_CONFIGURATION_UNAVAILABLE'].includes(message)?'APP_CONFIG_INVALID':'PROVIDER_UNAVAILABLE';
   if(attempt)await failBrokerLogin(db,ownerId,attempt.attemptId,code).catch(()=>{});
   // eslint-disable-next-line preserve-caught-error -- Provider/storage causes must not escape the secret-handling boundary.
   if(['BROKER_LOGIN_IN_PROGRESS','BROKER_LOGIN_RATE_LIMITED'].includes(message))throw new Error(message);throw new Error(code);

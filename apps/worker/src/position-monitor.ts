@@ -1,5 +1,5 @@
 import type {Queue} from 'bullmq';
-import {readPortfolio,recordPositionMonitor,evaluatePositionStop,recordPortfolioRisk,evaluatePositionTrail,evaluatePartialProfit,evaluateExitDecisions,recordPositionStatus,type PortfolioQuotes,type PrismaClient} from '@vcp/database';
+import {ownerStreamBinding,readPortfolio,recordPositionMonitor,evaluatePositionStop,recordPortfolioRisk,evaluatePositionTrail,evaluatePartialProfit,evaluateExitDecisions,recordPositionStatus,type PortfolioQuotes,type PrismaClient} from '@vcp/database';
 
 import {assessHeldQuote,canonicalListings,type CalendarDay,type InstrumentSnapshot,type MonitorAssessment} from '@vcp/market-data';
 import {readLiveQuote} from './live-quotes.js';
@@ -10,15 +10,16 @@ export async function monitorHeldPositions(db:PrismaClient,q:Queue,streamOwner:s
  const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
  const mapping=mappings[0]?.evidence??null;
  for(const owner of owners){
+  const routing=await ownerStreamBinding(db,owner.id,undefined,streamOwner);
   const portfolio=await readPortfolio(db,owner.id),assessments:Record<string,MonitorAssessment>={},quotes:PortfolioQuotes={};
   for(const isin of Object.keys(portfolio.holdings)){
    const asOf=new Date().toISOString();
    let quote:Awaited<ReturnType<typeof readLiveQuote>>={state:'UNKNOWN',reason:'STREAM_OWNER_UNCONFIGURED'};
    try{
     const listing=canonicalListings(mapping?[mapping]:[],[isin],asOf)[0]?.primary;
-    if(listing&&streamOwner){
+    if(listing&&routing.name){
      let timer:ReturnType<typeof setTimeout>|undefined;
-     try{quote=await Promise.race([readLiveQuote(q,streamOwner,listing.listingId),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('QUOTE_STORE_UNAVAILABLE')),1000)})]);}finally{clearTimeout(timer)}
+     try{quote=await Promise.race([readLiveQuote(q,routing.name,listing.listingId),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('QUOTE_STORE_UNAVAILABLE')),1000)})]);}finally{clearTimeout(timer)}
     }
    }catch{quote={state:'UNKNOWN',reason:'QUOTE_STORE_UNAVAILABLE'}}
    assessments[isin]=assessHeldQuote(isin,new Date().toISOString(),calendar[0]?.evidence??null,mapping,quote);

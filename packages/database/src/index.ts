@@ -4,7 +4,7 @@ export {persistIndicator} from './indicators.js';
 export {persistPattern,supersedePattern} from './patterns.js';
 export {registerProfile,activateProfile,activeProfile,validateProfileVersion,readProfileHistory} from './profiles.js';
 export {persistScan,getScan,latestScan} from './scans.js';
-export {persistMarketEvent,persistUserDecision} from './signals.js';
+export {readMarketSignals,persistMarketEvent,persistUserDecision} from './signals.js';
 export {appendPortfolio,readPortfolio} from './portfolio.js';
 export type {JournalCommand} from './portfolio.js';
 export {ingestCandles} from './candles.js';
@@ -79,3 +79,5 @@ export * from './broker-connection-status.js';
 export * from './broker-login.js';
 
 export * from './broker-keys.js';
+
+export * from './broker-stream-binding.js';

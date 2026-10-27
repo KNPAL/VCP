@@ -10,11 +10,11 @@ The transport uses the fixed SmartAPI V2 endpoint, verified TLS, no redirects, a
 
 Provision authentication using [broker-credentials.md](broker-credentials.md). A new successful login retains the returned feed token and verified client code in the existing encrypted credential envelope. Older credentials without feed fields remain valid for historical requests but require reauthentication for live streaming. PIN and TOTP remain unpersisted. Returned refresh tokens are retained only inside the encrypted session envelope and never extend its expiry. The owner re-reads the current circuit/session on every cycle; revoked, expired or unavailable credentials stop monitoring.
 
-Set these variables on the worker process:
+The worker resolves the saved owner account on every coordinator cycle. Changes close the previous stream before replacement; revocation or routing failure stops monitoring. Browser quote delivery and position monitoring also honor saved owner configuration. Set these variables on the worker process:
 
 ```text
 VCP_ENABLE_LIVE_STREAM=true
-VCP_STREAM_ACCOUNT_KEY=<accountKey returned by provisioning>
+VCP_STREAM_ACCOUNT_KEY=<optional legacy accountKey when no owner configuration exists>
 VCP_STREAM_CAPACITY=100
 BROKER_KEY_DIRECTORY=<directory containing the encryption key files>
 ```

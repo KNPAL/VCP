@@ -6,6 +6,12 @@ import {appendMarketAlert} from './alerts.js';
 export async function persistMarketEvent(db:PrismaClient,event:MarketEvent){
  return db.$transaction(tx=>persistMarketEventTransaction(tx,event));
 }
+/** A bounded research view; market confirmation never grants owner permission. */
+export async function readMarketSignals(db:PrismaClient){
+ const asOf=new Date().toISOString();
+ const rows=await db.$queryRaw<{evidence:MarketEvent}[]>`SELECT "evidence" FROM (SELECT DISTINCT ON ("logicalId") "evidence","decidedAt","id" FROM "MarketEvent" WHERE "decidedAt"<=${new Date(asOf)} AND "observedAt"<=${new Date(asOf)} AND "occurredAt"<=${new Date(asOf)} ORDER BY "logicalId","decidedAt" DESC,"id" DESC) latest ORDER BY "decidedAt" DESC,"id" DESC LIMIT 50`;
+ return {asOf,validUntil:new Date(Date.parse(asOf)+30000).toISOString(),items:rows.map(row=>row.evidence),limit:50,executable:false};
+}
 async function persistMarketEventTransaction(db:Prisma.TransactionClient,event:MarketEvent){
  const json=canonical(event),occurredAt=utcInstant(event.occurredAt),observedAt=utcInstant(event.observedAt),decidedAt=utcInstant(event.decidedAt),session=new Date(sessionDate(event.session)+'T00:00:00Z');
  await db.$executeRaw`INSERT INTO "MarketEvent" ("id","logicalId","listingId","session","type","configHash","dataRevision","occurredAt","observedAt","decidedAt","evidence") VALUES (${event.id},${event.logicalId},${event.listingId}::uuid,${session},${event.type},${event.configHash},${event.dataRevision},${occurredAt},${observedAt},${decidedAt},${json}::jsonb) ON CONFLICT DO NOTHING`;

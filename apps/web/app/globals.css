@@ -28,3 +28,9 @@
 .backtest-results fieldset{min-width:0;margin:16px 0;padding:16px;border:1px solid var(--border);border-radius:8px}.backtest-results fieldset select{width:100%;min-width:0}.backtest-results legend{padding:0 6px}
 
 .download-preview .panel{min-width:0;overflow-wrap:anywhere}.download-preview input,.download-preview select{max-width:100%;min-width:0}
+
+.broker-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.broker-connection .panel{min-width:0;overflow-wrap:anywhere}.broker-connection fieldset{border:0;padding:0;margin:20px 0;min-width:0}.broker-connection legend{font-weight:600;margin-bottom:12px}.broker-connection .field{display:block;margin:16px 0}.broker-connection input{width:100%;min-width:0}.broker-status{margin-top:20px}.broker-status dl{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,2fr);gap:12px}.broker-status dd{margin:0}.broker-actions{display:flex;flex-wrap:wrap;align-items:center;gap:20px}@media(max-width:760px){.broker-grid{grid-template-columns:1fr}.broker-connection .pagehead{flex-direction:column;align-items:flex-start}.broker-status dl{grid-template-columns:1fr;gap:6px}.broker-status dd{margin-bottom:10px}}
+
+.broker-health-indicator{white-space:normal;overflow-wrap:anywhere;max-width:100%;text-decoration:none}.broker-readiness{overflow-wrap:anywhere}.topbar{gap:12px;flex-wrap:wrap}
+
+.broker-readiness{margin-bottom:20px}

@@ -1,0 +1,21 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+const {chromium}=await import(process.env.VCP_PLAYWRIGHT_MODULE??'playwright');
+test('shared health expires locally, refreshes after connection events and blocks downloads during outage',async()=>{
+ const browser=await chromium.launch({headless:true,channel:process.env.VCP_BROWSER_CHANNEL??'msedge'}),base=process.env.WEB_TEST_BASE_URL,context=await browser.newContext({baseURL:base});
+ try{
+  assert.equal((await context.request.post('/api/v1/auth/login',{headers:{origin:base},data:{login:process.env.WEB_TEST_LOGIN,password:process.env.WEB_TEST_PASSWORD}})).status(),201);
+  const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));let status=200,expires=new Date(Date.now()+60000).toISOString(),state='CONNECTED',submissions=0;
+  await page.route('**/api/v1/broker/angel-one/status',route=>route.fulfill({status,json:{sessionState:state,configured:true,canFetchHistory:true,canStreamLive:true,tokenExpiresAt:expires,validUntil:expires,liveValidUntil:expires,staticIpStatus:'VERIFIED',staticIpValidUntil:expires,staticIpVerifiedAt:new Date().toISOString(),lastVerifiedAt:new Date().toISOString(),unexpectedToken:'must-never-render'}}));
+  await page.route('**/api/v1/history/downloads**',route=>{if(!route.request().url().endsWith('/preview')){submissions++;return route.fulfill({status:503,json:{}})}return route.fulfill({json:{previewId:'synthetic',submissionEnabled:true,checkedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60000).toISOString(),eligibleCount:1,alreadyStoredCount:1,missingCount:0,planWindowCount:0,warnings:[],quotaNote:'Synthetic',items:[],blockedInstruments:[]}})});
+  await page.goto('/data/historical/download');const badge=page.getByRole('link',{name:/Angel One CONNECTED;/});await badge.waitFor();
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vcp:stream-delivery',{detail:true})));await page.getByRole('link',{name:'Angel One CONNECTED; stream ready',exact:true}).waitFor();
+  await page.getByLabel('Through exchange date',{exact:true}).fill('2025-01-03');await page.getByRole('button',{name:'Preview stored coverage',exact:true}).click();await page.getByRole('heading',{name:'Coverage preview',exact:true}).waitFor();const submit=page.getByRole('button',{name:'Submit historical download',exact:true});assert.equal(await submit.isDisabled(),false);
+  await page.evaluate(()=>window.dispatchEvent(new CustomEvent('vcp:stream-delivery',{detail:false})));await page.getByRole('link',{name:'Angel One CONNECTED; monitor degraded',exact:true}).waitFor();
+  expires=new Date(Date.now()+800).toISOString();await page.getByRole('button',{name:'Refresh broker health',exact:true}).click();await page.getByRole('link',{name:'Angel One EXPIRED; monitor degraded',exact:true}).waitFor();assert.ok(await submit.isDisabled());await page.getByRole('link',{name:'Reconnect Angel One',exact:true}).waitFor();
+  status=403;await page.getByRole('button',{name:'Refresh broker health',exact:true}).click();await page.getByRole('link',{name:'Angel One UNAVAILABLE; monitor degraded',exact:true}).waitFor();assert.ok(await submit.isDisabled());await page.getByRole('heading',{name:'Coverage preview',exact:true}).waitFor();assert.equal(submissions,0);
+  status=200;state='CONFIG_ERROR';expires=new Date(Date.now()+60000).toISOString();await page.evaluate(()=>window.dispatchEvent(new Event('vcp:broker-changed')));await page.getByRole('link',{name:'Angel One CONFIG_ERROR; monitor degraded',exact:true}).waitFor();assert.ok(await submit.isDisabled());
+  state='CONNECTED';await page.evaluate(()=>window.dispatchEvent(new Event('vcp:broker-changed')));await page.getByRole('link',{name:/Angel One CONNECTED;/}).waitFor();assert.equal(await submit.isDisabled(),false);assert.ok(!(await page.locator('body').innerText()).includes('must-never-render'));
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'.runtime/broker-health-mobile.png',fullPage:true});assert.deepEqual(errors,[]);
+ }finally{await context.close();await browser.close()}
+});

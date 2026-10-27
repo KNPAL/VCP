@@ -1,4 +1,4 @@
-# Universe and data health (KAN-125, In Progress)
+# Universe and data health (KAN-125, Coded)
 
 After signing in, open `/universe`. The screen reads persisted universe membership, instrument mappings, completed scan evidence and current scan progress independently. Counts from different revisions are labelled separately. Coverage comes from the existing verified-calendar coverage service; missing evidence is UNKNOWN, never zero or complete. Latest finalized candles exclude records whose finalization or receipt is in the future.
 
@@ -10,13 +10,11 @@ Authenticated read-only endpoints:
 - `GET /api/v1/broker/angel-one/status`
 - `GET /api/v1/system/coverage/{listingId}?provider={provider}`
 
-For the current operator-provisioned broker session, set `VCP_BROKER_ACCOUNT_KEY` in the API process to the existing 64-character lowercase hexadecimal account key used during credential provisioning. Restart the API after changing its environment. If unset, the status is NOT_CONFIGURED; this does not prevent stored-data browsing. This setting is an account selector, not an API key or token. The response never returns credential envelopes, tokens, session revisions or the account key.
+Saved owner broker configuration takes precedence over the legacy VCP_BROKER_ACCOUNT_KEY selector. Configure the connection from Settings > Broker Connections. The status API reads local encrypted session evidence and verified static-IP proof; it makes no provider authentication request. It returns no credential envelopes, tokens, session revisions or account keys. The shared health context expires capabilities locally and refreshes after connection changes; stored-data reads remain independent.
 
-Status currently reflects the stored verified circuit/session and unexpired G01/G07 proofs. It does not make a fresh provider authentication request or prove WebSocket connectivity. A disconnected broker or failed status request does not suppress the independent stored-data response.
+## Completed acceptance
 
-## Outstanding acceptance
-
-KAN-125 is not complete. Browser broker configuration/login remains pending. Universe & Data now polls the latest manual run and shows its state, requested range, candle counts, latest market date and status reason; download navigation is enabled only with fresh broker readiness. The dedicated download preview and job list/detail pages now implement opt-in submission, polling, cancellation and explicit retry; see [manual downloads](manual-downloads.md). Existing sync windows remain labelled separately from aggregated manual jobs. Exhausted attempts are retained when explicit retry creates a new generation.
+Broker configuration/login and shared reconnect health are Coded under KAN-140–143. KAN-125 watchlist/data-health acceptance passed, including saved filters, duplicate additions, error recovery, keyboard controls and mobile layout. Universe & Data now polls the latest manual run and shows its state, requested range, candle counts, latest market date and status reason; download navigation is enabled only with fresh broker readiness. The dedicated download preview and job list/detail pages now implement opt-in submission, polling, cancellation and explicit retry; see [manual downloads](manual-downloads.md). Existing sync windows remain labelled separately from aggregated manual jobs. Exhausted attempts are retained when explicit retry creates a new generation.
 
 KAN-144 is Coded. The read-only preview reuses verified calendar/candle validation, missing-only windows and last-three-session reconciliation, bounded to five years and 400-day windows. Final-session evidence is selected from observed finalized candles or a stored PASSED historical probe matching account, listing and mapping. Missing proof or calendar remains blocked. Probe evidence does not fabricate or import candles. Provider evidence is included in the signed preview's data revision, and changed mappings cannot reuse it. The UI defaults to a five-year range when an end date is first selected, including leap-day handling. The planner reports a 450-session history target. KAN-145 submission and job lifecycle APIs are also Coded; see [manual downloads](manual-downloads.md).
 
