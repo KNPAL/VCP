@@ -18,6 +18,12 @@ test('licensing is per operation; stale, future and missing sources never grant 
  assert.equal(sourcePermission(source,'STORE','2026-10-16T06:01:01Z').status,'UNKNOWN');
  assert.equal(sourcePermission({...source,knownAt:'2026-10-17T06:00:00Z'},'STORE',now).status,'UNKNOWN');
 });
+test('permission values must be explicit booleans or null; malformed metadata never passes',()=>{
+ for(const value of ['true',1,{},undefined])assert.equal(sourcePermission({...source,uses:{...source.uses,STORE:value}},'STORE',now).status,'UNKNOWN');
+ for(const update of [{uses:null},{coverage:null},{maximumAgeMs:0},{lastVerified:'bad'},{provider:' '},{licenseRef:42}])assert.equal(sourcePermission({...source,...update},'STORE',now).status,'UNKNOWN');
+ assert.equal(sourcePermission(source,'invented',now).status,'UNKNOWN');
+ assert.equal(sourcePermission({...source,uses:{...source.uses,STORE:null}},'STORE',now).status,'UNKNOWN');
+});
 test('surveillance needs explicit current unrestricted status and valid price bands',()=>{
  const data={verified:true,knownAt:now,sourceAt:now,validUntil:'2026-10-17T06:00:00Z',asm:false,gsm:false,esm:false,cashTradable:true,lowerBand:'90',upperBand:'110'};
  assert.equal(surveillance(data,now).status,'PASS');assert.equal(surveillance({...data,asm:true},now).status,'FAIL');assert.equal(surveillance({...data,gsm:null},now).status,'UNKNOWN');assert.equal(surveillance(data,data.validUntil).status,'UNKNOWN');assert.equal(surveillance({...data,upperBand:null},now).status,'UNKNOWN');

@@ -19,3 +19,4 @@ export * from './quote-cache.js';
 export * from './sme-research.js';
 
 export * from './broker-budget.js';
+export * from './instrument-master.js';

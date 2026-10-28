@@ -6,10 +6,12 @@ import {snapshot} from '../packages/indicators/dist/index.js';
 import {indicatorReplayHandler} from '../apps/worker/dist/indicator-replay.js';
 import {structureReplayHandler} from '../apps/worker/dist/structure-replay.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
+import {candlePermission} from '../fixtures/candle-permission.mjs';
+import {persistSource} from '../packages/database/dist/index.js';
 const db=new PrismaClient();
 test('stored correction replay is atomic, repeatable and equal to full recomputation',async()=>{
  try{
-  const listingId=randomUUID(),provider='synthetic-replay';
+  const listingId=randomUUID(),provider='synthetic-replay-'+randomUUID(),permission=await candlePermission(db,provider);
   const dates=Array.from({length:35},(_,i)=>new Date(Date.UTC(2026,0,i+1)).toISOString().slice(0,10));
   const calendar=dates.map(date=>({date,kind:'TRADING',opensAt:date+'T03:45:00Z',closesAt:date+'T10:00:00Z',finalizedAt:date+'T10:30:00Z',knownAt:'2025-01-01T00:00:00Z',source:'synthetic',verified:true}));
   const asOf='2026-10-17T01:00:00Z',later='2026-10-17T02:00:00Z';
@@ -65,5 +67,7 @@ test('stored correction replay is atomic, repeatable and equal to full recomputa
   await assert.rejects(handler({...input,adjustmentId:conflictAdjustment.revision}),/REPLAY_EVIDENCE_CONFLICT/);
   assert.equal(await db.indicatorSnapshot.count({where:{listingId,dataRevision:conflictRevision}}),1);
   const failedReceipts=await db.$queryRaw`SELECT "id" FROM "IndicatorReplayReceipt" WHERE "eventId"=${input.eventId}::uuid AND "adjustmentId"=${conflictAdjustment.revision}`;assert.equal(failedReceipts.length,0);
+  const {id:permissionId,...sourcePermission}=permission;assert.ok(permissionId);await persistSource(db,{...sourcePermission,knownAt:new Date().toISOString(),uses:{...permission.uses,DERIVE:false}});
+  await assert.rejects(handler(input),/SOURCE_PERMISSION_REQUIRED/,'Cached receipts must not bypass current permission');
  }finally{await db.$disconnect()}
 });

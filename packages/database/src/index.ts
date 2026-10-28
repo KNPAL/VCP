@@ -5,6 +5,7 @@ export {persistPattern,supersedePattern} from './patterns.js';
 export {registerProfile,activateProfile,activeProfile,validateProfileVersion,readProfileHistory} from './profiles.js';
 export {persistScan,getScan,latestScan} from './scans.js';
 export {readMarketSignals,persistMarketEvent,persistUserDecision} from './signals.js';
+export {importInstrumentMaster} from './instrument-master.js';
 export {appendPortfolio,readPortfolio} from './portfolio.js';
 export type {JournalCommand} from './portfolio.js';
 export {ingestCandles} from './candles.js';
@@ -14,7 +15,9 @@ export {pendingCandleChanges,receiveCandleChange,recordCandleDispatch} from './c
 export {brokerCircuitStore,restoreBrokerCircuit} from './broker-circuit.js';
 export {createSyncRun,claimSyncWindow,commitSyncWindow,failSyncWindow,syncRunInput} from './sync-windows.js';
 export {syncJobs,instrumentCoverage} from './sync-progress.js';
-export {persistSource,persistReadiness,getReadiness} from './readiness.js';
+export {persistSource,persistReadiness,getReadiness,readSourceRegistry,currentSource} from './readiness.js';
+export {evaluateLicenseBindings,LICENSE_SOURCE_ROLES} from './licensing.js';
+export {assertCandlePermissions} from './data-permissions.js';
 export {persistInstrumentSnapshot,persistUniverse,pinScanUniverse,persistSectors,getSector} from './instruments.js';
 export * from './historical-probe.js';
 export * from './broker-credentials.js';

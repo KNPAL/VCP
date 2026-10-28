@@ -1,3 +1,4 @@
+import {licensedSources} from '../fixtures/licensed-sources.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes,randomUUID} from 'node:crypto';
@@ -21,7 +22,7 @@ test('runtime status reports configuration, verified IP, expiry and gated live c
   await new Promise(r=>setTimeout(r,5));
   const reference=randomUUID(),sessionRevision=randomUUID(),verifiedAt=new Date().toISOString(),secrets={apiKey,accessToken:'synthetic-status-jwt',refreshToken:'synthetic-status-refresh',feedToken:'synthetic-status-feed',clientCode,clientLocalIp:'127.0.0.1',clientPublicIp:'192.0.2.1',macAddress:'00:00:00:00:00:00'};
   await installBrokerSession(db,{reference,accountKey,sessionRevision,keyId:'status-test',expiresAt},secrets,{authenticated:true,staticIpVerified:true,verifiedAt},async()=>key);
-  for(const gate of ['G01','G07','G09'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-status-proof',reason:null,details:{synthetic:true}});
+  for(const gate of ['G01','G07','G09'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-status-proof',reason:null,details:gate==='G07'?await licensedSources(db,verifiedAt,expiresAt):{synthetic:true}});
   const connected=await read();assert.equal(connected.sessionState,'CONNECTED');assert.equal(connected.canFetchHistory,true);assert.equal(connected.canStreamLive,true);assert.equal(connected.permissions.orders,false);
   process.env.REDIS_PORT='56379';const streamName='smartapi-'+accountKey;quoteQueue=queue('entry-proof-'+randomUUID());const redis=await quoteQueue.client,listingId=randomUUID(),fence=await acquireLease(quoteQueue,streamName);assert.ok(fence);
   const keys=['lease:'+streamName,'fence:'+streamName,'quotes:'+streamName+':connection','quotes:'+streamName+':'+listingId,'quotes:'+streamName+':'+listingId+':watermark'];redis.defineCommand('entry_proof_cleanup',{numberOfKeys:5,lua:'return redis.call("DEL",unpack(KEYS))'});cleanup=()=>redis.runCommand('entry_proof_cleanup',keys);
@@ -42,7 +43,7 @@ test('runtime status reports configuration, verified IP, expiry and gated live c
   assert.equal((await read({loadSessionKey:async()=>randomBytes(32)})).sessionState,'UNAVAILABLE');
   const expired=await read({network:async()=>({...network,ipProof:{...network.ipProof,verifiedAt:'2020-01-01T00:00:00Z',expiresAt:'2020-01-02T00:00:00Z'}})});assert.equal(expired.staticIpStatus,'EXPIRED');assert.equal(expired.serverPublicIpDisplayOrNull,null);assert.equal(expired.canFetchHistory,false);assert.equal(expired.canStreamLive,false);assert.equal(expired.lastErrorCode,'STATIC_IP_NOT_VERIFIED');
   const changed=await read({network:async()=>({...network,clientPublicIp:'192.0.2.2',ipProof:{...network.ipProof,address:'192.0.2.2'}})});assert.equal(changed.canStreamLive,false);assert.equal(changed.canFetchHistory,false);
-  for(const status of ['FAIL','PASS']){await persistReadiness(db,{gate:'G07',status,probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-status-proof',reason:status==='FAIL'?'LICENSE_DENIED':null,details:{synthetic:true}});if(status==='FAIL'){assert.equal((await read()).canStreamLive,false);assert.equal((await read()).canFetchHistory,false)}}
+  for(const status of ['FAIL','PASS']){await persistReadiness(db,{gate:'G07',status,probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-status-proof',reason:status==='FAIL'?'LICENSE_DENIED':null,details:await licensedSources(db,verifiedAt,expiresAt)});if(status==='FAIL'){assert.equal((await read()).canStreamLive,false);assert.equal((await read()).canFetchHistory,false)}}
   const {feedToken,clientCode:unusedClient,...historySecrets}=secrets;assert.ok(feedToken&&unusedClient);
   await installBrokerSession(db,{reference:randomUUID(),accountKey,sessionRevision:randomUUID(),keyId:'status-test',expiresAt},historySecrets,{authenticated:true,staticIpVerified:true,verifiedAt:new Date().toISOString()},async()=>key);
   assert.equal(await entryReader.read(owner,listingId),null,'Old cached connection evidence cannot authorize a replacement broker session');

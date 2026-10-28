@@ -1,3 +1,4 @@
+import {licensedSources} from '../fixtures/licensed-sources.mjs';
 import {queue,createWorker} from '../apps/worker/dist/runtime.js';
 import {dispatchBackfills} from '../apps/worker/dist/backfill-delivery.js';
 import test from 'node:test';
@@ -44,7 +45,7 @@ test('preview authorization, acceptance and worker preparation preserve ownershi
   assert.equal((await ownerBrokerBinding(db,owner,'a'.repeat(64))).accountKey,accountKey);
 
   await installBrokerSession(db,{reference:randomUUID(),accountKey,sessionRevision:randomUUID(),keyId:'manual-download-test',expiresAt},{accessToken:'synthetic-test-token',apiKey:'synthetic-test-key',clientLocalIp:'127.0.0.1',clientPublicIp:'192.0.2.1',macAddress:'00:00:00:00:00:00'},{authenticated:true,staticIpVerified:true,verifiedAt},async()=>randomBytes(32));
-  for(const gate of ['G01','G07'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-manual-download',reason:null,details:{synthetic:true}});
+  for(const gate of ['G01','G07'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-manual-download',reason:null,details:gate==='G07'?await licensedSources(db,verifiedAt,expiresAt):{synthetic:true}});
   const ready=await readDownloadPreview(db,owner,request,accountKey),authorizationKey=randomBytes(32),previewToken=signDownloadPreview(ready,owner,authorizationKey),idempotencyKey=randomUUID(),submission={previewToken,mode:'MISSING_ONLY',idempotencyKey};
   const accepted=await acceptManualDownload(db,owner,submission,authorizationKey,accountKey),duplicate=await acceptManualDownload(db,owner,submission,authorizationKey,accountKey);assert.equal(accepted.runId,duplicate.runId);assert.equal(duplicate.reused,true);const detail=await readManualDownload(db,owner,accepted.runId);assert.equal(detail.status,'QUEUED');assert.equal(detail.dispatchAvailable,false);assert.ok(!JSON.stringify(detail).includes(accountKey));await assert.rejects(readManualDownload(db,randomUUID(),accepted.runId),/NOT_FOUND/);
   const oldIssued=Date.now()-360000,expiredToken=signDownloadPreview({...ready,checkedAt:new Date(oldIssued).toISOString(),expiresAt:new Date(oldIssued+300000).toISOString()},owner,authorizationKey);

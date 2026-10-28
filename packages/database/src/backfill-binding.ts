@@ -2,6 +2,7 @@ import type {PrismaClient} from '@prisma/client';
 import {sourcePermission,HISTORICAL_ENDPOINT,normalizeHistoricalResponse,type InstrumentSnapshot,type SourceRecord} from '@vcp/market-data';
 import {syncRunInput} from './sync-windows.js';
 import {canonical} from './indicators.js';
+import {currentSource} from './readiness.js';
 export interface BackfillBinding {runId:string;credentialReference:string;instrumentSnapshotId:string;sourceSnapshotId:string;exchange:'NSE'|'BSE';symbolToken:string}
 export async function backfillBinding(db:PrismaClient,runId:string){const rows=await db.$queryRaw<{evidence:BackfillBinding}[]>`SELECT "evidence" FROM "BackfillBinding" WHERE "runId"=${runId}::uuid`;return rows[0]?.evidence??null}
 export async function backfillContext(db:PrismaClient,binding:BackfillBinding,now:string){
@@ -10,6 +11,8 @@ export async function backfillContext(db:PrismaClient,binding:BackfillBinding,no
  const sources=await db.$queryRaw<{evidence:SourceRecord}[]>`SELECT "evidence" FROM "SourceSnapshot" WHERE "id"=${binding.sourceSnapshotId}`;
  const mapping=mappings[0]?.evidence,source=sources[0]?.evidence;
  if(!mapping||!source||source.provider!==run.provider||source.dataset!=='DAILY_CANDLES'||source.endpointOrFile!==HISTORICAL_ENDPOINT||sourcePermission(source,'DOWNLOAD',now).status!=='PASS'||sourcePermission(source,'STORE',now).status!=='PASS')throw new Error('BACKFILL_CONTEXT_UNAVAILABLE');
+ const current=await currentSource(db,source,now);
+ if(current?.id!==binding.sourceSnapshotId)throw new Error('BACKFILL_SOURCE_SUPERSEDED');
  const normalized=normalizeHistoricalResponse({listingId:run.listingId,mapping,calendar:run.calendar,request:{exchange:binding.exchange,symbolToken:binding.symbolToken,from:run.from,to:run.to},receivedAt:now,rows:[]});
  if(normalized.status==='UNKNOWN')throw new Error('BACKFILL_CONTEXT_UNAVAILABLE');
  return {run,mapping,source};

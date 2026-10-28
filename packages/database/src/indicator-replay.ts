@@ -4,6 +4,7 @@ import {replay,type Series} from '@vcp/indicators';
 import {verifiedCalendar,type CalendarDay} from '@vcp/market-data';
 import {STRATEGY_VERSION,utcInstant} from '@vcp/domain';
 import {canonical} from './indicators.js';
+import {assertCandlePermissions} from './data-permissions.js';
 type AdjustedBar=Series['bars'][number]&{rawRevisionId:string};
 export interface IndicatorReplayInput {eventId:string;adjustmentId:string;calendarHash:string}
 export async function pendingIndicatorReplays(db:PrismaClient,limit=25){
@@ -23,7 +24,6 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(input.eventId)||![input.adjustmentId,input.calendarHash].every(id=>/^[0-9a-f]{64}$/.test(id)))throw new Error('INVALID_REPLAY_IDENTITY');
  const id=createHash('sha256').update(canonical(input)).digest('hex');
  const prior=await db.$queryRaw<{evidence:Prisma.JsonValue}[]>`SELECT "evidence" FROM "IndicatorReplayReceipt" WHERE "id"=${id}`;
- if(prior[0])return prior[0].evidence;
  const requests=await db.$queryRaw<{listingId:string;changedFrom:Date;dataRevision:string}[]>`SELECT "listingId","changedFrom","dataRevision" FROM "CorrectionReplayRequest" WHERE "eventId"=${input.eventId}::uuid`;
  const request=requests[0];if(!request)throw new Error('REPLAY_REQUEST_MISSING');
  const snapshots=await db.$queryRaw<{listingId:string;asOf:Date;state:string;evidence:{rawRevisionIds:string[];result:{bars:AdjustedBar[]}}}[]>`SELECT "listingId","asOf","state","evidence" FROM "AdjustmentSnapshot" WHERE "id"=${input.adjustmentId}`;
@@ -32,6 +32,8 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${input.calendarHash}`;
  const bars=snapshot.evidence.result.bars;
  if(!bars.length)throw new Error('REPLAY_SERIES_EMPTY');
+ const permission=await assertCandlePermissions(db,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);
+ if(prior[0])return prior[0].evidence;
  const asOf=snapshot.asOf.toISOString();
  const calendar=verifiedCalendar(calendars[0]?.evidence??null,bars[0]!.session,bars.at(-1)!.session,asOf);
  if(calendar.state!=='KNOWN'||canonical(calendar.sessions.map(s=>s.date))!==canonical(bars.map(b=>b.session)))throw new Error('REPLAY_CALENDAR_INCOMPLETE');
@@ -41,8 +43,9 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  // Conservatively restart from the original seed: an action adjustment may affect bars
  // earlier than the raw correction date. Every prefix remains independently auditable.
  const outputs=replay(series,0);
- const receipt={id,...input,listingId:request.listingId,dataRevision,state:'INDICATORS_REPLAYED',mode:'RETROSPECTIVE_CORRECTION',asOf,from:bars[0]!.session,to:bars.at(-1)!.session,count:outputs.length,remainingStages:['MARKET_SIGNALS','VCP','SCANS']};
+ const receipt={id,...input,listingId:request.listingId,dataRevision,state:'INDICATORS_REPLAYED',mode:'RETROSPECTIVE_CORRECTION',asOf,permission,from:bars[0]!.session,to:bars.at(-1)!.session,count:outputs.length,remainingStages:['MARKET_SIGNALS','VCP','SCANS']};
  return db.$transaction(async tx=>{
+  const current=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(current.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
   for(const output of outputs){
    const key={listingId:request.listingId,session:new Date(output.session),strategyVersion:STRATEGY_VERSION,dataRevision};
    const evidence=JSON.parse(canonical({...output.evidence,replay:{mode:'RETROSPECTIVE_CORRECTION',adjustmentId:input.adjustmentId,calendarHash:input.calendarHash}})) as Prisma.InputJsonValue;

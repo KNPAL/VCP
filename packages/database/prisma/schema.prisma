@@ -948,3 +948,9 @@ model SurveillanceSnapshot {
  evidence Json
  @@index([listingId,knownAt(sort: Desc),recordedAt(sort: Desc)],map:"surveillance_listing_time")
 }
+
+model InstrumentMasterImport {
+ id String @id @db.VarChar(64)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+}

@@ -15,8 +15,19 @@ export type GateId=keyof typeof GATES;
 export type Permission='DOWNLOAD'|'STORE'|'DERIVE'|'DISPLAY'|'REDISTRIBUTE';
 export interface SourceRecord {dataset:string;provider:string;endpointOrFile:string;licenseRef:string|null;uses:Record<Permission,boolean|null>;updateFrequency:string;asOf:string;knownAt:string;effectiveAt:string;validUntil:string;lastVerified:string;maximumAgeMs:number;adjustmentPolicy:string;coverage:{intended:number;available:number};error:string|null}
 const at=(value:string)=>utcInstant(value).valueOf();
+export function validateSourceRecord(source:SourceRecord){
+ if(!source||typeof source!=='object'||Array.isArray(source))throw new Error('INVALID_SOURCE_RECORD');
+ for(const key of ['dataset','provider','endpointOrFile','updateFrequency','adjustmentPolicy'] as const)if(typeof source[key]!=='string'||!source[key].trim())throw new Error('INVALID_SOURCE_METADATA');
+ for(const key of ['licenseRef','error'] as const)if(source[key]!==null&&(typeof source[key]!=='string'||!source[key]!.trim()))throw new Error('INVALID_SOURCE_METADATA');
+ if(!source.uses||Object.keys(source.uses).length!==5||(['DOWNLOAD','STORE','DERIVE','DISPLAY','REDISTRIBUTE'] as const).some(use=>source.uses[use]!==null&&typeof source.uses[use]!=='boolean'))throw new Error('INVALID_SOURCE_PERMISSIONS');
+ for(const key of ['asOf','knownAt','effectiveAt','validUntil','lastVerified'] as const)at(source[key]);
+ if(!Number.isSafeInteger(source.maximumAgeMs)||source.maximumAgeMs<=0||!source.coverage||!Number.isSafeInteger(source.coverage.intended)||!Number.isSafeInteger(source.coverage.available)||source.coverage.intended<0||source.coverage.available<0||source.coverage.available>source.coverage.intended)throw new Error('INVALID_SOURCE_COVERAGE_OR_AGE');
+ return source;
+}
 export function sourcePermission(source:SourceRecord|null,operation:Permission,asOf:string){
  if(!source)return {status:'UNKNOWN' as const,reasons:['SOURCE_MISSING']};
+ try{validateSourceRecord(source)}catch{return {status:'UNKNOWN' as const,reasons:['SOURCE_METADATA_INVALID']}}
+ if(!['DOWNLOAD','STORE','DERIVE','DISPLAY','REDISTRIBUTE'].includes(operation))return {status:'UNKNOWN' as const,reasons:['SOURCE_OPERATION_INVALID']};
  const now=at(asOf),reasons:string[]=[];
  if(!source.dataset||!source.provider||!source.endpointOrFile||!source.updateFrequency||!source.adjustmentPolicy)reasons.push('SOURCE_METADATA_INCOMPLETE');
  if(!source.licenseRef||source.uses[operation]===null||source.uses[operation]===undefined)reasons.push('LICENSE_PERMISSION_UNKNOWN');

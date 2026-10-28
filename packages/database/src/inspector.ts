@@ -6,6 +6,7 @@ import type {InstrumentSnapshot} from '@vcp/market-data';
 import {getDailyStructure,type DailyStructureResult} from './daily-structure.js';
 import {readPortfolio} from './portfolio.js';
 import type {InitialStop} from './protective-stops.js';
+import {assertCandlePermissions} from './data-permissions.js';
 
 /** Presentation indicators use the production functions on the pinned source; VCP is never re-detected. */
 export function inspectorSeries(execution:DailyStructureResult){
@@ -21,6 +22,7 @@ export async function inspectorListings(db:PrismaClient){
 export async function readInspector(db:PrismaClient,ownerId:string,id:string){
  const execution=await getDailyStructure(db,id);if(!execution)return null;
  const asOf=new Date().toISOString();if(Date.parse(execution.input.decidedAt)>Date.parse(asOf))return null;
+ const permission=await assertCandlePermissions(db,execution.input.series.bars.map(bar=>bar.revision),['DISPLAY','DERIVE'],asOf);
  const [mappingRows,journal,stopRows,trailRows,events]=await Promise.all([
   db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${new Date(execution.input.decidedAt)} ORDER BY "knownAt" DESC,"id" LIMIT 1`,
   readPortfolio(db,ownerId),
@@ -35,7 +37,7 @@ export async function readInspector(db:PrismaClient,ownerId:string,id:string){
  const episodes=positionEpisodes(journal.events,asOf).episodes;
  const stops=stopRows.map(r=>{const episode=episodes.find(e=>e.id===r.evidence.episodeId);return {...r.evidence,closedAt:episode?.closedAt??null,overlayAllowed:!!episode&&episode.fillIds.includes(r.evidence.fillId)&&r.evidence.stop?.scaleRevision===execution.input.scaleRevision}});
  const trails=trailRows.map(r=>({...r.evidence,overlayAllowed:r.evidence.input.scaleVerified&&stops.some(s=>s.id===r.evidence.stopId&&s.overlayAllowed)}));
- return {id,asOf,sourceAt:execution.input.series.asOf,dataRevision:execution.input.series.dataRevision,adjustmentRevision:execution.input.adjustmentRevision,scaleRevision:execution.input.scaleRevision,configHash:execution.input.configHash,listing:listing?{listingId:listing.listingId,isin:listing.isin,symbol:listing.symbol,exchange:listing.exchange}:null,
+ return {id,asOf,permission,sourceAt:execution.input.series.asOf,dataRevision:execution.input.series.dataRevision,adjustmentRevision:execution.input.adjustmentRevision,scaleRevision:execution.input.scaleRevision,configHash:execution.input.configHash,listing:listing?{listingId:listing.listingId,isin:listing.isin,symbol:listing.symbol,exchange:listing.exchange}:null,
   bars,structure:execution.detector.structure,frozen:execution.detector.frozen,breakout:execution.breakout,marketEvents:events.map(r=>r.evidence).filter(e=>e.session>=first&&e.session<=last),fills,stops,trails,
   journalAsOf:journal.asOf,priceScale:'ADJUSTED',fillPriceScale:'RAW',executable:false};
 }

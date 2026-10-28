@@ -1,13 +1,15 @@
-import {PrismaClient} from '@prisma/client';
+import {PrismaClient,type Prisma} from '@prisma/client';
 import {createHash} from 'node:crypto';
 import {validateInstrumentSnapshot,canonicalListings,universeAt,sectorAt,type InstrumentSnapshot,type UniverseSnapshot,type SectorMapping} from '@vcp/market-data';
 import {utcInstant} from '@vcp/domain';
 import {canonical} from './indicators.js';
 const hash=(data:unknown)=>createHash('sha256').update(canonical(data)).digest('hex');
 export async function persistInstrumentSnapshot(db:PrismaClient,input:Omit<InstrumentSnapshot,'id'>){
+ return db.$transaction(tx=>persistInstrumentSnapshotTransaction(tx,input));
+}
+export async function persistInstrumentSnapshotTransaction(tx:Prisma.TransactionClient,input:Omit<InstrumentSnapshot,'id'>){
  const normalized={...input,rows:[...input.rows].sort((a,b)=>a.listingId.localeCompare(b.listingId)||a.provider.localeCompare(b.provider)||a.validFrom.localeCompare(b.validFrom))};
  const snapshot={...normalized,id:hash(normalized)};validateInstrumentSnapshot(snapshot);
- return db.$transaction(async tx=>{
   const json=canonical(snapshot);await tx.$executeRaw`INSERT INTO "InstrumentSnapshot" ("id","knownAt","sourceReference","evidence") VALUES (${snapshot.id},${utcInstant(snapshot.knownAt)},${snapshot.sourceReference},${json}::jsonb) ON CONFLICT ("id") DO NOTHING`;
   for(const row of snapshot.rows){
    await tx.$executeRaw`INSERT INTO "Company" ("id","isin") VALUES (${row.companyId}::uuid,${row.isin}) ON CONFLICT DO NOTHING`;
@@ -17,7 +19,6 @@ export async function persistInstrumentSnapshot(db:PrismaClient,input:Omit<Instr
    const mappingId=hash([snapshot.id,row]),mappingJson=canonical(row);
    await tx.$executeRaw`INSERT INTO "ListingMapping" ("id","snapshotId","listingId","provider","token","validFrom","validTo","evidence") VALUES (${mappingId},${snapshot.id},${row.listingId}::uuid,${row.provider},${row.token},${new Date(row.validFrom)},${row.validTo?new Date(row.validTo):null},${mappingJson}::jsonb) ON CONFLICT ("id") DO NOTHING`;
   }return snapshot;
- });
 }
 export async function persistUniverse(db:PrismaClient,input:Omit<UniverseSnapshot,'id'>){
  const normalized={...input,isins:[...input.isins].sort()},snapshot={...normalized,id:hash(normalized)};universeAt([snapshot],snapshot.knownAt);

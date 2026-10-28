@@ -8,7 +8,10 @@ export function backfillHandler(db:PrismaClient,q:Queue,loadKey:BrokerKeyResolve
  const binding=await backfillBinding(db,data.runId);if(!binding)throw new Error('BACKFILL_CONTEXT_UNAVAILABLE');
  return processBackfillWindow(db,data.runId,{now,fetch:async window=>{
   const {run,mapping}=await backfillContext(db,binding,now());
-  return factory(db,q,{reference:binding.credentialReference,loadKey,listingId:run.listingId,exchange:binding.exchange,symbolToken:binding.symbolToken,mapping,calendar:run.calendar,now,downloadAllowed:true}).fetch(window);
+  const result=await factory(db,q,{reference:binding.credentialReference,loadKey,listingId:run.listingId,exchange:binding.exchange,symbolToken:binding.symbolToken,mapping,calendar:run.calendar,now,downloadAllowed:true}).fetch(window);
+  // Permissions can be revoked while the provider request is in flight.
+  await backfillContext(db,binding,now());
+  return result;
  }});
 }}
 /** SQL remains authoritative: lost Redis jobs are rebuilt from uncommitted windows. */

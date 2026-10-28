@@ -273,3 +273,5 @@ Backtest results: [stored-run results and historical drilldown](docs/backtest-re
 Optional research comparator: [exact 100-day breakout, licensed-source gates and UNKNOWN proxy rules](docs/proxy-research.md).
 
 For an API test-port conflict, set `WEB_TEST_API_PORT` (for example `3101`) and `WEB_TEST_PORT` (for example `3102`). Build the web app with `API_INTERNAL_URL=http://127.0.0.1:3101` for that test run because Next.js stores HTTP rewrites at build time. Rebuild with your normal API origin before returning to normal local use. The test harness waits for the web authentication proxy to return 401 before starting tests. Do not stop unrelated applications to free their ports.
+
+[Instrument-master import](docs/instrument-master.md) (migration 63) normalizes a licensed SmartAPI JSON file against reviewed identities and tick units, with immutable partial-import and retry reports. Apply migrations and rebuild market-data/database before running the import CLI. Missing or ambiguous mappings remain unavailable; this workflow does not acquire data or infer a license.

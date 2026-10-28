@@ -1,3 +1,4 @@
+import {licensedSources} from '../fixtures/licensed-sources.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,randomInt} from 'node:crypto';
@@ -23,7 +24,7 @@ test('broker health uses the configured circuit only and never returns credentia
   assert.equal((await readBrokerHealth(db)).state,'NOT_CONFIGURED');const accountKey=randomBytes(32).toString('hex');assert.equal((await readBrokerHealth(db,accountKey)).state,'UNAVAILABLE');
   const verifiedAt=new Date(Date.now()-100).toISOString(),expiresAt=new Date(Date.now()+60000).toISOString(),sessionRevision=randomUUID(),key=randomBytes(32);
   await installBrokerSession(db,{reference:randomUUID(),accountKey,sessionRevision,keyId:'health-test',expiresAt},{accessToken:'synthetic-private-token',apiKey:'synthetic-private-key',clientLocalIp:'127.0.0.1',clientPublicIp:'192.0.2.1',macAddress:'00:00:00:00:00:00'},{authenticated:true,staticIpVerified:true,verifiedAt},async()=>key);
-  for(const gate of ['G01','G07'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-health-proof',reason:null,details:{synthetic:true}});
+  for(const gate of ['G01','G07'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-health-proof',reason:null,details:gate==='G07'?await licensedSources(db,verifiedAt,expiresAt):{synthetic:true}});
   const result=await readBrokerHealth(db,accountKey);assert.equal(result.authenticated,true);assert.equal(result.historyReady,true);for(const value of ['synthetic-private-token','synthetic-private-key',sessionRevision,accountKey])assert.ok(!JSON.stringify(result).includes(value));
   await brokerCircuitStore(db,accountKey).openCircuit(sessionRevision,'BROKER_UNAVAILABLE');assert.equal((await readBrokerHealth(db,accountKey)).authenticated,false);
   await db.brokerCircuit.update({where:{accountKey},data:{expiresAt:new Date(Date.now()-1000)}});assert.equal((await readBrokerHealth(db,accountKey)).state,'EXPIRED');assert.equal((await readBrokerHealth(db)).authenticated,false);

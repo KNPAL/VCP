@@ -20,7 +20,7 @@ import {readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualD
 import {readPositionCards} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
-import {readSurveillance,readMarketSignals,recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
+import {readSourceRegistry,readSurveillance,readMarketSignals,recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
 import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops,readPositionStatus,dismissPartialProfit} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
@@ -70,6 +70,7 @@ export const openapi = {
     '/api/v1/signals':{get:{operationId:'signals',security:[{session:[]}],parameters:[{name:'type',in:'query',required:true,schema:{type:'string',enum:['BUY','SELL','PRICE_ONLY']}}],responses:{'200':{description:'Typed market or owner SELL evidence; signals are not fills'},'400':{description:'Missing or invalid signal type'},'401':{description:'Authentication required'}}}},
     '/api/v1/signals/{id}/evaluate-plan':{post:{operationId:'evaluateSignalPlan',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[a-f0-9]{64}$'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['snapshotId','estimatedFees'],properties:{snapshotId:{type:'string',pattern:'^[a-f0-9]{64}$'},estimatedFees:{type:'string'},topUpQuantity:{type:'integer',minimum:1}}}}}},responses:{'201':{description:'Immutable entry-plan evidence, proposed quantity, stop, caps, quoteAt and expiryAt; no order or fill'},'409':{description:'Stale valuation or conflicting idempotency key'},'422':{description:'Invalid or unavailable market event'}}}},
     '/api/v1/portfolio/signals':{get:{operationId:'marketSignals',security:[{session:[]}],responses:{'200':{description:'Latest 50 known breakout events, one revision per logical event; no owner permission or order implied'},'401':{description:'Authentication required'}}}},
+    '/api/v1/sources/registry':{get:{operationId:'sourceRegistry',security:[{session:[]}],parameters:[{name:'dataset',in:'query',required:false,schema:{type:'string',minLength:1,maxLength:128}}],responses:{'200':{description:'Latest source metadata and per-operation permission/freshness decisions; missing sources are UNKNOWN'},'400':{description:'Invalid dataset filter'},'401':{description:'Owner session required'}}}},
     '/api/v1/portfolio/risk':{get:{operationId:'portfolioRisk',security:[{session:[]}],responses:{'200':{description:'Journal-bound valuation, mark ages, company/sector exposure, planned downside, snapshot deadline and separate blocked entry-plan reasons'}}}},
     '/api/v1/portfolio/loss-streak':{get:{operationId:'portfolioLossStreak',security:[{session:[]}],responses:{'200':{description:'Real-position closure P&L, three-loss cooldown, unknown-input reasons and allocation audit history'}}}},
     '/api/v1/portfolio/cash-allocations':{post:{operationId:'allocatePositionCash',security:[{session:[]}],parameters:[{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],responses:{'201':{description:'Immutable cash attribution version saved without changing journal cash or fills'},'409':{description:'Conflicting retry payload'},'422':{description:'Invalid cash event or episode'}}}},
@@ -186,7 +187,8 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Get('inspector') inspectorList(){return inspectorListings(db)}
     @Get('inspector/:id') async inspector(@Req() request:AuthRequest,@Param('id') id:string){
       if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid daily execution ID');
-      const result=await readInspector(db,request.ownerId!,id);if(!result)throw new NotFoundException('Daily execution not found');return result;
+      try{const result=await readInspector(db,request.ownerId!,id);if(!result)throw new NotFoundException('Daily execution not found');return result}
+      catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}
     }
     @Get('lifecycle/:id') async lifecycle(@Param('id') id:string){if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid pattern ID');return patternHistory(db,id)}
     @Get('profiles') profiles(){return readProfileHistory(db)}
@@ -419,6 +421,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('sources')
   class SourceController {
+    @Get('registry') registry(@Query() query:Record<string,unknown>){if(Object.keys(query).some(key=>key!=='dataset')||query['dataset']!==undefined&&(typeof query['dataset']!=='string'||!query['dataset'].trim()||query['dataset'].length>128))throw new BadRequestException('Invalid source dataset filter');return readSourceRegistry(db,query['dataset'] as string|undefined)}
     @Get('readiness') readiness(){return getReadiness(db)}
     @Get('surveillance/:id') surveillance(@Param('id') id:string){if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id))throw new BadRequestException('Invalid listing ID');return readSurveillance(db,id)}
   }
