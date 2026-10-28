@@ -4,9 +4,17 @@ import {normalizeLiveTick,readQuoteCache,type ProviderTick,type InstrumentSnapsh
 const clock="local t=redis.call('TIME');local now=tonumber(t[1])*1000+math.floor(tonumber(t[2])/1000);";
 function keys(owner:string,listing='connection'){if(!/^[a-zA-Z0-9-]{1,100}$/.test(owner)||!/^[a-zA-Z0-9-]{1,100}$/.test(listing))throw new Error('INVALID_QUOTE_SCOPE');return ['lease:'+owner,'quotes:'+owner+':connection','quotes:'+owner+':'+listing,'quotes:'+owner+':'+listing+':watermark']}
 async function run(q:Queue,lua:string,ks:string[],args:(string|number)[]){const c=await q.client,name='quote_'+createHash('sha256').update(lua).digest('hex').slice(0,16);c.defineCommand(name,{numberOfKeys:ks.length,lua});return c.runCommand(name,[...ks,...args])}
-export async function recordQuoteConnection(q:Queue,owner:string,fence:string,state:'CONNECTED'|'DISCONNECTED'){
+export async function recordQuoteConnection(q:Queue,owner:string,fence:string,state:'CONNECTED'|'DISCONNECTED',proof?:{sessionRevision:string;pongAt:string|null}){
  if(!['CONNECTED','DISCONNECTED'].includes(state))throw new Error('INVALID_CONNECTION_STATE');
- return await run(q,clock+"if redis.call('GET',KEYS[1])~=ARGV[1] then return 0 end;local old=redis.call('GET',KEYS[2]);if old then old=cjson.decode(old);if old.fence==ARGV[1] and (old.state=='DISCONNECTED' or now-old.at>=30000) and ARGV[2]=='CONNECTED' then return 0 end end;redis.call('SET',KEYS[2],cjson.encode({fence=ARGV[1],state=ARGV[2],at=now}));return 1",keys(owner).slice(0,2),[fence,state])===1;
+ if(proof&&(!/^[A-Za-z0-9-]{1,100}$/.test(proof.sessionRevision)||proof.pongAt!==null&&!Number.isFinite(Date.parse(proof.pongAt))))throw new Error('INVALID_CONNECTION_PROOF');
+ return await run(q,clock+`if redis.call('GET',KEYS[1])~=ARGV[1] then return 0 end
+ local old=redis.call('GET',KEYS[2]);local started=now
+ if old then old=cjson.decode(old);if old.fence==ARGV[1] then
+  if (old.state=='DISCONNECTED' or now-old.at>=30000 or (old.sessionRevision or '')~=ARGV[3]) and ARGV[2]=='CONNECTED' then return 0 end
+  started=old.startedAt or old.at
+ end end
+ local pong=tonumber(ARGV[4]);if pong and (pong>now or pong<started) then pong=nil end
+ redis.call('SET',KEYS[2],cjson.encode({fence=ARGV[1],state=ARGV[2],at=now,startedAt=started,sessionRevision=ARGV[3],pongAt=pong}));return 1`,keys(owner).slice(0,2),[fence,state,proof?.sessionRevision??'',proof?.pongAt?Date.parse(proof.pongAt):''])===1;
 }
 export async function publishLiveTick(q:Queue,owner:string,fence:string,tick:ProviderTick,mapping:InstrumentSnapshot|null,session:QuoteSession|null,receivedAt=new Date().toISOString()){
  const normalized=normalizeLiveTick(tick,mapping,session,receivedAt,true);if(normalized.state==='UNKNOWN')return normalized;

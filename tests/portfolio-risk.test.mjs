@@ -72,3 +72,18 @@ test('unknown inputs retain independent caps and top-ups do not consume a sixth 
  const wrongStop=plan({stop:'100'});assert.equal(wrongStop.quantity,0);assert.equal(wrongStop.caps.risk,null);assert.equal(wrongStop.caps.cash,'1000');
 });
 
+
+test('sector, gross and aggregate downside caps each independently bind at one remaining share',()=>{
+ const other=(n,quantity,sector='OTHER',stop='99')=>mark({isin:'INE00000000'+n,quantity,sector,stop});
+ const sector=plan({portfolio:portfolio([other(2,150,'TECH'),other(3,149,'TECH')],'70100'),stop:'99'});
+ assert.equal(sector.caps.sector,'1');assert.equal(sector.quantity,1);
+ for(const [regime,quantities,cash] of [['GREEN',[187,187,187,188],'25100'],['YELLOW',[100,100,100,49],'65100']]){
+  const p=portfolio(quantities.map((qty,i)=>other(i+2,qty,'S'+i)),cash),sized=plan({portfolio:p,regime,stop:'99'});
+  assert.equal(sized.caps.gross,'1');assert.equal(sized.quantity,1);
+  const exhausted=plan({portfolio:portfolio([...quantities.slice(0,3).map((qty,i)=>other(i+2,qty,'S'+i)),other(5,quantities[3]+1,'S3')],String(Number(cash)-100)),regime,stop:'99'});
+  assert.equal(exhausted.caps.gross,'0');assert.equal(exhausted.quantity,0);
+ }
+ const openRisk=plan({portfolio:portfolio([other(2,399,'OTHER','95')],'60100')});assert.equal(openRisk.caps.openRisk,'1');assert.equal(openRisk.quantity,1);
+ const exhausted=plan({portfolio:portfolio([other(2,400,'OTHER','95')],'60000')});assert.equal(exhausted.caps.openRisk,'0');assert.equal(exhausted.quantity,0);
+ assert.equal(plan({portfolio:portfolio([other(2,399,'OTHER','95')],'60100'),lotSize:2}).quantity,0);
+});

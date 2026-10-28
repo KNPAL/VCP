@@ -940,3 +940,11 @@ model BrokerLoginEvent {
  errorCode String?
  createdAt DateTime @default(now()) @db.Timestamptz(6)
 }
+model SurveillanceSnapshot {
+ id String @id @db.VarChar(64)
+ listingId String @db.Uuid
+ knownAt DateTime @db.Timestamptz(6)
+ recordedAt DateTime @default(now()) @db.Timestamptz(6)
+ evidence Json
+ @@index([listingId,knownAt(sort: Desc),recordedAt(sort: Desc)],map:"surveillance_listing_time")
+}

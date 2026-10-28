@@ -21,6 +21,9 @@ test('stream owner fences competing coordinators and restores subscriptions afte
   // Both cycles can be invoked repeatedly without duplicate subscriptions.
   await a.cycle();await b.cycle();assert.equal(sockets[0].messages.filter(m=>m!=='ping').length,1);
   sockets[0].callbacks.frame(frame(1));await a.drained();await b.drained();assert.equal((await readLiveQuote(q,name,listingId)).state,'KNOWN');
+  assert.equal((await readLiveQuote(q,name,listingId)).connectionProof,null);
+  sockets[0].callbacks.pong();await a.cycle();
+  const proof=(await readLiveQuote(q,name,listingId)).connectionProof;assert.equal(proof.sessionRevision,'session1');assert.ok(Date.parse(proof.heartbeatAt)>=Date.parse(proof.startedAt));assert.ok(Date.parse(proof.validUntil)>Date.now());
   sockets[0].callbacks.frame(frame(2,base-100000));await a.drained();await b.drained();assert.equal((await readLiveQuote(q,name,listingId)).quote.sequence,'1');
   await client.runCommand('stream_test_expire',[keys[0]]);await new Promise(r=>setTimeout(r,20));
   // Simulate a lost Redis counter: an old numerical fence must never become current again.

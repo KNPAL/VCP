@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {activeEntryCandidates} from '../apps/worker/dist/entry-candidates.js';
+const asOf='2026-10-21T06:00:00Z',knownAt='2026-10-18T00:00:00Z';
+const listing={companyId:'00000000-0000-4000-8000-000000000001',listingId:'10000000-0000-4000-8000-000000000001',isin:'INE000000001',exchange:'NSE',series:'EQ',symbol:'TEST',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'smartapi',token:'1',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true};
+const mapping={id:'fixture',knownAt,sourceReference:'synthetic',rows:[listing]};
+const calendar=Array.from({length:4},(_,i)=>{const date='2026-10-'+(19+i);return {date,kind:'TRADING',opensAt:date+'T04:00:00Z',closesAt:date+'T10:00:00Z',finalizedAt:i<2?date+'T11:00:00Z':null,knownAt,source:'synthetic',verified:true}});
+const event={id:'event',listingId:listing.listingId,type:'BREAKOUT_CONFIRMED',session:'2026-10-19',pivot:'100',decidedAt:'2026-10-19T11:00:00Z',observedAt:'2026-10-19T11:00:00Z',occurredAt:'2026-10-19T10:00:00Z'};
+test('confirmed entry candidates use only the next two verified sessions and never synthesize holdings',()=>{
+ const run=(events=[event],map=mapping,days=calendar,at=asOf)=>activeEntryCandidates(events,map,days,at);
+ assert.deepEqual(run(),[{isin:listing.isin,listingId:listing.listingId,pivot:'100',validUntil:'2026-10-21T10:00:00Z'}]);
+ assert.equal(run([event,event]).length,1);assert.equal(run([event],mapping,calendar,'2026-10-20T06:00:00Z').length,1);
+ for(const at of ['2026-10-19T12:00:00Z','2026-10-21T03:59:59Z','2026-10-21T10:00:00Z','2026-10-22T06:00:00Z'])assert.equal(run([event],mapping,calendar,at).length,0);
+ for(const patch of [{type:'BREAKOUT_PRICE_ONLY'},{decidedAt:'2026-10-22T06:00:00Z'},{observedAt:'2026-10-22T06:00:00Z'},{pivot:'0'},{listingId:'other'}])assert.equal(run([{...event,...patch}]).length,0);
+ for(const days of [null,calendar.filter(d=>d.date!=='2026-10-20'),calendar.map(d=>({...d,verified:false})),calendar.map(d=>({...d,knownAt:'2027-01-01T00:00:00Z'}))])assert.equal(run([event],mapping,days).length,0);
+ assert.equal(run([event],null).length,0);assert.equal(run([event],{...mapping,knownAt:'2027-01-01T00:00:00Z'}).length,0);
+ const holiday=calendar.map(d=>d.date==='2026-10-20'?{...d,kind:'HOLIDAY',opensAt:null,closesAt:null,finalizedAt:null}:d);
+ assert.equal(run([event],mapping,holiday,'2026-10-22T06:00:00Z').length,1);
+ assert.equal(Object.hasOwn(run()[0],'quantity'),false);
+});

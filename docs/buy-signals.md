@@ -1,4 +1,4 @@
-# BUY signals (KAN-121, In Progress)
+# BUY signals (KAN-84 / KAN-121)
 
 Open `/buy` after signing in. The screen reads the latest 50 known market events, selecting one revision per logical event, independently of owner-scoped entry plans. It shows frozen pivot, completed close, exact RVOL50 ratio, contraction low, source revision and server-calculated plan evidence. Missing plans, expired observations and quotes older than 30 seconds cannot display current eligibility. Times use IST with raw source ages.
 
@@ -6,8 +6,22 @@ Revalidate plan uses the authenticated portfolio valuation and existing CSRF-pro
 
 The read-only `GET /api/v1/portfolio/signals` endpoint excludes future occurrence, observation and decision timestamps. Owner plans come from `GET /api/v1/portfolio/risk/plans`; current source/journal invalidation remains enforced by the backend.
 
-## Remaining acceptance
+Plan deadlines are bounded by the remaining heartbeat, quote and exchange-session lifetime, with an upper limit of 30 seconds. Plans also retain a fingerprint of their broker binding, readiness proofs, corporate-action scale and current market-event revision, plus mapping/calendar identities. A changed or expired source invalidates the saved plan; a corrected breakout cannot reuse an earlier event's permission. Legacy plans without source fingerprints require revalidation. These checks do not grant eligibility when required inputs are missing.
 
-The current entry-risk service deliberately returns BUY_BLOCKED because live heartbeat, broker settlement and G06 evidence have not yet been connected to its evaluation. Completing that backend authority path and the full fresh-plan/manual-fill acceptance is required before KAN-121 can be Coded. The UI never converts these missing checks into permission. Workspace changes are not deployed.
+The worker now observes quotes for confirmed breakouts during the next two verified trading sessions, as well as actual holdings. Active breakouts use READY subscription priority without changing their stored market state. Observations require current canonical mappings and the existing fenced quote cache; absent, disconnected or expired quotes remain UNKNOWN. Candidate quote reads share a one-second budget after protective monitoring. Their marks can enter a portfolio-risk snapshot, but never create holdings, exits or fills.
 
-Run `node scripts/database-command.mjs test entry-risk` after the database integration fixtures. Set `VCP_BUY_SIGNALS_TEST=true` for `test-web` using the isolated browser setup in the root README. The focused browser suite covers revalidation, expired plans, 403/503 recovery, empty evidence and mobile overflow.
+## Eligibility and verification
+
+The API now reads session-bound connection evidence directly from Redis during plan revalidation. A normalized quote alone is insufficient: the current connection must have an observed pong, matching broker session, current decrypted configuration and verified live/IP/source readiness. Replacement sessions reject the old cache evidence. The plan retains the observed heartbeat and a hash of the configuration/session binding, without exposing tokens or raw session revisions, and its deadline cannot exceed that evidence.
+
+The entry-risk service saves BUY_ELIGIBLE only when every decision, sizing, source and live-evidence check passes with a positive integer quantity. Otherwise it saves BUY_BLOCKED with all failure reasons. Reads invalidate eligible plans when the current quote, connection proof, portfolio valuation, journal or source revisions change. Renewing only the cache TTL does not change the quote identity. Per-instrument G06 uses the [surveillance adapter](surveillance.md), with source expiry and price-band validation. Workspace changes are not deployed. Live operation still requires current licensed data, surveillance and broker evidence.
+
+Run `node scripts/database-command.mjs test entry-risk entry-acceptance` after the database integration fixtures. The positive acceptance test uses synthetic inputs in a temporary schema inside vcp_test and drops that schema afterward. It verifies exact sizing, live invalidation, immutable retries and separately recorded manual fills. Set `VCP_BUY_SIGNALS_TEST=true` for `test-web` using the isolated browser setup in the root README. The focused browser suite covers eligible and blocked plans, revalidation, expired plans, 403/503 recovery, empty evidence and mobile overflow.
+
+## Signal API (KAN-86)
+
+Authenticated `GET /api/v1/signals?type=BUY|SELL|PRICE_ONLY` selects the latest known revision before filtering. BUY results include the latest owner plan with `current` and `validityReasons`; historical BUY_ELIGIBLE evidence is not permission when `current` is false. SELL returns owner-scoped pending exit alerts, including remaining actual quantity and monitoring state. PRICE_ONLY never grants BUY permission.
+
+`POST /api/v1/signals/{marketEventId}/evaluate-plan` accepts only `snapshotId`, decimal-string `estimatedFees` and optional integer `topUpQuantity`. Send the session cookie, same-origin header, X-CSRF-Token and a new Idempotency-Key for each new evaluation. Responses expose proposedQuantity, entry, stop, caps, riskBudget, quoteAt, expiryAt, configHash, reasons and immutable evidence; flags always specify manual execution only. A repeated key with the same body returns the original audit record, including its original deadline. A changed body or stale valuation returns 409. Refresh valuation and use a new key to request a new evaluation. Unknown fields, client-supplied quotes and client-supplied gates are rejected.
+
+The existing `/portfolio/signals` and `/portfolio/risk/plans` routes remain supported for the application UI. Neither API route records a fill or places an order. Plan evaluation targets market breakout IDs; SELL alert recording remains in the actual-fill journal workflow.

@@ -81,3 +81,4 @@ export * from './broker-login.js';
 export * from './broker-keys.js';
 
 export * from './broker-stream-binding.js';
+export * from './surveillance.js';

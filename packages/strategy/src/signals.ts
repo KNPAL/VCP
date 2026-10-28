@@ -88,8 +88,11 @@ export function evaluateEntry(input:EntryInput){
   if(current*100n>pivot*103n)reasons.push('MISSED_ENTRY');
   const structural=structuralStop(event.lastLow,input.tick,input.quote.price);stop=structural.stop;reasons.push(...structural.reasons);
  }
+ // A plan cannot outlive the evidence that permitted it, including the session.
+ const session=sessions?.find(s=>at(s.opensAt)<=now&&now<at(s.closesAt));
+ const expiresAt=Math.max(now,Math.min(now+30000,...(input.heartbeatAt?[at(input.heartbeatAt)+30000]:[]),...(input.quote?[at(input.quote.at)+60000]:[]),...(session?[at(session.closesAt)]:[])));
  return {id:hash([event.id,input]),marketEventId:event.id,state:reasons.length?'BUY_BLOCKED' as const:'BUY_ELIGIBLE' as const,reasons,stop,quote:input.quote,
-  decidedAt:input.now,expiresAt:new Date(now+30000).toISOString(),configHash:event.configHash,dataRevision:event.dataRevision,strategyVersion:event.strategyVersion,
+  decidedAt:input.now,expiresAt:new Date(expiresAt).toISOString(),configHash:event.configHash,dataRevision:event.dataRevision,strategyVersion:event.strategyVersion,
   evidence:input};
 }
 export type UserSignalDecision=ReturnType<typeof evaluateEntry>;

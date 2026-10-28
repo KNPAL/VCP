@@ -20,6 +20,7 @@ export class StreamOwner {
  private desired:StreamSubscription[]=[];
  private generation=0;
  private lastPong=0;
+ private confirmedPong:number|null=null;
  private retryAt=0;
  private failures=0;
  private stopped=false;
@@ -34,7 +35,7 @@ export class StreamOwner {
  cycle(){if(this.stopped)return Promise.resolve();if(this.active)return this.active;this.active=this.run().finally(()=>{this.active=null});return this.active}
  private async disconnect(retry:boolean){
   ++this.generation;this.controller?.abort();this.controller=null;
-  const socket=this.socket,fence=this.fence;this.socket=null;this.fence=null;this.context=null;this.desired=[];
+  const socket=this.socket,fence=this.fence;this.socket=null;this.fence=null;this.context=null;this.desired=[];this.confirmedPong=null;
   try{socket?.close()}catch{/* Closing is best effort; fence invalidates its callbacks. */}
   if(retry){this.failures=Math.min(this.failures+1,6);this.retryAt=this.now()+Math.min(60000,1000*2**(this.failures-1))}
   if(fence){try{await recordQuoteConnection(this.q,this.owner,fence,'DISCONNECTED')}finally{await releaseLease(this.q,this.owner,fence)}}
@@ -65,13 +66,13 @@ export class StreamOwner {
     this.fence=await acquireStreamLease(this.q,this.owner,15000);if(!this.fence)return;
     if(this.stopped){await this.disconnect(false);return}
     const fence=this.fence,generation=++this.generation;this.controller=new AbortController();
-    const socket=await this.deps.connect(context,{frame:data=>this.receive(data,generation,fence),pong:()=>{if(generation===this.generation)this.lastPong=this.now()},lost:()=>{if(generation===this.generation)void this.disconnect(true).catch(()=>{})}},this.controller.signal);
+    const socket=await this.deps.connect(context,{frame:data=>this.receive(data,generation,fence),pong:()=>{if(generation===this.generation){this.lastPong=this.now();this.confirmedPong=this.lastPong}},lost:()=>{if(generation===this.generation)void this.disconnect(true).catch(()=>{})}},this.controller.signal);
     if(this.stopped||generation!==this.generation){socket.close();return}
     this.socket=socket;this.lastPong=this.now();
    }
    const fence=this.fence;if(!fence||!this.socket)return;
    if(!await renewLease(this.q,this.owner,fence,15000)){await this.disconnect(true);return}
-   if(!await recordQuoteConnection(this.q,this.owner,fence,'CONNECTED')){await this.disconnect(true);return}
+   if(!await recordQuoteConnection(this.q,this.owner,fence,'CONNECTED',{sessionRevision:context.credentialRevision,pongAt:this.confirmedPong===null?null:new Date(this.confirmedPong).toISOString()})){await this.disconnect(true);return}
    this.context=context;
    const delta=streamSubscriptionDelta(this.desired,plan.subscriptions);
    if(delta.remove.length)this.socket.send(JSON.stringify(smartApiSubscriptionMessage(0,delta.remove,'remove')));

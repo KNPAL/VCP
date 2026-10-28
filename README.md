@@ -135,7 +135,8 @@ Live access requires account/API entitlement, independently verified registered/
 - [Backfill setup](docs/backfill.md): submission input, pinned sources/mappings, bounded downloads and recovery.
 - [Historical probes](docs/historical-probes.md): observed coverage, account limits and truncation detection.
 - [Universe and data health](docs/data-health.md): stored coverage, scan progress, source gates, broker status and manual download/retry controls.
-- [BUY signals](docs/buy-signals.md): persisted breakout evidence and plan revalidation; full live entry eligibility remains in progress.
+- [BUY signals](docs/buy-signals.md): persisted breakout evidence, current broker-bound entry eligibility, plan revalidation and the authenticated signal API.
+- [Surveillance and tradability](docs/surveillance.md): import licensed per-listing ASM/GSM/ESM, price-band and cash-tradability evidence for G06.
 - [Preview authorization](docs/download-authorization.md): optional protected signing-key setup, five-minute owner/evidence binding and remaining download submission work.
 - [Manual downloads](docs/manual-downloads.md): opt-in submission, job history, cancellation and retry setup, migration requirements and remaining delivery verification.
 
@@ -221,11 +222,11 @@ Migration 35 adds [portfolio valuation snapshots](docs/portfolio-risk.md) and th
 
 Migration 36 adds the [entry-plan audit API](docs/portfolio-risk.md#entry-plan-audit-api). Requests select existing market events and valuation snapshots; the server retains available cap calculations and explicit blocking reasons. Plans remain blocked while broker/readiness and live candidate evidence integrations are unfinished. Apply migrations and rebuild/restart API and worker to load this backend update.
 
-Migration 37 connects [three-loss cooldown protection](docs/loss-streak.md) to risk and entry-plan evaluation. **My positions** now supports attributing fees and corporate-action cash to actual position episodes, with immutable allocation history. Apply migrations and rebuild/restart API, worker and web. The loss-streak gate is implemented; overall BUY eligibility still awaits the remaining broker/readiness and candidate quote integrations.
+Migration 37 connects [three-loss cooldown protection](docs/loss-streak.md) to risk and entry-plan evaluation. **My positions** now supports attributing fees and corporate-action cash to actual position episodes, with immutable allocation history. Apply migrations and rebuild/restart API, worker and web. The loss-streak gate participates in complete entry eligibility; missing or expired broker/readiness evidence blocks approval.
 
 
 
-Entry-plan audit records now include source-backed benchmark, sector, reconciliation and quantity-limit gates. Rebuild/restart the API after updating the portfolio and database packages; no new migration is required. Missing broker, surveillance, heartbeat and candidate quote integrations continue to block BUY approval.
+Entry-plan audit records now include source-backed benchmark, sector, reconciliation and quantity-limit gates. Rebuild/restart the API after updating the portfolio and database packages; no new migration is required. BUY eligibility now requires session-bound broker/heartbeat evidence, a fresh candidate quote and current per-listing surveillance, in addition to these gates. Configure the licensed sources and broker session before expecting approval; missing evidence remains UNKNOWN. See [BUY signals and API](docs/buy-signals.md) for isolated verification and immutable retry semantics. These workspace changes require rebuild/restart and are not present in the existing deployment.
 Migration 38 adds an isolated, append-only offline AI shadow audit. Apply migrations with the documented database command and rebuild the database/API/worker packages. No AI credentials, provider, public endpoint or monitoring dependency is introduced. See [AI shadow review](docs/ai-shadow-review.md).
 Migration 39 adds [EMA21 trailing stops](docs/position-trailing.md). Apply migrations before starting the rebuilt API/worker. Current stops remain active until next-session updates become effective; no alert creates a fill. The worker evaluates protective stops before EOD work.
 

@@ -22,7 +22,9 @@ test('API starts and uses versioned routes and typed failures', async () => {
     assert.equal(spec.openapi,'3.1.0');
     assert.ok(spec.paths['/api/v1/system/health']);
     assert.ok(spec.paths['/api/v1/portfolio/dashboard']);
+    assert.ok(spec.paths['/api/v1/signals']);assert.ok(spec.paths['/api/v1/signals/{id}/evaluate-plan']);
     assert.equal((await fetch(base+'/api/v1/portfolio/dashboard')).status,401);
+    assert.ok(spec.paths['/api/v1/sources/surveillance/{id}']);assert.equal((await fetch(base+'/api/v1/sources/surveillance/00000000-0000-4000-8000-000000000001')).status,401);
     const unsupported = await fetch(base+'/api/v1/system/health',{method:'POST'});
     assert.equal(unsupported.status,404);
     const secret='private-token-do-not-log';const failed=await fetch(base+'/api/v1/positions?access_token='+secret,{headers:{authorization:'Bearer '+secret,cookie:'vcp_session='+secret,'x-request-id':secret}});

@@ -1,4 +1,5 @@
 import {readRuntimeBrokerStatus,type BrokerStatusDependencies} from './broker-status.js';
+import {entryObservationReader} from './entry-observation.js';
 import {loginOwnerBroker,type BrokerLoginDependencies} from './broker-login.js';
 import 'reflect-metadata';
 import {isIP} from 'node:net';
@@ -19,7 +20,7 @@ import {readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualD
 import {readPositionCards} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
-import {readMarketSignals,recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
+import {readSurveillance,readMarketSignals,recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
 import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops,readPositionStatus,dismissPartialProfit} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
@@ -65,6 +66,9 @@ export const openapi = {
     '/api/v1/watchlists/{id}/items/{listingId}':{delete:{operationId:'removeWatchlistItem',security:[{session:[]}],responses:{'200':{description:'Idempotent removal; immutable audit retained; CSRF required'},'404':{description:'List not owned by caller'}}}},
     '/api/v1/sources/readiness':{get:{operationId:'sourceReadiness',security:[{session:[]}],responses:{'200':{description:'All G01–G10 proof statuses, source timestamps, expiry, blocked capabilities and exact failure policies'},'401':{description:'Authentication required'}}}},
     '/api/v1/portfolio':{get:{operationId:'portfolioJournal',security:[{session:[]}],responses:{'200':{description:'Actual signed cash, FIFO positions, immutable journal, feed monitoring, reconciliation and current verified valuation or explicit unknowns'}}}},
+    '/api/v1/sources/surveillance/{id}':{get:{operationId:'surveillanceReadiness',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Per-listing surveillance status, reasons, revision, permitted price bands and expiry'},'400':{description:'Invalid listing ID'},'401':{description:'Authentication required'}}}},
+    '/api/v1/signals':{get:{operationId:'signals',security:[{session:[]}],parameters:[{name:'type',in:'query',required:true,schema:{type:'string',enum:['BUY','SELL','PRICE_ONLY']}}],responses:{'200':{description:'Typed market or owner SELL evidence; signals are not fills'},'400':{description:'Missing or invalid signal type'},'401':{description:'Authentication required'}}}},
+    '/api/v1/signals/{id}/evaluate-plan':{post:{operationId:'evaluateSignalPlan',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[a-f0-9]{64}$'}},{name:'Idempotency-Key',in:'header',required:true,schema:{type:'string'}},{name:'X-CSRF-Token',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['snapshotId','estimatedFees'],properties:{snapshotId:{type:'string',pattern:'^[a-f0-9]{64}$'},estimatedFees:{type:'string'},topUpQuantity:{type:'integer',minimum:1}}}}}},responses:{'201':{description:'Immutable entry-plan evidence, proposed quantity, stop, caps, quoteAt and expiryAt; no order or fill'},'409':{description:'Stale valuation or conflicting idempotency key'},'422':{description:'Invalid or unavailable market event'}}}},
     '/api/v1/portfolio/signals':{get:{operationId:'marketSignals',security:[{session:[]}],responses:{'200':{description:'Latest 50 known breakout events, one revision per logical event; no owner permission or order implied'},'401':{description:'Authentication required'}}}},
     '/api/v1/portfolio/risk':{get:{operationId:'portfolioRisk',security:[{session:[]}],responses:{'200':{description:'Journal-bound valuation, mark ages, company/sector exposure, planned downside, snapshot deadline and separate blocked entry-plan reasons'}}}},
     '/api/v1/portfolio/loss-streak':{get:{operationId:'portfolioLossStreak',security:[{session:[]}],responses:{'200':{description:'Real-position closure P&L, three-loss cooldown, unknown-input reasons and allocation audit history'}}}},
@@ -147,6 +151,7 @@ class SystemController {
 }
 export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink;brokerLoginDependencies?:()=>Promise<BrokerLoginDependencies>;brokerStatusDependencies?:BrokerStatusDependencies} = {}) {
   const db = options.db ?? await databaseFromEnvironment();
+  const entryObservations=entryObservationReader(db,options.brokerStatusDependencies);
   const trustedProxies=(process.env['VCP_TRUSTED_PROXY_IPS']??'').split(',').map(s=>s.trim()).filter(Boolean);if(trustedProxies.some(ip=>!isIP(ip)))throw new Error('INVALID_TRUSTED_PROXY_IP');
   const auth = new AuthService(db, options.origin ?? process.env['APP_ORIGIN'] ?? 'http://localhost:3000', options.secure ?? process.env['COOKIE_SECURE'] !== 'false');
   let closeStream=async()=>{};
@@ -268,11 +273,18 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       return writeJournal(request,{kind:'CORRECTION',targetId:id,reason:body['reason'],replacement:fillBody(replacement)});
     }
   }
+  async function portfolioRiskView(ownerId:string){
+    const risk=await readPortfolioRisk(db,ownerId),plans=await readEntryRisk(db,ownerId,entryObservations.read);
+    return {...risk,entryPlans:{asOf:plans.asOf,items:plans.items.map(plan=>{
+      const matched=plan.evidence.snapshotId===risk.snapshotId&&plan.evidence.journalHash===risk.journalHash;
+      return {...signalPlanDto(plan.evidence),current:plan.current&&matched,validityReasons:[...plan.validityReasons,...(!matched?['PORTFOLIO_VIEW_CHANGED']:[])]};
+    }),executable:false}};
+  }
   @Controller('portfolio')
   class PortfolioController {
     @Get('dashboard') dashboard(@Req() request:AuthRequest){return readDashboard(db,request.ownerId!)}
-    @Get() async portfolio(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.journal,monitor:await readPositionMonitor(db,request.ownerId!),equity:risk.valuation.equity,risk,reconciliation:risk.reconciliation.state,reconciliationEvidence:risk.reconciliation,reasons:risk.reasons}}
-    @Get('risk') risk(@Req() request:AuthRequest){return readPortfolioRisk(db,request.ownerId!)}
+    @Get() async portfolio(@Req() request:AuthRequest){const risk=await portfolioRiskView(request.ownerId!);return {...risk.journal,monitor:await readPositionMonitor(db,request.ownerId!),equity:risk.valuation.equity,risk,reconciliation:risk.reconciliation.state,reconciliationEvidence:risk.reconciliation,reasons:risk.reasons}}
+    @Get('risk') risk(@Req() request:AuthRequest){return portfolioRiskView(request.ownerId!)}
     @Get('loss-streak') async lossStreak(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.lossStreak,journalHash:risk.journalHash,cashAllocationRevision:risk.cashAllocationRevision,allocationHistory:await cashAllocationHistory(db,request.ownerId!)}}
     @Post('cash-allocations') async allocateCash(@Req() request:AuthRequest){
       const body=strictBody(request,['cashEventId','episodeId','reason']),key=request.headers['idempotency-key'];
@@ -281,11 +293,11 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       catch(error){if(!(error instanceof Error)||!['STALE_CONFLICT','INVALID_CASH_ALLOCATION'].includes(error.message))throw error;throw new HttpException({code:error.message==='STALE_CONFLICT'?'STALE_CONFLICT':'INVALID_INPUT',message:'Cash allocation is invalid or conflicts with an existing request'},error.message==='STALE_CONFLICT'?409:422)}
     }
     @Get('signals') signals(){return readMarketSignals(db)}
-    @Get('risk/plans') plans(@Req() request:AuthRequest){return readEntryRisk(db,request.ownerId!)}
+    @Get('risk/plans') plans(@Req() request:AuthRequest){return readEntryRisk(db,request.ownerId!,entryObservations.read)}
     @Post('risk/plans') async plan(@Req() request:AuthRequest){
       const body=strictBody(request,['marketEventId','snapshotId','estimatedFees','topUpQuantity']),key=request.headers['idempotency-key'];
       if(typeof key!=='string'||typeof body['marketEventId']!=='string'||typeof body['snapshotId']!=='string'||typeof body['estimatedFees']!=='string')throw new BadRequestException('Market event, snapshot, estimated fees and Idempotency-Key required');
-      try{return await recordEntryRisk(db,request.ownerId!,key,body as unknown as Parameters<typeof recordEntryRisk>[3])}
+      try{return await recordEntryRisk(db,request.ownerId!,key,body as unknown as Parameters<typeof recordEntryRisk>[3],entryObservations.read)}
       catch(error){const conflict=error instanceof Error&&error.message==='STALE_CONFLICT';if(!conflict&&!(error instanceof InputError)&&!(error instanceof Error&&['INVALID_ENTRY_PLAN','MARKET_EVENT_UNAVAILABLE'].includes(error.message)))throw error;throw new HttpException({code:conflict?'STALE_CONFLICT':'INVALID_INPUT',message:conflict?'Snapshot or idempotency key no longer matches current evidence':'Entry-plan source is missing or invalid'},conflict?409:422)}
     }
     @Get('reconciliation') reconciliation(@Req() request:AuthRequest){return readReconciliation(db,request.ownerId!)}
@@ -299,6 +311,28 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const body=strictBody(request,['kind','amount','verified','occurredAt','sourceId']);
       if(!['INITIAL_CAPITAL','DEPOSIT','WITHDRAWAL','FEE','DIVIDEND','CORPORATE_CREDIT','CORPORATE_DEBIT'].includes(String(body['kind']))||typeof body['amount']!=='string'||typeof body['occurredAt']!=='string'||typeof body['sourceId']!=='string'||body['verified']!==true)throw new BadRequestException('Verified cash flow required');
       return writeJournal(request,body as unknown as JournalCommand);
+    }
+  }
+  function signalPlanDto(result:Record<string,unknown>){
+    const entry=result['entryEvidence'] as {quote?:{at:string}|null;configHash:string};
+    return {id:result['id'],signalId:result['marketEventId'],state:result['state'],proposedQuantity:result['quantity'],entry:result['entry'],stop:result['stop'],caps:result['caps'],riskBudget:result['riskBudget'],quoteAt:entry.quote?.at??null,expiryAt:result['expiresAt'],reasons:result['reasons'],configHash:entry.configHash,flags:{executable:false,automatedAdd:false,manualExecutionOnly:true},evidence:result};
+  }
+  @Controller('signals')
+  class SignalController {
+    @Get() async list(@Req() request:AuthRequest,@Query() query:Record<string,unknown>){
+      if(Object.keys(query).some(key=>key!=='type')||!['BUY','SELL','PRICE_ONLY'].includes(String(query['type']))||typeof query['type']!=='string')throw new BadRequestException('Signal type must be BUY, SELL or PRICE_ONLY');
+      const type=query['type'];
+      if(type==='SELL'){const alerts=await readSellAlerts(db,request.ownerId!);return {...alerts,type,items:alerts.items.filter(item=>item.primary!==null)}}
+      const signals=await readMarketSignals(db,type==='BUY'?'BREAKOUT_CONFIRMED':'BREAKOUT_PRICE_ONLY');
+      if(type==='PRICE_ONLY')return {...signals,type};
+      const plans=await readEntryRisk(db,request.ownerId!,entryObservations.read);
+      return {...signals,type,items:signals.items.map(signal=>{const plan=plans.items.find(row=>row.evidence.marketEventId===signal.id);return {...signal,plan:plan?{...signalPlanDto(plan.evidence),current:plan.current,validityReasons:plan.validityReasons}:null}})};
+    }
+    @Post(':id/evaluate-plan') async evaluate(@Param('id') id:string,@Req() request:AuthRequest){
+      if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid signal ID');
+      const body=strictBody(request,['snapshotId','estimatedFees','topUpQuantity']);
+      const result=await new PortfolioController().plan({method:request.method,path:request.path,headers:request.headers,ownerId:request.ownerId!,body:{...body,marketEventId:id}}) as Record<string,unknown>;
+      return signalPlanDto(result);
     }
   }
   @Controller('data')
@@ -386,6 +420,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   @Controller('sources')
   class SourceController {
     @Get('readiness') readiness(){return getReadiness(db)}
+    @Get('surveillance/:id') surveillance(@Param('id') id:string){if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id))throw new BadRequestException('Invalid listing ID');return readSurveillance(db,id)}
   }
   @Controller('system')
   class ScanController {
@@ -417,7 +452,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await db.$disconnect()}}}]})
+  @Module({controllers:[SignalController,DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await entryObservations.close();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   if(trustedProxies.length)app.getHttpAdapter().getInstance().set('trust proxy',trustedProxies);

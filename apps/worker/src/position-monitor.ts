@@ -1,5 +1,6 @@
 import type {Queue} from 'bullmq';
-import {ownerStreamBinding,readPortfolio,recordPositionMonitor,evaluatePositionStop,recordPortfolioRisk,evaluatePositionTrail,evaluatePartialProfit,evaluateExitDecisions,recordPositionStatus,type PortfolioQuotes,type PrismaClient} from '@vcp/database';
+import {readMarketSignals,ownerStreamBinding,readPortfolio,recordPositionMonitor,evaluatePositionStop,recordPortfolioRisk,evaluatePositionTrail,evaluatePartialProfit,evaluateExitDecisions,recordPositionStatus,type PortfolioQuotes,type PrismaClient} from '@vcp/database';
+import {activeEntryCandidates} from './entry-candidates.js';
 
 import {assessHeldQuote,canonicalListings,type CalendarDay,type InstrumentSnapshot,type MonitorAssessment} from '@vcp/market-data';
 import {readLiveQuote} from './live-quotes.js';
@@ -28,6 +29,17 @@ export async function monitorHeldPositions(db:PrismaClient,q:Queue,streamOwner:s
    trails.push({ownerId:owner.id,isin,quote:assessments[isin]!.state==='FEED_FRESH'&&quote.state==='KNOWN'?quote.quote:null});
   }
   await recordPositionMonitor(db,owner.id,assessments);
+  // Candidate marks are server observations only; they never enter holdings or exit monitoring.
+  const candidateDeadline=Date.now()+1000;
+  for(const candidate of activeEntryCandidates((await readMarketSignals(db)).items,mapping,calendar[0]?.evidence??null,new Date().toISOString())){
+   const remaining=candidateDeadline-Date.now();if(remaining<=0)break;
+   if(Object.hasOwn(portfolio.holdings,candidate.isin)||!routing.name)continue;
+   let timer:ReturnType<typeof setTimeout>|undefined;
+   try{
+    const observed=await Promise.race([readLiveQuote(q,routing.name,candidate.listingId),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('QUOTE_STORE_UNAVAILABLE')),remaining)})]);
+    if(observed.state==='KNOWN'&&assessHeldQuote(candidate.isin,new Date().toISOString(),calendar[0]?.evidence??null,mapping,observed).state==='FEED_FRESH')quotes[candidate.isin]=observed.quote;
+   }catch{/* Missing candidate quotes remain UNKNOWN; protective monitoring already ran. */}finally{clearTimeout(timer)}
+  }
   await recordPortfolioRisk(db,owner.id,quotes);
  }
  // EOD work runs only after every owner has received live protective evaluation.

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
-import {PrismaClient,readMarketSignals,recordPortfolioRisk,recordEntryRisk,readEntryRisk,readPortfolio,appendPortfolio,persistSectors} from '../packages/database/dist/index.js';
+import {randomUUID,createHash} from 'node:crypto';
+import {PrismaClient,persistMarketEvent,persistReadiness,readMarketSignals,recordPortfolioRisk,recordEntryRisk,readEntryRisk,readPortfolio,appendPortfolio,persistSectors} from '../packages/database/dist/index.js';
 const db=new PrismaClient();
 test('entry plan retries are immutable, owner scoped and never manufacture quote or gate authority',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
@@ -28,6 +28,10 @@ test('entry plan retries are immutable, owner scoped and never manufacture quote
   assert.equal((await readEntryRisk(db,randomUUID())).items.length,0);
   await assert.rejects(db.$executeRaw`DELETE FROM "EntryRiskPlan" WHERE "id"=${plan.id}`);
   await assert.rejects(db.$executeRaw`UPDATE "EntryRiskPlan" SET "journalHash"='changed' WHERE "id"=${plan.id}`);
+  assert.match(plan.sourceRevision,/^[a-f0-9]{64}$/);assert.ok(Object.hasOwn(plan.sourceIds,'mappingId'));
+  await persistReadiness(db,{gate:'G06',status:'UNKNOWN',reason:'SYNTHETIC_RESTRICTIONS_CHANGED',probeAt:new Date().toISOString(),sourceAt:null,expiresAt:new Date(Date.now()+60000).toISOString(),sourceReference:null,details:null});
+  const changed=(await readEntryRisk(db,owner.id)).items.find(p=>p.evidence.id===plan.id);
+  assert.equal(changed.current,false);assert.ok(changed.validityReasons.includes('ENTRY_SOURCE_CHANGED_OR_UNVERIFIED'));
   await persistSectors(db,[],new Date().toISOString());
   assert.ok((await readEntryRisk(db,owner.id)).items.find(p=>p.evidence.id===plan.id).validityReasons.includes('SECTOR_EVIDENCE_CHANGED'));
   await appendPortfolio(db,owner.id,randomUUID(),{kind:'DEPOSIT',amount:'0.000001',verified:true,occurredAt:new Date().toISOString(),sourceId:'synthetic-plan-test'});
@@ -40,8 +44,23 @@ test('entry plan retries are immutable, owner scoped and never manufacture quote
    recordEntryRisk(db,owner.id,randomUUID(),request2),
    appendPortfolio(db,owner.id,randomUUID(),{kind:'DEPOSIT',amount:'0.000001',verified:true,occurredAt:new Date().toISOString(),sourceId:'synthetic-plan-race'})
   ]);
-  assert.equal(results[1].status,'fulfilled');
+  assert.equal(results[1].status,'fulfilled',results[1].status==='rejected'?String(results[1].reason):undefined);
   if(results[0].status==='fulfilled')assert.equal((await readEntryRisk(db,owner.id)).items.find(p=>p.evidence.id===results[0].value.id).current,false);
   else assert.match(String(results[0].reason),/STALE_CONFLICT/);
+  const original=(await db.$queryRaw`SELECT "evidence" FROM "MarketEvent" WHERE "id"=${events[0].id}`)[0].evidence;
+  const hash=()=>createHash('sha256').update(randomUUID()).digest('hex'),logicalId=hash();
+  const base={...original,id:hash(),logicalId,decidedAt:new Date(Date.now()-1000).toISOString()};
+  base.effectiveAt=base.decidedAt;await persistMarketEvent(db,base);
+  const sourceRisk=await recordPortfolioRisk(db,owner.id,{}),sourceRequest={...request,marketEventId:base.id,snapshotId:sourceRisk.id};
+  const sourcePlan=await recordEntryRisk(db,owner.id,randomUUID(),sourceRequest);
+  const correction={...base,id:hash(),dataRevision:'synthetic-corrected-'+randomUUID(),type:'BREAKOUT_PRICE_ONLY',decidedAt:new Date().toISOString()};
+  correction.effectiveAt=correction.decidedAt;await persistMarketEvent(db,correction);
+  const invalidated=(await readEntryRisk(db,owner.id)).items.find(p=>p.evidence.id===sourcePlan.id);
+  assert.equal(invalidated.current,false);assert.ok(invalidated.validityReasons.includes('MARKET_EVENT_SUPERSEDED_OR_NOT_KNOWN'));
+  const attempted=await recordEntryRisk(db,owner.id,randomUUID(),sourceRequest);
+  assert.equal(attempted.state,'BUY_BLOCKED');assert.ok(attempted.reasons.includes('MARKET_EVENT_SUPERSEDED_OR_NOT_KNOWN'));
+  const latest=await readMarketSignals(db);assert.equal(latest.items.find(item=>item.logicalId===logicalId).id,correction.id);
+  assert.equal((await readMarketSignals(db,'BREAKOUT_CONFIRMED')).items.some(item=>item.logicalId===logicalId),false,'Filtering must not resurrect superseded confirmation');
+  assert.equal((await readMarketSignals(db,'BREAKOUT_PRICE_ONLY')).items.find(item=>item.logicalId===logicalId).id,correction.id);
  }finally{await db.$disconnect()}
 });

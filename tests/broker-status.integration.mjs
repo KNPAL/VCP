@@ -4,8 +4,11 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {PrismaClient,saveBrokerConfiguration,installBrokerSession,persistReadiness,logoutBroker,beginBrokerLogin,failBrokerLogin} from '../packages/database/dist/index.js';
 import {brokerAccountKey} from '../packages/market-data/dist/index.js';
 import {readRuntimeBrokerStatus,networkStatus} from '../apps/api/dist/broker-status.js';
+import {entryObservationReader} from '../apps/api/dist/entry-observation.js';
+import {queue,acquireLease} from '../apps/worker/dist/runtime.js';
+import {recordQuoteConnection,publishLiveTick} from '../apps/worker/dist/live-quotes.js';
 test('runtime status reports configuration, verified IP, expiry and gated live capabilities without exposing secrets',async()=>{
- assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');const db=new PrismaClient(),key=randomBytes(32);let attempt;
+ assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');const db=new PrismaClient(),key=randomBytes(32);let attempt,quoteQueue,entryReader,cleanup;
  try{
   const owner=(await db.owner.findFirstOrThrow()).id,clientCode='T'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase(),apiKey='synthetic-status-key',accountKey=brokerAccountKey(clientCode);
   const before=await db.$queryRaw`SELECT (SELECT count(*) FROM "RawDailyCandle")::text AS candles,(SELECT count(*) FROM "PortfolioJournal")::text AS fills`;
@@ -20,6 +23,20 @@ test('runtime status reports configuration, verified IP, expiry and gated live c
   await installBrokerSession(db,{reference,accountKey,sessionRevision,keyId:'status-test',expiresAt},secrets,{authenticated:true,staticIpVerified:true,verifiedAt},async()=>key);
   for(const gate of ['G01','G07','G09'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-status-proof',reason:null,details:{synthetic:true}});
   const connected=await read();assert.equal(connected.sessionState,'CONNECTED');assert.equal(connected.canFetchHistory,true);assert.equal(connected.canStreamLive,true);assert.equal(connected.permissions.orders,false);
+  process.env.REDIS_PORT='56379';const streamName='smartapi-'+accountKey;quoteQueue=queue('entry-proof-'+randomUUID());const redis=await quoteQueue.client,listingId=randomUUID(),fence=await acquireLease(quoteQueue,streamName);assert.ok(fence);
+  const keys=['lease:'+streamName,'fence:'+streamName,'quotes:'+streamName+':connection','quotes:'+streamName+':'+listingId,'quotes:'+streamName+':'+listingId+':watermark'];redis.defineCommand('entry_proof_cleanup',{numberOfKeys:5,lua:'return redis.call("DEL",unpack(KEYS))'});cleanup=()=>redis.runCommand('entry_proof_cleanup',keys);
+  const date=new Date(Date.now()+19800000).toISOString().slice(0,10),midnight=Date.parse(date+'T00:00:00Z')-19800000;
+  const session={date,opensAt:new Date(midnight).toISOString(),closesAt:new Date(midnight+86399999).toISOString(),knownAt:new Date(midnight-86400000).toISOString(),verified:true};
+  const mapping={id:'synthetic-entry-mapping',knownAt:new Date(Date.now()-1000).toISOString(),sourceReference:'fixture',rows:[{companyId:randomUUID(),listingId,isin:'INE000000001',exchange:'NSE',series:'EQ',symbol:'TEST',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]};
+  await recordQuoteConnection(quoteQueue,streamName,fence,'CONNECTED',{sessionRevision,pongAt:null});
+  // Separate host-clock observations from the Redis connection timestamp in this fixture.
+  await new Promise(resolve=>setTimeout(resolve,25));
+  assert.equal((await publishLiveTick(quoteQueue,streamName,fence,{provider:'fixture',token:'123',exchange:'NSE',rawLtp:'10005',priceDecimals:2,sourceAt:new Date().toISOString(),sequence:'1'},mapping,session)).state,'KNOWN');
+  entryReader=entryObservationReader(db,deps);assert.equal(await entryReader.read(owner,listingId),null,'A fresh quote without a pong is not a settled entry observation');
+  const pongAt=new Date().toISOString();await new Promise(resolve=>setTimeout(resolve,25));
+  await recordQuoteConnection(quoteQueue,streamName,fence,'CONNECTED',{sessionRevision,pongAt});
+  const observed=await entryReader.read(owner,listingId);assert.ok(observed);assert.equal(observed.settled,true);assert.equal(observed.quote.ltp,'100.050000');assert.ok(Date.parse(observed.validUntil)>Date.now());assert.ok(!JSON.stringify(observed).includes(sessionRevision));
+  assert.equal(await recordQuoteConnection(quoteQueue,streamName,fence,'CONNECTED',{sessionRevision:randomUUID(),pongAt:new Date().toISOString()}),false,'A lease cannot silently change broker sessions');
   for(const secret of [apiKey,clientCode,secrets.accessToken,secrets.refreshToken,secrets.feedToken,reference,accountKey])assert.ok(!JSON.stringify(connected).includes(secret));
   assert.equal((await read({liveEnabled:false})).canStreamLive,false);
   assert.equal((await read({loadSessionKey:async()=>randomBytes(32)})).sessionState,'UNAVAILABLE');
@@ -28,6 +45,7 @@ test('runtime status reports configuration, verified IP, expiry and gated live c
   for(const status of ['FAIL','PASS']){await persistReadiness(db,{gate:'G07',status,probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-status-proof',reason:status==='FAIL'?'LICENSE_DENIED':null,details:{synthetic:true}});if(status==='FAIL'){assert.equal((await read()).canStreamLive,false);assert.equal((await read()).canFetchHistory,false)}}
   const {feedToken,clientCode:unusedClient,...historySecrets}=secrets;assert.ok(feedToken&&unusedClient);
   await installBrokerSession(db,{reference:randomUUID(),accountKey,sessionRevision:randomUUID(),keyId:'status-test',expiresAt},historySecrets,{authenticated:true,staticIpVerified:true,verifiedAt:new Date().toISOString()},async()=>key);
+  assert.equal(await entryReader.read(owner,listingId),null,'Old cached connection evidence cannot authorize a replacement broker session');
   assert.equal((await read()).canFetchHistory,true);assert.equal((await read()).canStreamLive,false);
   await installBrokerSession(db,{reference:randomUUID(),accountKey,sessionRevision:randomUUID(),keyId:'status-test',expiresAt},secrets,{authenticated:true,staticIpVerified:true,verifiedAt:new Date().toISOString()},async()=>key);assert.equal((await read()).canStreamLive,true);
   await persistReadiness(db,{gate:'G09',status:'FAIL',probeAt:new Date().toISOString(),sourceAt:verifiedAt,expiresAt,sourceReference:'synthetic-status-proof',reason:'HEARTBEAT_UNAVAILABLE',details:{synthetic:true}});assert.equal((await read()).canStreamLive,false);
@@ -40,7 +58,7 @@ test('runtime status reports configuration, verified IP, expiry and gated live c
   // A replacement configuration always requires login even if an old session existed.
   assert.equal((await read()).sessionState,'NEEDS_LOGIN');
   assert.deepEqual(await db.$queryRaw`SELECT (SELECT count(*) FROM "RawDailyCandle")::text AS candles,(SELECT count(*) FROM "PortfolioJournal")::text AS fills`,before);
- }finally{if(attempt)await db.$executeRaw`UPDATE "BrokerLoginAttempt" SET "startedAt"=clock_timestamp()-interval '16 minutes',"expiresAt"=clock_timestamp()-interval '15 minutes' WHERE "id"=${attempt.attemptId}::uuid`;key.fill(0);await db.$disconnect()}
+ }finally{await entryReader?.close();await cleanup?.();await quoteQueue?.close();if(attempt)await db.$executeRaw`UPDATE "BrokerLoginAttempt" SET "startedAt"=clock_timestamp()-interval '16 minutes',"expiresAt"=clock_timestamp()-interval '15 minutes' WHERE "id"=${attempt.attemptId}::uuid`;key.fill(0);await db.$disconnect()}
 });
 test('network display requires an actual current matching IP proof',()=>{
  for(const value of [null,{}, {clientPublicIp:'secret-token',ipProof:{}},{clientPublicIp:'192.0.2.1',ipProof:{address:'192.0.2.2',verifiedAt:'2020-01-01',expiresAt:'2099-01-01',sourceReference:'test'}}])assert.equal(networkStatus(value).serverPublicIpDisplayOrNull,null);

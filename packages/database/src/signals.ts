@@ -7,9 +7,10 @@ export async function persistMarketEvent(db:PrismaClient,event:MarketEvent){
  return db.$transaction(tx=>persistMarketEventTransaction(tx,event));
 }
 /** A bounded research view; market confirmation never grants owner permission. */
-export async function readMarketSignals(db:PrismaClient){
+export async function readMarketSignals(db:PrismaClient,type?:'BREAKOUT_CONFIRMED'|'BREAKOUT_PRICE_ONLY'){
+ if(type!==undefined&&!['BREAKOUT_CONFIRMED','BREAKOUT_PRICE_ONLY'].includes(type))throw new Error('INVALID_SIGNAL_TYPE');
  const asOf=new Date().toISOString();
- const rows=await db.$queryRaw<{evidence:MarketEvent}[]>`SELECT "evidence" FROM (SELECT DISTINCT ON ("logicalId") "evidence","decidedAt","id" FROM "MarketEvent" WHERE "decidedAt"<=${new Date(asOf)} AND "observedAt"<=${new Date(asOf)} AND "occurredAt"<=${new Date(asOf)} ORDER BY "logicalId","decidedAt" DESC,"id" DESC) latest ORDER BY "decidedAt" DESC,"id" DESC LIMIT 50`;
+ const rows=await db.$queryRaw<{evidence:MarketEvent}[]>`SELECT "evidence" FROM (SELECT DISTINCT ON ("logicalId") "evidence","type","decidedAt","id" FROM "MarketEvent" WHERE "decidedAt"<=${new Date(asOf)} AND "observedAt"<=${new Date(asOf)} AND "occurredAt"<=${new Date(asOf)} ORDER BY "logicalId","decidedAt" DESC,"id" DESC) latest WHERE (${type??null}::text IS NULL OR "type"=${type??null}) ORDER BY "decidedAt" DESC,"id" DESC LIMIT 50`;
  return {asOf,validUntil:new Date(Date.parse(asOf)+30000).toISOString(),items:rows.map(row=>row.evidence),limit:50,executable:false};
 }
 async function persistMarketEventTransaction(db:Prisma.TransactionClient,event:MarketEvent){

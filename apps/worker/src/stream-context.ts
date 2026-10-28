@@ -1,6 +1,7 @@
 import {exchangeDate,parseFixed,formatFixed} from '@vcp/domain';
 import {brokerAccountKey,verifiedCalendar,type CalendarDay,type InstrumentSnapshot,type StreamCandidate} from '@vcp/market-data';
-import {readPortfolio,latestScan,resolveBrokerSession,type PrismaClient,type BrokerKeyResolver} from '@vcp/database';
+import {readMarketSignals,readPortfolio,latestScan,resolveBrokerSession,type PrismaClient,type BrokerKeyResolver} from '@vcp/database';
+import {activeEntryCandidates} from './entry-candidates.js';
 import type {StreamContext,StreamOwnerDependencies} from './stream-owner.js';
 import {connectSmartApiSocket} from './smartapi-socket.js';
 
@@ -37,6 +38,8 @@ export function streamDependencies(db:PrismaClient,accountKey:string,loadKey:Bro
      }
     }
    }
+   // Use READY subscription priority for active confirmed breakouts; stored market state is unchanged.
+   for(const candidate of activeEntryCandidates((await readMarketSignals(db)).items,mapping,calendar,at))candidates.push({isin:candidate.isin,state:'READY',distanceToPivot:'0',pivot:candidate.pivot,validUntil:candidate.validUntil});
    return {mapping,session,holdings,candidates,credentialRevision:auth.sessionRevision,credentialExpiresAt:auth.expiresAt} satisfies StreamContext;
   },
   connect:async(context,callbacks,signal)=>{

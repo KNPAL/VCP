@@ -22,6 +22,7 @@ test('live Redis quotes fence writers, retain replay watermarks and expire sourc
  const parallel=await Promise.all(Array.from({length:8},()=>publishLiveTick(q,owner,fence,tick,mapping,session)));
  assert.equal(parallel.filter(r=>r.state==='KNOWN').length,1);
  assert.equal((await readLiveQuote(q,owner,listingId)).quote.ltp,'100.050000');
+  assert.equal((await readLiveQuote(q,owner,listingId)).connectionProof,null,'Legacy connection metadata cannot grant entry authority');
  assert.equal((await publishLiveTick(q,owner,fence,{...tick,sequence:'9007199254740994'},mapping,session)).state,'KNOWN');
  assert.equal((await publishLiveTick(q,owner,fence,{...tick,sequence:'9007199254740992'},mapping,session)).state,'UNKNOWN');
  assert.equal((await publishLiveTick(q,owner,fence,{...tick,sourceAt:new Date(base-1).toISOString(),sequence:'9007199254740995'},mapping,session)).reason,'OUT_OF_ORDER');

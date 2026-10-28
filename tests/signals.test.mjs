@@ -46,3 +46,32 @@ test('unknown portfolio gates and stale broker/quotes block all reasons without 
  input.riskGates={};assert.ok(evaluateEntry(input).reasons.includes('CASH_UNKNOWN'));
  input.quote=null;assert.ok(evaluateEntry(input).reasons.includes('QUOTE_UNKNOWN'));
 });
+test('entry deadline never outlives heartbeat, quote or exchange session evidence',()=>{
+ const cases=[
+  [input=>input.heartbeatAt=clock(51,'05:59:40'),clock(51,'06:00:10')],
+  [input=>input.quote.at=clock(51,'05:59:15'),clock(51,'06:00:15')],
+  [input=>input.calendar[51].closesAt=clock(51,'06:00:05'),clock(51,'06:00:05')],
+  [input=>input.heartbeatAt=clock(51,'05:59:30'),clock(51,'06:00:00')]
+ ];
+ for(const [change,deadline] of cases){const input=entryInput();change(input);const plan=evaluateEntry(input);assert.equal(plan.state,'BUY_ELIGIBLE');assert.equal(plan.expiresAt,new Date(deadline).toISOString())}
+ const stale=entryInput();stale.heartbeatAt=clock(51,'05:59:29');assert.equal(evaluateEntry(stale).state,'BUY_BLOCKED');assert.equal(evaluateEntry(stale).expiresAt,new Date(stale.now).toISOString());
+});
+
+test('entry window counts exchange sessions across closures and late finalization never extends it',()=>{
+ const input=entryInput();
+ input.calendar=[
+  {date:input.event.session,opensAt:clock(50,'04:00:00'),closesAt:clock(50,'10:00:00')},
+  {date:'2026-03-02',opensAt:'2026-03-02T04:00:00Z',closesAt:'2026-03-02T10:00:00Z'},
+  {date:'2026-03-05',opensAt:'2026-03-05T04:00:00Z',closesAt:'2026-03-05T10:00:00Z'},
+  {date:'2026-03-06',opensAt:'2026-03-06T04:00:00Z',closesAt:'2026-03-06T10:00:00Z'}
+ ];
+ const run=now=>{input.now=now;input.quote.at=now;input.heartbeatAt=now;return evaluateEntry(input)};
+ assert.equal(run('2026-03-02T04:00:00Z').state,'BUY_ELIGIBLE');
+ assert.ok(run('2026-03-03T06:00:00Z').reasons.includes('OUTSIDE_ENTRY_SESSION'));
+ assert.equal(run('2026-03-05T09:59:59Z').state,'BUY_ELIGIBLE');
+ assert.equal(run('2026-03-05T09:59:59Z').expiresAt,'2026-03-05T10:00:00.000Z');
+ assert.ok(run('2026-03-05T10:00:00Z').reasons.includes('ENTRY_WINDOW_EXPIRED'));
+ input.event.observedAt='2026-03-06T04:00:00Z';input.event.decidedAt=input.event.observedAt;
+ assert.ok(run('2026-03-06T05:00:00Z').reasons.includes('ENTRY_WINDOW_EXPIRED'));
+ input.calendar=input.calendar.slice(0,2);assert.ok(run('2026-03-02T05:00:00Z').reasons.includes('CALENDAR_INCOMPLETE'));
+});
