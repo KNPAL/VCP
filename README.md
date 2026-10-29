@@ -110,7 +110,7 @@ node --test tests/worker.integration.mjs
 
 The first command migrates `vcp_test` and runs PostgreSQL integration checks; the second verifies Redis behavior. Fixtures are synthetic. Never run integration tests against your application or production database.
 
-For a focused rerun, append one or more suite names: `node scripts/database-command.mjs test database scheduler`. Supported names are `database`, `eod-scan`, `indicator-replay`, `rs-replay`, and `scheduler`; the database remains isolated as `vcp_test`.
+For a focused rerun, append one or more suite names: `node scripts/database-command.mjs test database scheduler`. Suite names correspond to the integration tests registered in [the database command wrapper](scripts/database-command.mjs); examples include `database`, `eod-scan`, `indicator-replay`, `rs-replay`, `scheduler` and `entry-acceptance`. The database remains isolated as `vcp_test`.
 
 For web verification, complete the database test first and **stop the normal API/web processes** to free ports 3000/3001:
 
@@ -277,3 +277,5 @@ For an API test-port conflict, set `WEB_TEST_API_PORT` (for example `3101`) and 
 [Instrument-master import](docs/instrument-master.md) (migration 63) normalizes a licensed SmartAPI JSON file against reviewed identities and tick units, with immutable partial-import and retry reports. Apply migrations and rebuild market-data/database before running the import CLI. Missing or ambiguous mappings remain unavailable; this workflow does not acquire data or infer a license.
 
 [Source registry and readiness setup](docs/registry-readiness.md) explains how to import reviewed permission metadata and bind G07 to current source records. Inspector charts and correction replay require current rights for their actual candle providers, even for historical results. Missing grants keep those operations unavailable; local test grants are not production authorization.
+
+Portfolio, dashboard, saved-plan and historical-result views also check current permissions for their original source evidence. A `403` or `BLOCKED_DATA` response after setup can indicate missing, expired or revoked grants, or missing lineage in an older record. Follow the source-registry guide to provide reviewed metadata; restarting the application does not replace that evidence. To verify these paths with synthetic fixtures, run `node scripts/database-command.mjs test entry-acceptance eod-scan backtest-results` after building the workspace. The entry and EOD suites create and remove temporary schemas within `vcp_test`; their test database user needs schema creation permission.

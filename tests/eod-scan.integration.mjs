@@ -1,9 +1,10 @@
 import test from 'node:test';
+import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {createApp} from '../apps/api/dist/app.js';
-import {PrismaClient,ingestCandles,persistAdjustment,persistInstrumentSnapshot,persistUniverse,persistReadiness,persistSource,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
+import {ingestCandles,persistAdjustment,persistInstrumentSnapshot,persistUniverse,persistReadiness,persistSource,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {exchangeDate} from '../packages/domain/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
@@ -12,11 +13,12 @@ import {eodScanHandler,dispatchEodScans} from '../apps/worker/dist/eod-scan.js';
 import {recordPortfolioRisk,readCurrentRegime} from '../packages/database/dist/index.js';
 import {loadSeries} from '../packages/database/dist/index.js';
 process.env.REDIS_PORT??='56379';
-const db=new PrismaClient();
+let db;
 test('EOD scan pins revisions, resumes lost queue jobs and accounts for every intended member',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
- let q,worker,app;
+ let q,worker,app,fixture;
  try{
+  fixture=await isolatedDatabase('eod_scan');db=fixture.db;
   const now=new Date(),date=exchangeDate(now.toISOString()),golden=goldenSeries();
   const offset=Date.parse(date)-Date.parse(golden.bars.at(-1).session);
   const dates=golden.bars.map(b=>new Date(Date.parse(b.session)+offset).toISOString().slice(0,10));
@@ -129,5 +131,5 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   await persistSource(db,{...targetGrant,knownAt:new Date().toISOString(),uses:{...targetGrant.uses,DISPLAY:false}});
   assert.equal((await loadSeries(db,target.adjusted.revision,request)).listingId,target.listingId);
   await assert.rejects(loadSeries(db,target.adjusted.revision,request,['DERIVE','DISPLAY']),/SOURCE_PERMISSION_REQUIRED/);
- }finally{await app?.close();if(worker)await worker.close();if(q){await q.obliterate({force:true});await q.close()}await db.$disconnect()}
+ }finally{await app?.close();if(worker)await worker.close();if(q){await q.obliterate({force:true});await q.close()}await fixture?.close()}
 });

@@ -1,3 +1,4 @@
+import {candlePermission} from '../fixtures/candle-permission.mjs';
 import {signalLineage} from '../fixtures/signal-lineage.mjs';
 import {licensedSources} from '../fixtures/licensed-sources.mjs';
 import test from 'node:test';
@@ -26,8 +27,10 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
   await persistSectors(db,[{isin,sector:'TECH',validFrom:'2020-01-01',validTo:null,knownAt,sourceReference:'synthetic-sector'}],knownAt);
   await persistUniverse(db,{universe:'NIFTY_500',knownAt,effectiveFrom:'2020-01-01',effectiveTo:null,sourceReference:'synthetic-universe',historicalConstituentsVerified:true,isins:[isin]});
+  const benchmarkProvider='synthetic-regime-'+randomUUID(),benchmarkGrant=await candlePermission(db,benchmarkProvider),benchmarkRevision=randomUUID();
+  await db.candleRevision.create({data:{id:benchmarkRevision,listingId,session:new Date(day(-1)),scale:'RAW',revision:2,open:'100',high:'110',low:'90',close:'101',volume:100n,source:benchmarkProvider,receivedAt:new Date(knownAt),finalizedAt:new Date(calendar[0].closesAt)}});
   const adjustmentId=hash(randomUUID()),actionSource={id:adjustmentId,listingId,knownAt,verified:true,sourceReference:'synthetic-actions',coverageFrom:'2020-01-01',coverageThrough:day(1),actions:[]};
-  await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${adjustmentId},${listingId}::uuid,${new Date(day(-1))},${new Date(knownAt)},'KNOWN',${JSON.stringify({source:actionSource})}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${adjustmentId},${listingId}::uuid,${new Date(day(-1))},${new Date(knownAt)},'KNOWN',${JSON.stringify({source:actionSource,result:{bars:[{rawRevisionId:benchmarkRevision}]}})}::jsonb)`;
   for(const gate of ['G01','G02','G03','G04','G05','G07','G08','G09','G10'])await persistReadiness(db,{gate,status:'PASS',probeAt:new Date().toISOString(),sourceAt:knownAt,expiresAt,sourceReference:'synthetic-acceptance',reason:null,details:gate==='G07'?await licensedSources(db,knownAt,expiresAt):gate==='G04'?{identifier:'NIFTY_500_PRICE',adjustmentId}:{synthetic:true}});
   const scanId=randomUUID(),scanAt=new Date().toISOString(),universe=await pinScanUniverse(db,scanId,scanAt),members=[{isin,adjustmentId,close:'101',sma50:'90'}],regime={session:day(-1),asOf:scanAt,calendarId,benchmark:{adjustmentId,proofId:null,close:'110',sma50:'100',sma200:'90'},members,intended:[isin],result:marketRegime('110','100','90',[isin],members)};
   const scan={request:{scanId,session:day(-1),asOf:scanAt,calendarId},configHash:profile.id,dataRevision:hash(regime),universe,regime,items:[],benchmarkAdjustmentId:adjustmentId,benchmarkProofId:null};
@@ -80,6 +83,12 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   assert.equal((await fetch(base+'/api/v1/portfolio/risk',{headers})).status,200,'Cash-only valuation does not require unrelated live prices');
   const deniedRetry=await post(body,{...headers,'idempotency-key':idempotencyKey});assert.equal(deniedRetry.status,403);assert.equal((await deniedRetry.json()).error.code,'FORBIDDEN');
   await new Promise(resolve=>setTimeout(resolve,25));await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString()});
+  const {id:benchmarkGrantId,...benchmarkMetadata}=benchmarkGrant;assert.ok(benchmarkGrantId);
+  await persistSource(db,{...benchmarkMetadata,knownAt:new Date().toISOString(),uses:{...benchmarkMetadata.uses,DISPLAY:false}});
+  for(const route of ['/api/v1/portfolio','/api/v1/portfolio/risk','/api/v1/portfolio/dashboard'])assert.equal((await fetch(base+route,{headers})).status,403,route);
+  const hiddenRegime=await (await fetch(base+'/api/v1/portfolio/risk/plans',{headers})).json();assert.deepEqual(hiddenRegime.items,[]);assert.equal(hiddenRegime.state,'BLOCKED_DATA');
+  assert.equal((await post()).status,403);
+  await persistSource(db,{...benchmarkMetadata,knownAt:new Date().toISOString()});
   const fill={kind:'FILL',isin,side:'BUY',quantity:1,price:'102',fees:'0',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-actual-execution'};await appendPortfolio(db,owner.id,randomUUID(),fill);assert.equal((await readPortfolio(db,owner.id)).holdings[isin],1);assert.equal((await current()).current,false);
   const {id:sourceId,...sourceMetadata}=signalSource.grant;assert.ok(sourceId);
   await persistSource(db,{...sourceMetadata,knownAt:new Date().toISOString(),uses:{...sourceMetadata.uses,DISPLAY:false}});
@@ -111,7 +120,7 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   const trailSource=hash(randomUUID()),trailId=hash(randomUUID());
   await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${trailSource},${listingId}::uuid,${new Date(day(-1))},${new Date()},'KNOWN',${JSON.stringify({result:{bars:[{rawRevisionId:signalSource.rows[1].revision}]},source:actionSource})}::jsonb)`;
   await db.$executeRaw`INSERT INTO "PositionTrail" ("id","ownerId","stopId","session","decidedAt","state","evidence") VALUES (${trailId},${owner.id}::uuid,${stopId},${new Date(day(-1))},${new Date()},'TRAIL_UPDATE',${JSON.stringify({id:trailId,input:{sourceRevision:trailSource},result:{nextStop:'95'}})}::jsonb)`;
-  const stopRoutes=['/api/v1/positions/stops','/api/v1/positions/cards','/api/v1/positions/'+isin+'/detail','/api/v1/positions/'+isin+'/timeline'];
+  const stopRoutes=['/api/v1/portfolio','/api/v1/portfolio/risk','/api/v1/portfolio/dashboard','/api/v1/positions/stops','/api/v1/positions/cards','/api/v1/positions/'+isin+'/detail','/api/v1/positions/'+isin+'/timeline'];
   for(const route of stopRoutes)assert.equal((await fetch(base+route,{headers})).status,200,route);
   const {id:trailGrantId,...trailGrant}=signalSource.currentGrant;assert.ok(trailGrantId);
   await persistSource(db,{...trailGrant,knownAt:new Date().toISOString(),uses:{...trailGrant.uses,DISPLAY:false}});
@@ -133,4 +142,3 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   assert.equal((await readPortfolio(db,owner.id)).holdings[isin],1);
  }finally{await app?.close();await db?.$disconnect();await admin.$executeRawUnsafe('DROP SCHEMA "'+schema+'" CASCADE');await admin.$disconnect()}
 });
-

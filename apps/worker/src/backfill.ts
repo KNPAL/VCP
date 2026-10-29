@@ -17,5 +17,5 @@ export async function processBackfillWindow(db:PrismaClient,runId:string,gateway
  let bars:readonly DailyCandle[];
  try{bars=await gateway.fetch(window)}catch(error){const reason=error instanceof HistoricalWindowError?error.reason:error instanceof Error&&error.message==='BACKFILL_SOURCE_SUPERSEDED'?'BACKFILL_SOURCE_SUPERSEDED':'BROKER_UNAVAILABLE';await failSyncWindow(db,claimed.id,claimed.leaseToken!,reason,error instanceof HistoricalWindowError?error.retryAfterMs:1000);return {state:'FAILED' as const,reason,windowId:claimed.id}}
  try{return {state:'COMMITTED' as const,windowId:claimed.id,report:await commitSyncWindow(db,claimed.id,claimed.leaseToken!,bars,gateway.now())}}
- catch(error){if(error instanceof Error&&error.message==='BROKER_RESPONSE_SCOPE_MISMATCH'){await failSyncWindow(db,claimed.id,claimed.leaseToken!,'BROKER_RESPONSE_SCOPE_MISMATCH');return {state:'FAILED' as const,reason:error.message,windowId:claimed.id}}throw error}
+ catch(error){if(error instanceof Error){const reason=error.message;if(reason==='BROKER_RESPONSE_SCOPE_MISMATCH'||reason==='SOURCE_PERMISSION_REQUIRED'||reason==='SOURCE_SCOPE_AMBIGUOUS'||reason==='SOURCE_LINEAGE_MISSING'){await failSyncWindow(db,claimed.id,claimed.leaseToken!,reason);return {state:'FAILED' as const,reason,windowId:claimed.id}}}throw error}
 }

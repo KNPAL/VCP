@@ -155,14 +155,21 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   async function positionCandleDisplay(ownerId:string,isin?:string){try{await assertPositionCandleDisplay(db,ownerId,isin)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Position candle display permission or lineage is unavailable',403);throw error}}
   async function dailyDisplays(ids:string[]){try{await assertDailyExecutionDisplay(db,ids)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Candle display permission or lineage is unavailable',403);throw error}}
   const permissionErrors=['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'];
+  async function planRegimeDisplay(client:PrismaClient,value:unknown){
+    const plan=value as {regimeEvidence?:{scanId?:string|null;evidence?:unknown}};
+    if(plan.regimeEvidence?.scanId)await assertEodScanDisplay(client,plan.regimeEvidence.scanId);
+    else if(plan.regimeEvidence?.evidence)throw new Error('SOURCE_LINEAGE_MISSING');
+  }
   async function portfolioQuoteDisplay(id:string|null){try{await assertPortfolioQuoteDisplay(db,id)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Live-quote display permission or lineage is unavailable',403);throw error}}
   async function signalDisplay(id:string){try{await assertMarketSignalDisplay(db,id)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}}
   async function readEntryRisk(client:PrismaClient,ownerId:string,reader?:Parameters<typeof readStoredEntryRisk>[2]){
     const result=await readStoredEntryRisk(client,ownerId,reader),items:typeof result.items=[],unavailable:{id:string;reason:string}[]=[],checked=new Map<string,string|null>();
+    let ownerReason:string|null=null;
+    if(result.items.length)try{await assertPositionCandleDisplay(client,ownerId)}catch(error){if(!(error instanceof Error)||!permissionErrors.includes(error.message))throw error;ownerReason=error.message}
     for(const plan of result.items){
       const eventId=plan.evidence.marketEventId;
       if(!checked.has(eventId)){try{await assertMarketSignalDisplay(client,eventId);checked.set(eventId,null)}catch(error){if(!(error instanceof Error)||!permissionErrors.includes(error.message))throw error;checked.set(eventId,error.message)}}
-      let reason=checked.get(eventId);if(!reason){try{await assertPlanQuoteDisplay(client,plan.evidence)}catch(error){if(!(error instanceof Error)||!permissionErrors.includes(error.message))throw error;reason=error.message}}if(reason)unavailable.push({id:plan.evidence.id,reason});else items.push(plan);
+      let reason=ownerReason??checked.get(eventId);if(!reason){try{await planRegimeDisplay(client,plan.evidence);await assertPlanQuoteDisplay(client,plan.evidence)}catch(error){if(!(error instanceof Error)||!permissionErrors.includes(error.message))throw error;reason=error.message}}if(reason)unavailable.push({id:plan.evidence.id,reason});else items.push(plan);
     }
     return {...result,items,unavailable,state:unavailable.length?(items.length?'PARTIAL':'BLOCKED_DATA'):'KNOWN'};
   }
@@ -294,10 +301,12 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       return writeJournal(request,{kind:'CORRECTION',targetId:id,reason:body['reason'],replacement:fillBody(replacement)});
     }
   }
-  async function quoteDisplay(value:unknown){try{await assertPlanQuoteDisplay(db,value)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Live-quote display permission or lineage is unavailable',403);throw error}}
+  async function quoteDisplay(value:unknown){try{await planRegimeDisplay(db,value);await assertPlanQuoteDisplay(db,value)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Plan display permission or lineage is unavailable',403);throw error}}
   async function portfolioRiskView(ownerId:string){
     const risk=await readPortfolioRisk(db,ownerId),plans=await readEntryRisk(db,ownerId,entryObservations.read);
     await portfolioQuoteDisplay(risk.snapshotId);
+    await positionCandleDisplay(ownerId);
+    if(risk.actualRisk.regimeEvidence.scanId)await scanDisplay(risk.actualRisk.regimeEvidence.scanId);
     return {...risk,entryPlans:{asOf:plans.asOf,state:plans.state,unavailable:plans.unavailable,items:plans.items.map(plan=>{
       const matched=plan.evidence.snapshotId===risk.snapshotId&&plan.evidence.journalHash===risk.journalHash;
       return {...signalPlanDto(plan.evidence),current:plan.current&&matched,validityReasons:[...plan.validityReasons,...(!matched?['PORTFOLIO_VIEW_CHANGED']:[])]};
@@ -305,7 +314,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('portfolio')
   class PortfolioController {
-    @Get('dashboard') async dashboard(@Req() request:AuthRequest){const result=await readDashboard(db,request.ownerId!);await portfolioQuoteDisplay(result.risk.snapshotId);if(result.scan)await scanDisplay(result.scan.scanId);if(result.progress)await scanDisplay(result.progress.scanId);return result}
+    @Get('dashboard') async dashboard(@Req() request:AuthRequest){const result=await readDashboard(db,request.ownerId!);await portfolioQuoteDisplay(result.risk.snapshotId);await positionCandleDisplay(request.ownerId!);if(result.risk.actualRisk.regimeEvidence.scanId)await scanDisplay(result.risk.actualRisk.regimeEvidence.scanId);if(result.scan)await scanDisplay(result.scan.scanId);if(result.progress)await scanDisplay(result.progress.scanId);return result}
     @Get() async portfolio(@Req() request:AuthRequest){const risk=await portfolioRiskView(request.ownerId!);return {...risk.journal,monitor:await readPositionMonitor(db,request.ownerId!),equity:risk.valuation.equity,risk,reconciliation:risk.reconciliation.state,reconciliationEvidence:risk.reconciliation,reasons:risk.reasons}}
     @Get('risk') risk(@Req() request:AuthRequest){return portfolioRiskView(request.ownerId!)}
     @Get('loss-streak') async lossStreak(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.lossStreak,journalHash:risk.journalHash,cashAllocationRevision:risk.cashAllocationRevision,allocationHistory:await cashAllocationHistory(db,request.ownerId!)}}
@@ -320,7 +329,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Post('risk/plans') async plan(@Req() request:AuthRequest){
       const body=strictBody(request,['marketEventId','snapshotId','estimatedFees','topUpQuantity']),key=request.headers['idempotency-key'];
       if(typeof key!=='string'||typeof body['marketEventId']!=='string'||typeof body['snapshotId']!=='string'||typeof body['estimatedFees']!=='string')throw new BadRequestException('Market event, snapshot, estimated fees and Idempotency-Key required');
-      try{await signalDisplay(body['marketEventId']);const result=await recordEntryRisk(db,request.ownerId!,key,body as unknown as Parameters<typeof recordEntryRisk>[3],entryObservations.read);await signalDisplay(body['marketEventId']);await quoteDisplay(result);return result}
+      try{await positionCandleDisplay(request.ownerId!);await signalDisplay(body['marketEventId']);const result=await recordEntryRisk(db,request.ownerId!,key,body as unknown as Parameters<typeof recordEntryRisk>[3],entryObservations.read);await signalDisplay(body['marketEventId']);await quoteDisplay(result);return result}
       catch(error){const conflict=error instanceof Error&&error.message==='STALE_CONFLICT';if(!conflict&&!(error instanceof InputError)&&!(error instanceof Error&&['INVALID_ENTRY_PLAN','MARKET_EVENT_UNAVAILABLE'].includes(error.message)))throw error;throw new HttpException({code:conflict?'STALE_CONFLICT':'INVALID_INPUT',message:conflict?'Snapshot or idempotency key no longer matches current evidence':'Entry-plan source is missing or invalid'},conflict?409:422)}
     }
     @Get('reconciliation') reconciliation(@Req() request:AuthRequest){return readReconciliation(db,request.ownerId!)}
@@ -416,6 +425,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Get() list(@Req() request:AuthRequest){return listBacktestRuns(db,request.ownerId!)}
     @Post('compare') async compare(@Req() request:AuthRequest){
       try{return await compareBacktestSelection(db,request.ownerId!,request.body as BacktestComparisonSelection)}catch(error){
+        if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Historical data display permission or lineage is unavailable',403);
         if(error instanceof Error&&error.message==='REPLAY_RUN_NOT_FOUND')throw new NotFoundException('Own run not found');
         if(error instanceof Error&&['INVALID_BACKTEST_SELECTION','BACKTEST_STANDARD_COSTS_REQUIRED','BACKTEST_CONFIGURATION_MISMATCH','WALK_FORWARD_WINDOW_OVERLAP','PAPER_LEDGER_NOT_FOUND','INVALID_WALK_FORWARD_WINDOW','WALK_FORWARD_TRADE_OUTSIDE_WINDOW','PERFORMANCE_OUTSIDE_SNAPSHOT','REPLAY_OUTSIDE_SNAPSHOT'].includes(error.message))throw new HttpException(error.message,422);
         throw error;
@@ -425,7 +435,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     async result(request:AuthRequest,id:string,asOf:string,isin?:string){
       if(!/^[a-f0-9]{64}$/.test(id)||typeof asOf!=='string'||!/^\d{4}-\d{2}-\d{2}T/.test(asOf)||!Number.isFinite(Date.parse(asOf))||isin!==undefined&&!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin))throw new BadRequestException('Invalid historical reference');
       try{utcInstant(asOf)}catch{throw new BadRequestException('UTC ISO cutoff required')}
-      try{return isin?await readBacktestInstrument(db,request.ownerId!,id,isin,asOf):await readBacktestResult(db,request.ownerId!,id,asOf)}catch(error){if(error instanceof Error&&error.message==='REPLAY_RUN_NOT_FOUND')throw new NotFoundException('Run not found');if(error instanceof Error&&['REPLAY_OUTSIDE_SNAPSHOT','PERFORMANCE_OUTSIDE_SNAPSHOT'].includes(error.message))throw new BadRequestException('Date outside pinned snapshot');throw error}
+      try{return isin?await readBacktestInstrument(db,request.ownerId!,id,isin,asOf):await readBacktestResult(db,request.ownerId!,id,asOf)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Historical data display permission or lineage is unavailable',403);if(error instanceof Error&&error.message==='REPLAY_RUN_NOT_FOUND')throw new NotFoundException('Run not found');if(error instanceof Error&&['REPLAY_OUTSIDE_SNAPSHOT','PERFORMANCE_OUTSIDE_SNAPSHOT'].includes(error.message))throw new BadRequestException('Date outside pinned snapshot');throw error}
     }
     @Get(':id') read(@Req() request:AuthRequest,@Param('id') id:string,@Query('asOf') asOf:string){return this.result(request,id,asOf)}
     @Get(':id/instruments/:isin') instrument(@Req() request:AuthRequest,@Param('id') id:string,@Param('isin') isin:string,@Query('asOf') asOf:string){return this.result(request,id,asOf,isin)}

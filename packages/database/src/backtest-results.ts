@@ -2,7 +2,7 @@ import type {PrismaClient} from '@prisma/client';
 import {historicalSlice,type PaperLedger} from '@vcp/backtest';
 import {configurationHash} from '@vcp/strategy';
 import {utcInstant,exchangeDate,parseFixed} from '@vcp/domain';
-import type {StoredHistoricalSnapshot} from './backtest-snapshots.js';
+import {assertHistoricalDisplay,type StoredHistoricalSnapshot} from './backtest-snapshots.js';
 import {readPaperPerformance} from './paper-performance.js';
 const runKey=(id:string)=>{if(!/^[a-f0-9]{64}$/.test(id))throw new Error('INVALID_REPLAY_RUN_ID')};
 function metadata(id:string,stored:StoredHistoricalSnapshot){const s=stored.snapshot,p=s.inputs;return {id,snapshotId:stored.id,snapshotHash:s.id,strategyRevision:s.strategyHash,strategySha:p.strategySha,dataRevision:s.dataRevision,universeRevision:configurationHash(p.universes),calendarRevision:configurationHash(p.calendar),from:p.from,through:p.through,historyFrom:p.historyFrom??p.from,sourceAt:p.knownAt,evaluationAsOf:new Date(Math.min(Date.parse(p.knownAt),Date.parse(p.through+'T18:29:59.999Z'))).toISOString(),costs:p.fees,standardSlippage:parseFixed(p.fees.slippageBps)===10000000n,executable:false}}
@@ -14,6 +14,7 @@ async function archive(db:PrismaClient,ownerId:string,runId:string,asOf:string){
  runKey(runId);utcInstant(asOf);
  const rows=await db.$queryRaw<{evidence:StoredHistoricalSnapshot}[]>`SELECT s."evidence" FROM "HistoricalReplayRun" r JOIN "HistoricalReplaySnapshot" s ON s."id"=r."snapshotId" AND s."ownerId"=r."ownerId" WHERE r."id"=${runId} AND r."ownerId"=${ownerId}::uuid`;
  const stored=rows[0]?.evidence;if(!stored)throw new Error('REPLAY_RUN_NOT_FOUND');
+ await assertHistoricalDisplay(db,stored);
  const slice=historicalSlice(stored.snapshot,asOf);return {stored,slice};
 }
 export async function readBacktestResult(db:PrismaClient,ownerId:string,runId:string,asOf:string){

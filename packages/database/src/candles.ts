@@ -2,12 +2,19 @@ import {Prisma,PrismaClient} from '@prisma/client';
 import {randomUUID,createHash} from 'node:crypto';
 import {inspectCandleBatch,candleHash,verifiedCalendar} from '@vcp/market-data';
 import {canonical} from './indicators.js';
+import {assertProviderPermissions} from './data-permissions.js';
 type ImportInput=Parameters<typeof inspectCandleBatch>[0];
 export interface IngestReport {state:string;calendarHash:string;expectedCount:number;actualResponseCount:number;missing:{session:string;reason:string}[];calendarReasons:string[];inserted:number;revised:number;unchanged:number;quarantined:number;watermark:string|null;changes:string[]}
 export async function ingestCandles(db:PrismaClient,input:ImportInput,onCommit?:(tx:Prisma.TransactionClient,report:IngestReport)=>Promise<void>){
+ // Quarantined payloads are storage too, including bars from an unexpected provider.
+ const providers=[...new Set([input.provider,...input.bars.map(bar=>bar.provider)])].sort();
+ const storagePermission=async()=>{for(const provider of providers)await assertProviderPermissions(db,'DAILY_CANDLES',provider,['STORE'])};
+ await storagePermission();
  const inspected=inspectCandleBatch(input),checkedAt=new Date(input.asOf);
  for(let attempt=0;attempt<4;attempt++)try{return await db.$transaction(async tx=>{
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.listingId},0))`;
+  // Read current authority outside the serializable market-data snapshot after a lock wait.
+  await storagePermission();
   const coverage=await tx.$queryRaw<{fromSession:Date;watermark:Date|null;checkedAt:Date}[]>`SELECT "fromSession","watermark","checkedAt" FROM "CandleCoverage" WHERE "listingId"=${input.listingId}::uuid AND "provider"=${input.provider}`;
   if(coverage[0]&&checkedAt<coverage[0].checkedAt)throw new Error('STALE_CONFLICT: coverage observation is older than stored evidence');
   const calendarJson=canonical(input.calendar),calendarHash=createHash('sha256').update(calendarJson).digest('hex');
@@ -36,6 +43,7 @@ export async function ingestCandles(db:PrismaClient,input:ImportInput,onCommit?:
   const report={state:inspected.state,from:input.from,to:input.to,calendarHash,expectedCount:inspected.expectedCount,actualResponseCount:inspected.actualCount,missing:inspected.missing,calendarReasons:calendar.reasons,inserted,revised,unchanged,quarantined:inspected.quarantined.length,watermark:watermark?.toISOString().slice(0,10)??null,changes};
   const evidence=canonical(report);await tx.$executeRaw`INSERT INTO "CandleCoverage" ("listingId","provider","fromSession","watermark","checkedAt","evidence") VALUES (${input.listingId}::uuid,${input.provider},${new Date(from)},${watermark},${checkedAt},${evidence}::jsonb) ON CONFLICT ("listingId","provider") DO UPDATE SET "fromSession"=EXCLUDED."fromSession","watermark"=EXCLUDED."watermark","checkedAt"=EXCLUDED."checkedAt","evidence"=EXCLUDED."evidence"`;
   if(onCommit)await onCommit(tx,report);
+  await storagePermission();
   return report;
  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,timeout:60000})}catch(error){
   const retryable=error instanceof Prisma.PrismaClientKnownRequestError&&(error.code==='P2034'||error.code==='P2002'||(error.code==='P2010'&&['40001','40P01'].includes(String(error.meta?.['code']))));if(retryable&&attempt<3)continue;throw error;

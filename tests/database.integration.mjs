@@ -1,7 +1,9 @@
+import {candlePermission} from '../fixtures/candle-permission.mjs';
+import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {PrismaClient,hashPassword,persistIndicator,persistPattern,supersedePattern,registerProfile,activateProfile,activeProfile,persistScan,getScan} from '../packages/database/dist/index.js';
+import {hashPassword,persistIndicator,persistPattern,supersedePattern,registerProfile,activateProfile,activeProfile,persistScan,getScan} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION,configurationHash,companyCandidate} from '../packages/strategy/dist/index.js';
 import {detect} from '../packages/vcp/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
@@ -22,8 +24,9 @@ import {brokerCircuitStore,restoreBrokerCircuit} from '../packages/database/dist
 import {historicalRequest} from '../packages/market-data/dist/index.js';
 import {createSyncRun,claimSyncWindow,commitSyncWindow,failSyncWindow,syncJobs,instrumentCoverage} from '../packages/database/dist/index.js';
 import {prepareBackfill,processBackfillWindow} from '../apps/worker/dist/backfill.js';
-const db=new PrismaClient();
+let db;
 test('PostgreSQL constraints and durable authentication',async()=>{
+ const fixture=await isolatedDatabase('database',{seedOwner:false});db=fixture.db;
  const login='integration-owner'; const password='synthetic-test-password-2026';
  const owner=await db.owner.upsert({where:{login},create:{login,passwordHash:await hashPassword(password)},update:{}});
  const app=await createApp({db,origin:'http://localhost:3000',secure:true});
@@ -155,10 +158,10 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   await assert.rejects(persistScan(db,scanEvidence,[listing,missingListing],[]),/STALE_CONFLICT/);
   await assert.rejects(db.$executeRaw`DELETE FROM "ScanResult" WHERE "id"=${scan.scanId}::uuid`);
   assert.equal((await getScan(db,scan.scanId)).counts.missing,1);
-  const page=await send('/vcp/candidates?scanId='+scan.scanId,{headers:{cookie}});assert.equal(page.status,200);
-  const candidatePageResult=await page.json();assert.equal(candidatePageResult.items[0].instrumentId,listing);assert.ok(candidatePageResult.items[0].patternEvidence.primaryPatternId);assert.equal(candidatePageResult.items[0].patternEvidence.patterns.length,candidatePatterns.length);
-  assert.deepEqual(candidatePageResult.counts,scan.counts);assert.equal(candidatePageResult.status,'PARTIAL');
-  const latestResponse=await send('/vcp/latest-scan',{headers:{cookie}});assert.equal(latestResponse.status,200);const latestSummary=await latestResponse.json();const latestStored=await getScan(db,latestSummary.scanId);assert.equal(latestSummary.asOf,latestStored.asOf);assert.deepEqual(latestSummary.counts,latestStored.counts);
+  // This legacy scan has no original EOD source plan: audit reads work, public display must fail closed.
+  // Positive candidate display and permission revocation are covered by the EOD integration suite.
+  const page=await send('/vcp/candidates?scanId='+scan.scanId,{headers:{cookie}});assert.equal(page.status,403);assert.equal(Object.hasOwn(await page.json(),'items'),false);
+  const latestResponse=await send('/vcp/latest-scan',{headers:{cookie}});assert.equal(latestResponse.status,403);
   assert.equal((await send('/vcp/profiles')).status,401);
   assert.equal((await send('/vcp/lifecycle/'+'f'.repeat(64))).status,401);
   assert.equal((await send('/vcp/lifecycle/bad',{headers:{cookie}})).status,400);
@@ -172,11 +175,11 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   assert.equal((await send('/vcp/profiles',{method:'POST',headers:watchHeaders,body:JSON.stringify({version:profileVersion,configuration:{...profileConfig,baselineRisk:'0.002'}})})).status,409);
   assert.equal((await send('/vcp/profiles',{method:'POST',headers:watchHeaders,body:JSON.stringify({version:profileVersion,configuration:{...profileConfig,automaticOrders:true}})})).status,422);
   const afterProfiles=await (await send('/vcp/profiles',{headers:{cookie}})).json();assert.equal(afterProfiles.activeId,beforeProfiles.activeId);assert.deepEqual(afterProfiles.activations,beforeProfiles.activations);assert.equal(afterProfiles.items.find(p=>p.id===registered[0].id).executionSupported,false);assert.equal((await getScan(db,scan.scanId)).configHash,scan.configHash);
-  assert.equal((await send('/vcp/candidates?scanId='+scan.scanId+'&state=BOGUS',{headers:{cookie}})).status,400);
-  assert.equal((await send('/vcp/candidates?scanId='+scan.scanId+'&cursor=broken',{headers:{cookie}})).status,400);
+  assert.equal((await send('/vcp/candidates?scanId='+scan.scanId+'&state=BOGUS',{headers:{cookie}})).status,403);
+  assert.equal((await send('/vcp/candidates?scanId='+scan.scanId+'&cursor=broken',{headers:{cookie}})).status,403);
   assert.equal((await send('/vcp/candidates?scanId='+randomUUID(),{headers:{cookie}})).status,404);
-  assert.equal((await send('/system/data-gaps',{headers:{cookie}})).status,200);
-  assert.equal((await send('/system/scans/'+scan.scanId,{headers:{cookie}})).status,200);
+  assert.equal((await send('/system/data-gaps',{headers:{cookie}})).status,403);
+  assert.equal((await send('/system/scans/'+scan.scanId,{headers:{cookie}})).status,403);
   assert.equal((await send('/auth/logout',{method:'POST',headers:{cookie,origin:'http://localhost:3000'}})).status,403);
   assert.equal((await send('/auth/logout',{method:'POST',headers:{cookie,origin:'http://localhost:3000','x-csrf-token':session.csrfToken}})).status,201);
   assert.equal((await send('/auth/session',{headers:{cookie}})).status,401);
@@ -195,6 +198,7 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   await assert.rejects(db.candleRevision.update({where:{id:data.id},data:{close:'103'}}));
   await assert.rejects(db.candleRevision.delete({where:{id:data.id}}));
   const rawListing=randomUUID(),provider='synthetic-provider',barDate='2026-10-16',observed='2026-10-16T12:00:00Z';
+  await candlePermission(db,provider);
   const calendar=[{date:barDate,kind:'TRADING',opensAt:barDate+'T03:45:00Z',closesAt:barDate+'T10:00:00Z',finalizedAt:barDate+'T10:30:00Z',knownAt:'2026-01-01T00:00:00Z',source:'synthetic-official',verified:true}];
   const rawBar={listingId:rawListing,session:barDate,provider,open:'100',high:'110',low:'99',close:'105',volume:'1000',receivedAt:observed,finalizedAt:barDate+'T10:30:00Z',zeroVolumeVerified:false};
   const batch={listingId:rawListing,provider,bars:[rawBar],calendar,from:barDate,to:barDate,asOf:observed};
@@ -302,6 +306,7 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   await assert.rejects(db.$executeRaw`DELETE FROM "HistoricalSyncAttempt" WHERE "windowId"=${claim.id}::uuid`);
   const {normalizedHistoricalGateway}=await import('../apps/worker/dist/historical-gateway.js');
   const normalizedRun={...historyInput,id:randomUUID(),listingId:randomUUID(),provider:'ANGEL_ONE'};
+  const storageNow=new Date().toISOString();await persistSource(db,{dataset:'DAILY_CANDLES',provider:'ANGEL_ONE',endpointOrFile:(await import('../packages/market-data/dist/index.js')).HISTORICAL_ENDPOINT,licenseRef:'synthetic-current-storage',uses:{DOWNLOAD:true,STORE:true,DERIVE:true,DISPLAY:true,REDISTRIBUTE:false},updateFrequency:'daily',asOf:storageNow,knownAt:storageNow,effectiveAt:storageNow,validUntil:new Date(Date.now()+3600000).toISOString(),lastVerified:storageNow,maximumAgeMs:3600000,adjustmentPolicy:'synthetic',coverage:{intended:1,available:1},error:null});
   const normalizedMapping={id:'synthetic-backfill',knownAt:'2026-01-01T00:00:00Z',sourceReference:'synthetic',rows:[{companyId:randomUUID(),listingId:normalizedRun.listingId,isin:'IN'+randomUUID().replaceAll('-','').slice(0,9).toUpperCase()+'1',exchange:'NSE',series:'EQ',symbol:'TEST',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'ANGEL_ONE',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]};
   let normalizedCalls=0;
   const gatewayInput={listingId:normalizedRun.listingId,exchange:'NSE',symbolToken:'123',mapping:normalizedMapping,calendar:historyCalendar,now:()=>brokerNow};
@@ -331,7 +336,7 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   assert.equal((await send('/system/jobs?limit=201',{headers:{cookie:historyCookie}})).status,400);
   assert.equal((await send('/system/coverage/'+historyListing,{headers:{cookie:historyCookie}})).status,400);
   assert.equal((await send('/system/coverage/'+historyListing+'?provider=a&provider=b',{headers:{cookie:historyCookie}})).status,400);
-  assert.equal((await send('/system/data-gaps?listingId='+historyListing+'&provider='+provider,{headers:{cookie:historyCookie}})).status,200);
+  assert.equal((await send('/system/data-gaps?listingId='+historyListing+'&provider='+provider,{headers:{cookie:historyCookie}})).status,403);
   const key=randomUUID();const idem={ownerId:owner.id,key,requestHash:'a'.repeat(64),response:{id:'synthetic'}};
   await db.idempotencyRecord.create({data:idem});
   await assert.rejects(db.idempotencyRecord.create({data:idem}));
@@ -378,7 +383,7 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   assert.equal(secondDaily.detector.structure.primary.pivot,'102.000000');
   assert.equal((await send('/system/daily-structure/'+secondDaily.id)).status,401);
   const dailyResponse=await send('/system/daily-structure/'+secondDaily.id,{headers:{cookie:historyCookie}});
-  assert.equal(dailyResponse.status,200);assert.deepEqual(await dailyResponse.json(),secondDaily);
+  assert.equal(dailyResponse.status,403);assert.equal(Object.hasOwn(await dailyResponse.json(),'input'),false); // Synthetic string revisions intentionally lack stored candle lineage.
   assert.equal((await db.$queryRaw`SELECT "id" FROM "MarketEvent" WHERE "listingId"=${daily.listingId}::uuid`).length,1);
   await assert.rejects(processDailyStructure(db,{...nextDaily,scaleRevision:'changed'}),/DAILY_SESSION_ALREADY_FROZEN/);
   await assert.rejects(db.$executeRaw`DELETE FROM "DailyStructureExecution" WHERE "id"=${secondDaily.id}`);
@@ -498,6 +503,6 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   await assert.rejects(recordHistoricalProbe(db,probeAccount,probeId,{...probeInput,asOf:'2026-10-19T00:00:00Z'}),/HISTORICAL_PROBE_ID_CONFLICT/);
   await assert.rejects(db.$executeRaw`UPDATE "HistoricalProbe" SET "revision"=${'b'.repeat(64)} WHERE "id"=${probeId}::uuid`);
   await assert.rejects(db.$executeRaw`DELETE FROM "HistoricalProbe" WHERE "id"=${probeId}::uuid`);
- } finally {await app.close();await db.$disconnect();}
+ } finally {await app.close();await fixture.close();}
 });
 

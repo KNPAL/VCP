@@ -1,7 +1,7 @@
 import type {PrismaClient} from '@prisma/client';
 import {configurationHash} from '@vcp/strategy';
 import {parseFixed} from '@vcp/domain';
-import type {StoredHistoricalSnapshot} from './backtest-snapshots.js';
+import {assertHistoricalDisplay,type StoredHistoricalSnapshot} from './backtest-snapshots.js';
 import {compareStoredWalkForward} from './walk-forward.js';
 export interface BacktestComparisonSelection {train:string;validation:string;test:string}
 /** Resolve cutoffs and assumptions from owner archives; browsers cannot supply metrics or future dates. */
@@ -12,6 +12,7 @@ export async function compareBacktestSelection(db:PrismaClient,ownerId:string,in
  for(const phase of phases){
   const rows=await db.$queryRaw<{evidence:StoredHistoricalSnapshot}[]>`SELECT s."evidence" FROM "HistoricalReplayRun" r JOIN "HistoricalReplaySnapshot" s ON s."id"=r."snapshotId" AND s."ownerId"=r."ownerId" WHERE r."id"=${input[phase]} AND r."ownerId"=${ownerId}::uuid`;
   const stored=rows[0]?.evidence;if(!stored)throw new Error('REPLAY_RUN_NOT_FOUND');const s=stored.snapshot,p=s.inputs;
+  await assertHistoricalDisplay(db,stored);
   if(parseFixed(p.fees.slippageBps)!==10000000n||!p.fees.sourceReference.trim())throw new Error('BACKTEST_STANDARD_COSTS_REQUIRED');
   loaded.push({phase,runId:input[phase],asOf:new Date(Math.min(Date.parse(p.knownAt),Date.parse(p.through+'T18:29:59.999Z'))).toISOString(),from:p.from,through:p.through,strategy:configurationHash({configuration:s.strategyHash,code:p.strategySha}),costs:configurationHash(p.fees),snapshotId:stored.id,dataRevision:s.dataRevision,universeRevision:configurationHash(p.universes),calendarRevision:configurationHash(p.calendar)});
  }

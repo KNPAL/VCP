@@ -44,7 +44,7 @@ async function locked(tx:Prisma.TransactionClient,id:string,token:string){
 }
 async function attempt(tx:Prisma.TransactionClient,row:SyncWindowRow,outcome:string,evidence:unknown){await tx.$executeRaw`INSERT INTO "HistoricalSyncAttempt" ("windowId","attempt","leaseToken","outcome","evidence") VALUES (${row.id}::uuid,${row.attempts},${row.leaseToken}::uuid,${outcome},${canonical(evidence)}::jsonb) ON CONFLICT DO NOTHING`}
 async function exhausted(tx:Prisma.TransactionClient,id:string){const rows=await tx.$queryRaw<{count:number}[]>`SELECT COUNT(*)::integer AS "count" FROM "HistoricalSyncAttempt" WHERE "windowId"=${id}::uuid AND "outcome" IN ('FAILED','LEASE_EXPIRED')`;return rows[0]!.count>=4}
-export async function failSyncWindow(db:PrismaClient,id:string,token:string,reason:'BROKER_UNAVAILABLE'|'BROKER_RESPONSE_SCOPE_MISMATCH'|'INVALID_BROKER_RESPONSE'|'RATE_LIMITED'|'BACKFILL_SOURCE_SUPERSEDED',retryAfterMs=1000){
+export async function failSyncWindow(db:PrismaClient,id:string,token:string,reason:'BROKER_UNAVAILABLE'|'BROKER_RESPONSE_SCOPE_MISMATCH'|'INVALID_BROKER_RESPONSE'|'RATE_LIMITED'|'BACKFILL_SOURCE_SUPERSEDED'|'SOURCE_PERMISSION_REQUIRED'|'SOURCE_SCOPE_AMBIGUOUS'|'SOURCE_LINEAGE_MISSING',retryAfterMs=1000){
  if(!Number.isSafeInteger(retryAfterMs)||retryAfterMs<0||retryAfterMs>86400000)throw new Error('INVALID_SYNC_RETRY');
  return db.$transaction(async tx=>{const row=await locked(tx,id,token);await attempt(tx,row,reason==='RATE_LIMITED'?'DEFERRED':'FAILED',{reason,retryAfterMs});
   const state=await exhausted(tx,id)?'FAILED':'PARTIAL';
