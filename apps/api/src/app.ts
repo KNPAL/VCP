@@ -12,15 +12,15 @@ import { STRATEGY_VERSION, errorCodes, wireSchemas, InputError, utcInstant } fro
 import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
-import {getScan,latestScan,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
-import {readInspector,inspectorListings} from '@vcp/database';
+import {getScan as getStoredScan,latestScan as latestStoredScan,assertEodScanDisplay,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
+import {readInspector,inspectorListings,assertCandlePermissions} from '@vcp/database';
 import {compareBacktestSelection,type BacktestComparisonSelection,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '@vcp/database';
 import {readDataHealth,readBrokerConnection,saveBrokerConfiguration,ownerBrokerBinding,logoutBroker} from '@vcp/database';
 import {readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualDownload,listManualDownloads,cancelManualDownload,retryManualDownload} from '@vcp/database';
-import {readPositionCards} from '@vcp/database';
+import {readPositionCards,assertPositionCandleDisplay,assertDailyExecutionDisplay} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
-import {readSourceRegistry,readSurveillance,readMarketSignals,recordEntryRisk,readEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
+import {readSourceRegistry,readSurveillance,readDisplayMarketSignals as readMarketSignals,recordEntryRisk,assertMarketSignalDisplay,assertPlanQuoteDisplay,assertPortfolioQuoteDisplay,readEntryRisk as readStoredEntryRisk,recordCashAllocation,cashAllocationHistory} from '@vcp/database';
 import {candidatePage} from '@vcp/strategy';
 import {registerProfile,validateProfileVersion,readProfileHistory,patternHistory,readPositionMonitor,readReconciliation,recordReconciliation,readPositionStops,readPositionStatus,dismissPartialProfit} from '@vcp/database';
 import {withLogContext,logContext,writeLog,type LogSink} from '@vcp/domain/logging';
@@ -152,6 +152,25 @@ class SystemController {
 }
 export async function createApp(options: {db?:PrismaClient;origin?:string;secure?:boolean;logSink?:LogSink;brokerLoginDependencies?:()=>Promise<BrokerLoginDependencies>;brokerStatusDependencies?:BrokerStatusDependencies} = {}) {
   const db = options.db ?? await databaseFromEnvironment();
+  async function positionCandleDisplay(ownerId:string,isin?:string){try{await assertPositionCandleDisplay(db,ownerId,isin)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Position candle display permission or lineage is unavailable',403);throw error}}
+  async function dailyDisplays(ids:string[]){try{await assertDailyExecutionDisplay(db,ids)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Candle display permission or lineage is unavailable',403);throw error}}
+  const permissionErrors=['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'];
+  async function portfolioQuoteDisplay(id:string|null){try{await assertPortfolioQuoteDisplay(db,id)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Live-quote display permission or lineage is unavailable',403);throw error}}
+  async function signalDisplay(id:string){try{await assertMarketSignalDisplay(db,id)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}}
+  async function readEntryRisk(client:PrismaClient,ownerId:string,reader?:Parameters<typeof readStoredEntryRisk>[2]){
+    const result=await readStoredEntryRisk(client,ownerId,reader),items:typeof result.items=[],unavailable:{id:string;reason:string}[]=[],checked=new Map<string,string|null>();
+    for(const plan of result.items){
+      const eventId=plan.evidence.marketEventId;
+      if(!checked.has(eventId)){try{await assertMarketSignalDisplay(client,eventId);checked.set(eventId,null)}catch(error){if(!(error instanceof Error)||!permissionErrors.includes(error.message))throw error;checked.set(eventId,error.message)}}
+      let reason=checked.get(eventId);if(!reason){try{await assertPlanQuoteDisplay(client,plan.evidence)}catch(error){if(!(error instanceof Error)||!permissionErrors.includes(error.message))throw error;reason=error.message}}if(reason)unavailable.push({id:plan.evidence.id,reason});else items.push(plan);
+    }
+    return {...result,items,unavailable,state:unavailable.length?(items.length?'PARTIAL':'BLOCKED_DATA'):'KNOWN'};
+  }
+  async function scanDisplay(id:string){
+    try{await assertEodScanDisplay(db,id)}catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}
+  }
+  async function getScan(client:PrismaClient,id:string){const scan=await getStoredScan(client,id);if(scan)await scanDisplay(scan.scanId);return scan}
+  async function latestScan(client:PrismaClient){const scan=await latestStoredScan(client);if(scan)await scanDisplay(scan.scanId);return scan}
   const entryObservations=entryObservationReader(db,options.brokerStatusDependencies);
   const trustedProxies=(process.env['VCP_TRUSTED_PROXY_IPS']??'').split(',').map(s=>s.trim()).filter(Boolean);if(trustedProxies.some(ip=>!isIP(ip)))throw new Error('INVALID_TRUSTED_PROXY_IP');
   const auth = new AuthService(db, options.origin ?? process.env['APP_ORIGIN'] ?? 'http://localhost:3000', options.secure ?? process.env['COOKIE_SECURE'] !== 'false');
@@ -188,7 +207,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Get('inspector/:id') async inspector(@Req() request:AuthRequest,@Param('id') id:string){
       if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid daily execution ID');
       try{const result=await readInspector(db,request.ownerId!,id);if(!result)throw new NotFoundException('Daily execution not found');return result}
-      catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}
+      catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING','SOURCE_AUTHORITY_CHANGED'].includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}
     }
     @Get('lifecycle/:id') async lifecycle(@Param('id') id:string){if(!/^[a-f0-9]{64}$/.test(id))throw new BadRequestException('Invalid pattern ID');return patternHistory(db,id)}
     @Get('profiles') profiles(){return readProfileHistory(db)}
@@ -243,12 +262,12 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('positions')
   class PositionController {
-    @Get('sell-alerts') sellAlerts(@Req() request:AuthRequest){return readSellAlerts(db,request.ownerId!)}
-    @Get('cards') cards(@Req() request:AuthRequest){return readPositionCards(db,request.ownerId!)}
-    @Get(':isin/detail') async detail(@Req() request:AuthRequest,@Param('isin') isin:string){if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin))throw new BadRequestException('Invalid ISIN');return readPositionDetail(db,request.ownerId!,isin)}
+    @Get('sell-alerts') async sellAlerts(@Req() request:AuthRequest){const result=await readSellAlerts(db,request.ownerId!);await positionCandleDisplay(request.ownerId!);return result}
+    @Get('cards') async cards(@Req() request:AuthRequest){const result=await readPositionCards(db,request.ownerId!);await dailyDisplays(result.items.flatMap(item=>item.ema21!==null&&item.executionId?[item.executionId]:[]));await portfolioQuoteDisplay(result.riskSnapshotId);await positionCandleDisplay(request.ownerId!);return result}
+    @Get(':isin/detail') async detail(@Req() request:AuthRequest,@Param('isin') isin:string){if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin))throw new BadRequestException('Invalid ISIN');const result=await readPositionDetail(db,request.ownerId!,isin);await dailyDisplays(result.pivots.flatMap(item=>item.pivot!==null&&item.sourceId?[item.sourceId]:[]));await portfolioQuoteDisplay(result.riskSnapshotId);await positionCandleDisplay(request.ownerId!,isin);return result}
     @Get(':isin/timeline') async timeline(@Req() request:AuthRequest,@Param('isin') isin:string,@Query() query:Record<string,string>){
       if(!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin)||Object.keys(query).some(key=>key!=='cursor')||query['cursor']!==undefined&&typeof query['cursor']!=='string')throw new BadRequestException('Invalid timeline query');
-      try{return await positionTimeline(db,request.ownerId!,isin,query['cursor'])}catch(error){if(error instanceof Error&&error.message==='INVALID_TIMELINE_CURSOR')throw new BadRequestException(error.message);throw error}
+      try{const result=await positionTimeline(db,request.ownerId!,isin,query['cursor']);await positionCandleDisplay(request.ownerId!,isin);return result}catch(error){if(error instanceof Error&&error.message==='INVALID_TIMELINE_CURSOR')throw new BadRequestException(error.message);throw error}
     }
     @Post('alerts/:id/acknowledge') async acknowledge(@Req() request:AuthRequest,@Param('id') id:string){
       const body=strictBody(request,['note']);if(typeof body['note']!=='string')throw new BadRequestException('Review note required');
@@ -260,8 +279,8 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       try{return await dismissPartialProfit(db,request.ownerId!,key,id,body['reason'])}
       catch(error){if(!(error instanceof Error)||!['STALE_CONFLICT','PARTIAL_SIGNAL_NOT_FOUND','INVALID_PARTIAL_DISMISSAL'].includes(error.message))throw error;throw new HttpException(error.message,error.message==='STALE_CONFLICT'?409:error.message==='PARTIAL_SIGNAL_NOT_FOUND'?404:422)}
     }
-    @Get('status') status(@Req() request:AuthRequest){return readPositionStatus(db,request.ownerId!)}
-    @Get('stops') stops(@Req() request:AuthRequest){return readPositionStops(db,request.ownerId!)}
+    @Get('status') async status(@Req() request:AuthRequest){const result=await readPositionStatus(db,request.ownerId!);await positionCandleDisplay(request.ownerId!);return result}
+    @Get('stops') async stops(@Req() request:AuthRequest){const result=await readPositionStops(db,request.ownerId!);await positionCandleDisplay(request.ownerId!);return result}
     @Get() async positions(@Req() request:AuthRequest){const p=await readPortfolio(db,request.ownerId!);return {items:Object.entries(p.holdings).map(([isin,quantity])=>({id:isin,isin,quantity,lots:p.lots.filter(lot=>lot.isin===isin&&lot.remainingQty>0)})),asOf:p.asOf,cash:p.cash,realizedPnl:p.realizedPnl}}
     @Post() async open(@Req() request:AuthRequest){
       const body=strictBody(request,['isin','side','quantity','price','fees','brokerReference','occurredAt','sourceId']);
@@ -275,16 +294,18 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       return writeJournal(request,{kind:'CORRECTION',targetId:id,reason:body['reason'],replacement:fillBody(replacement)});
     }
   }
+  async function quoteDisplay(value:unknown){try{await assertPlanQuoteDisplay(db,value)}catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Live-quote display permission or lineage is unavailable',403);throw error}}
   async function portfolioRiskView(ownerId:string){
     const risk=await readPortfolioRisk(db,ownerId),plans=await readEntryRisk(db,ownerId,entryObservations.read);
-    return {...risk,entryPlans:{asOf:plans.asOf,items:plans.items.map(plan=>{
+    await portfolioQuoteDisplay(risk.snapshotId);
+    return {...risk,entryPlans:{asOf:plans.asOf,state:plans.state,unavailable:plans.unavailable,items:plans.items.map(plan=>{
       const matched=plan.evidence.snapshotId===risk.snapshotId&&plan.evidence.journalHash===risk.journalHash;
       return {...signalPlanDto(plan.evidence),current:plan.current&&matched,validityReasons:[...plan.validityReasons,...(!matched?['PORTFOLIO_VIEW_CHANGED']:[])]};
     }),executable:false}};
   }
   @Controller('portfolio')
   class PortfolioController {
-    @Get('dashboard') dashboard(@Req() request:AuthRequest){return readDashboard(db,request.ownerId!)}
+    @Get('dashboard') async dashboard(@Req() request:AuthRequest){const result=await readDashboard(db,request.ownerId!);await portfolioQuoteDisplay(result.risk.snapshotId);if(result.scan)await scanDisplay(result.scan.scanId);if(result.progress)await scanDisplay(result.progress.scanId);return result}
     @Get() async portfolio(@Req() request:AuthRequest){const risk=await portfolioRiskView(request.ownerId!);return {...risk.journal,monitor:await readPositionMonitor(db,request.ownerId!),equity:risk.valuation.equity,risk,reconciliation:risk.reconciliation.state,reconciliationEvidence:risk.reconciliation,reasons:risk.reasons}}
     @Get('risk') risk(@Req() request:AuthRequest){return portfolioRiskView(request.ownerId!)}
     @Get('loss-streak') async lossStreak(@Req() request:AuthRequest){const risk=await readPortfolioRisk(db,request.ownerId!);return {...risk.lossStreak,journalHash:risk.journalHash,cashAllocationRevision:risk.cashAllocationRevision,allocationHistory:await cashAllocationHistory(db,request.ownerId!)}}
@@ -299,7 +320,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Post('risk/plans') async plan(@Req() request:AuthRequest){
       const body=strictBody(request,['marketEventId','snapshotId','estimatedFees','topUpQuantity']),key=request.headers['idempotency-key'];
       if(typeof key!=='string'||typeof body['marketEventId']!=='string'||typeof body['snapshotId']!=='string'||typeof body['estimatedFees']!=='string')throw new BadRequestException('Market event, snapshot, estimated fees and Idempotency-Key required');
-      try{return await recordEntryRisk(db,request.ownerId!,key,body as unknown as Parameters<typeof recordEntryRisk>[3],entryObservations.read)}
+      try{await signalDisplay(body['marketEventId']);const result=await recordEntryRisk(db,request.ownerId!,key,body as unknown as Parameters<typeof recordEntryRisk>[3],entryObservations.read);await signalDisplay(body['marketEventId']);await quoteDisplay(result);return result}
       catch(error){const conflict=error instanceof Error&&error.message==='STALE_CONFLICT';if(!conflict&&!(error instanceof InputError)&&!(error instanceof Error&&['INVALID_ENTRY_PLAN','MARKET_EVENT_UNAVAILABLE'].includes(error.message)))throw error;throw new HttpException({code:conflict?'STALE_CONFLICT':'INVALID_INPUT',message:conflict?'Snapshot or idempotency key no longer matches current evidence':'Entry-plan source is missing or invalid'},conflict?409:422)}
     }
     @Get('reconciliation') reconciliation(@Req() request:AuthRequest){return readReconciliation(db,request.ownerId!)}
@@ -324,7 +345,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Get() async list(@Req() request:AuthRequest,@Query() query:Record<string,unknown>){
       if(Object.keys(query).some(key=>key!=='type')||!['BUY','SELL','PRICE_ONLY'].includes(String(query['type']))||typeof query['type']!=='string')throw new BadRequestException('Signal type must be BUY, SELL or PRICE_ONLY');
       const type=query['type'];
-      if(type==='SELL'){const alerts=await readSellAlerts(db,request.ownerId!);return {...alerts,type,items:alerts.items.filter(item=>item.primary!==null)}}
+      if(type==='SELL'){const alerts=await readSellAlerts(db,request.ownerId!);await positionCandleDisplay(request.ownerId!);return {...alerts,type,items:alerts.items.filter(item=>item.primary!==null)}}
       const signals=await readMarketSignals(db,type==='BUY'?'BREAKOUT_CONFIRMED':'BREAKOUT_PRICE_ONLY');
       if(type==='PRICE_ONLY')return {...signals,type};
       const plans=await readEntryRisk(db,request.ownerId!,entryObservations.read);
@@ -430,11 +451,14 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Get('scheduler') scheduler(){return schedulerStatus(db)}
     @Get('daily-structure/:id') async dailyStructure(@Param('id') id:string){
       if(!/^[0-9a-f]{64}$/.test(id))throw new BadRequestException('Invalid execution ID');
-      const result=await getDailyStructure(db,id);if(!result)throw new NotFoundException('Daily execution not found');return result;
+      const result=await getDailyStructure(db,id);if(!result)throw new NotFoundException('Daily execution not found');
+      try{await assertCandlePermissions(db,result.input.series.bars.map(bar=>bar.revision),['DISPLAY','DERIVE'])}
+      catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}
+      return result;
     }
     @Get('scan-jobs/:id') async scanJob(@Param('id') id:string){
       if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))throw new BadRequestException('Invalid scan ID');
-      const progress=await eodScanProgress(db,id);if(!progress)throw new NotFoundException('Scan job not found');return progress;
+      const progress=await eodScanProgress(db,id);if(!progress)throw new NotFoundException('Scan job not found');await scanDisplay(id);return progress;
     }
     @Get('jobs') jobs(@Query('runId') runId?:string,@Query('after') after?:string,@Query('limit') limit?:string){
       for(const id of [runId,after])if(id!==undefined&&(typeof id!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)))throw new BadRequestException('Invalid job filter');

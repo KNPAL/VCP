@@ -53,7 +53,7 @@ export async function evaluatePositionStop(db:PrismaClient,ownerId:string,isin:s
   const record=stops[0]!.evidence,stop=record.fillId===episode.first.id?await effectivePositionStop(tx,record,asOf):null;
   const scale=stop?await actionScale(tx,stop.listingId,asOf):null;asOf=new Date().toISOString();const result=protectiveDecision(stop,quote,scale,episode.quantity,asOf);
   if(result.state!=='SELL_PROTECTIVE')return {...result,stopId:record.id};
-  const session=exchangeDate(asOf),id=hash([record.id,session]),evidence={...result,id,ownerId,isin,stopId:record.id,episodeId:episode.identity,activeStop:stop!.activeStop,scaleRevision:scale,session,kind:'SELL_PROTECTIVE',configHash:record.configHash};
+  const session=exchangeDate(asOf),id=hash([record.id,session]),evidence={...result,id,ownerId,isin,stopId:record.id,episodeId:episode.identity,activeStop:stop!.activeStop,scaleRevision:scale,session,kind:'SELL_PROTECTIVE',configHash:record.configHash,quote};
   const inserted=await tx.$executeRaw`INSERT INTO "ProtectiveSignal" ("id","ownerId","stopId","session","recognizedAt","evidence") VALUES (${id},${ownerId}::uuid,${record.id},${new Date(session)},${utcInstant(asOf)},${canonical(evidence)}::jsonb) ON CONFLICT DO NOTHING`;
   await cancelPartialsForStop(tx,record.id,id,asOf);
   if(inserted)await appendAlert(tx,{...evidence,id,sourceEventId:id,kind:'SELL',sourceAt:quote!.sourceAt,occurredAt:quote!.sourceAt,decidedAt:asOf,effectiveAt:asOf,strategyVersion:PROFILE_VERSION,dataRevision:hash([record.id,quote,scale]),executable:false},[ownerId]);

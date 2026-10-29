@@ -36,5 +36,5 @@ export async function readPositionCards(db:PrismaClient,ownerId:string){
    status:currentStatus?status!.result.action:'UNABLE_TO_EVALUATE',monitoring:currentStatus?status!.result.health:'MONITOR_DEGRADED',statusAt:status?.evidence.asOf??null,statusValidUntil:currentStatus?status!.evidence.validUntil:null,
    riskStatus:risk.actualRisk.state,reasons:[...risk.actualRisk.breaches,...risk.actualRisk.unknown,...(!consistent?['JOURNAL_CHANGED_OR_STOP_MISSING']:[]),...(!usableEma?['EMA_SOURCE_UNVERIFIED']:[]),...(status?.result.reasons??[])]};
  }));
- return {asOf:risk.asOf,validUntil:risk.validUntil,journalHash:risk.journalHash,state:risk.journal.state,items,executable:false};
+ return {asOf:risk.asOf,validUntil:risk.validUntil,journalHash:risk.journalHash,riskSnapshotId:risk.snapshotId,state:risk.journal.state,items,executable:false};
 }

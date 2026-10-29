@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
 import {utcInstant,sessionDate,exchangeDate} from '@vcp/domain';
-import {verifiedCalendar,readiness,type CalendarDay,type ActionSnapshot,type GateProof} from '@vcp/market-data';
+import {verifiedCalendar,readiness,type CalendarDay,type ActionSnapshot,type GateProof,type Permission} from '@vcp/market-data';
 import {validateSeries,relativeStrength,percentiles,adv20,snapshot,sma,marketRegime,type Series} from '@vcp/indicators';
 import {companyCandidate,configurationHash,ST_VCP_4_0,type DailyStructureInput,type ScanOutcome} from '@vcp/strategy';
 import {canonical,persistIndicator} from './indicators.js';
@@ -9,6 +9,7 @@ import {pinScanUniverse} from './instruments.js';
 import {activeProfile} from './profiles.js';
 import {processDailyStructure} from './daily-structure.js';
 import {persistScan,getScan} from './scans.js';
+import {assertCandlePermissions} from './data-permissions.js';
 const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 const uuid=(v:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
 export interface EodScanRequest {scanId:string;session:string;asOf:string;calendarId:string}
@@ -18,7 +19,7 @@ export interface Plan {request:EodScanRequest;configHash:string;dataRevision:str
 interface AdjustmentRow {id:string;listingId:string;asOf:Date;createdAt:Date;scaleSession:Date;state:string;evidence:{source:ActionSnapshot;result:{bars:(Series['bars'][number]&{rawRevisionId:string})[]}}}
 class MissingInput extends Error {}
 /** Reconstruct only the pinned revision, and reject future or incomplete evidence. */
-export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:string,request:EodScanRequest){
+export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:string,request:EodScanRequest,operations:readonly Permission[]=['DERIVE','STORE']){
  const cutoff=utcInstant(request.asOf);
  const rows=await db.$queryRaw<AdjustmentRow[]>`SELECT * FROM "AdjustmentSnapshot" WHERE "id"=${id}`;
  const row=rows[0];if(!row||row.state!=='KNOWN'||row.asOf>cutoff||row.createdAt>cutoff||row.scaleSession.toISOString().slice(0,10)!==request.session)throw new MissingInput('ADJUSTMENT_UNAVAILABLE');
@@ -32,18 +33,32 @@ export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:str
  try{validateSeries(series)}catch{throw new MissingInput('INVALID_FINALIZED_SERIES')}
  const raw=await db.candleRevision.findMany({where:{id:{in:bars.map(b=>b.rawRevisionId)}}});
  if(raw.length!==bars.length||raw.some(b=>b.listingId!==row.listingId||b.receivedAt>cutoff||!b.finalizedAt||b.finalizedAt>cutoff))throw new MissingInput('RAW_SOURCE_NOT_YET_KNOWN');
+ try{await assertCandlePermissions(db,raw.map(row=>row.id),operations)}catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new MissingInput(error.message);throw error}
  const byId=new Map(raw.map(b=>[b.id,b]));
  const rawSeries:Series={...series,priceScale:'RAW',bars:bars.map(b=>{const r=byId.get(b.rawRevisionId)!;return {session:r.session.toISOString().slice(0,10),open:r.open.toFixed(6),high:r.high.toFixed(6),low:r.low.toFixed(6),close:r.close.toFixed(6),volume:r.volume.toString(),revision:r.id,finalizedAt:r.finalizedAt!.toISOString(),adjustmentVerified:false}})};
  // The basis stays stable across daily snapshots and changes for action revisions.
  const actions=row.evidence.source.actions.filter(a=>exchangeDate(a.effectiveAt)<=request.session).sort((a,b)=>a.id.localeCompare(b.id));
  return {listingId:row.listingId,series,scaleRevision:hash(actions),adv:adv20(rawSeries)};
 }
+async function assertPlanPermissions(db:PrismaClient|Prisma.TransactionClient,plan:Plan,operations:readonly Permission[]=['DERIVE','STORE']){
+ const ids=[...new Set([plan.benchmarkAdjustmentId,...plan.items.map(item=>item.adjustmentId)].filter((id):id is string=>id!==null))];
+ if(!ids.length)return;
+ const rows=await db.$queryRaw<AdjustmentRow[]>`SELECT * FROM "AdjustmentSnapshot" WHERE "id"=ANY(${ids}::text[])`;
+ if(rows.length!==ids.length||rows.some(row=>!Array.isArray(row.evidence.result?.bars)||!row.evidence.result.bars.length))throw new Error('SOURCE_LINEAGE_MISSING');
+ await assertCandlePermissions(db,rows.flatMap(row=>row.evidence.result.bars.map(bar=>bar.rawRevisionId)),operations);
+}
+/** Public displays must verify the original contributors, never today's replacement universe. */
+export async function assertEodScanDisplay(db:PrismaClient,id:string){
+ const rows=await db.$queryRaw<{evidence:Plan}[]>`SELECT "evidence" FROM "EodScanPlan" WHERE "id"=${id}::uuid`;
+ if(!rows[0])throw new Error('SOURCE_LINEAGE_MISSING');
+ await assertPlanPermissions(db,rows[0].evidence,['DISPLAY','DERIVE']);
+}
 export async function prepareEodScan(db:PrismaClient,request:EodScanRequest){
  request=structuredClone(request);if(!uuid(request.scanId)||!/^[0-9a-f]{64}$/.test(request.calendarId))throw new Error('INVALID_SCAN_REQUEST');
  sessionDate(request.session);const at=utcInstant(request.asOf);if(at>new Date()||request.session>exchangeDate(request.asOf))throw new Error('SCAN_FUTURE_REQUEST');
  if(request.session!==exchangeDate(request.asOf))throw new Error('SCAN_SESSION_ASOF_MISMATCH');
  const prior=await db.$queryRaw<{evidence:Plan}[]>`SELECT "evidence" FROM "EodScanPlan" WHERE "id"=${request.scanId}::uuid`;
- if(prior[0]){if(canonical(prior[0].evidence.request)!==canonical(request))throw new Error('SCAN_REQUEST_CONFLICT');return prior[0].evidence}
+ if(prior[0]){if(canonical(prior[0].evidence.request)!==canonical(request))throw new Error('SCAN_REQUEST_CONFLICT');await assertPlanPermissions(db,prior[0].evidence);return prior[0].evidence}
  const profile=await activeProfile(db,request.asOf);
  if(!profile||configurationHash(profile.configuration)!==configurationHash(ST_VCP_4_0))throw new Error('SCAN_ACTIVE_PROFILE_UNAVAILABLE');
  const universe=await pinScanUniverse(db,request.scanId,request.asOf);
@@ -78,6 +93,7 @@ export async function prepareEodScan(db:PrismaClient,request:EodScanRequest){
  const regime:RegimeEvidence={session:request.session,asOf:request.asOf,calendarId:request.calendarId,benchmark:benchmarkInputs,members:breadth,intended:universe.universe.members,result:marketRegime(benchmarkInputs.close,benchmarkInputs.sma50,benchmarkInputs.sma200,universe.universe.members,breadth)};
  const base={request,configHash:profile.id,universe,benchmarkAdjustmentId,benchmarkProofId:proof?.id??null,regime,items},plan:Plan={...base,dataRevision:hash(base)};
  await db.$transaction(async tx=>{
+  await assertPlanPermissions(tx,plan);
   await tx.$executeRaw`INSERT INTO "EodScanPlan" ("id","evidence") VALUES (${request.scanId}::uuid,${canonical(plan)}::jsonb) ON CONFLICT DO NOTHING`;
   const saved=await tx.$queryRaw<{evidence:Plan}[]>`SELECT "evidence" FROM "EodScanPlan" WHERE "id"=${request.scanId}::uuid`;
   if(canonical(saved[0]?.evidence)!==canonical(plan))throw new Error('SCAN_PLAN_CONFLICT');
@@ -89,6 +105,7 @@ export async function processEodScanItem(db:PrismaClient,id:string){
  const rows=await db.$queryRaw<{scanId:string;evidence:Item}[]>`SELECT "scanId","evidence" FROM "EodScanItem" WHERE "id"=${id}`;
  const row=rows[0];if(!row)throw new Error('SCAN_ITEM_NOT_FOUND');
  const plans=await db.$queryRaw<{evidence:Plan}[]>`SELECT "evidence" FROM "EodScanPlan" WHERE "id"=${row.scanId}::uuid`;const plan=plans[0]!.evidence,item=row.evidence;
+ await assertPlanPermissions(db,plan);
  const prior=await db.$queryRaw<{evidence:ScanOutcome}[]>`SELECT "evidence" FROM "EodScanCheckpoint" WHERE "itemId"=${id}`;
  let outcome=prior[0]?.evidence;
  if(!outcome){
@@ -109,6 +126,7 @@ export async function processEodScanItem(db:PrismaClient,id:string){
    outcome={instrumentId:item.instrumentId,status:'ANALYZED',reasons,candidate,dailyExecutionId:daily.id};
    }
   }
+  await assertPlanPermissions(db,plan);
   await db.$executeRaw`INSERT INTO "EodScanCheckpoint" ("itemId","evidence") VALUES (${id},${canonical(outcome)}::jsonb) ON CONFLICT DO NOTHING`;
   const saved=await db.$queryRaw<{evidence:ScanOutcome}[]>`SELECT "evidence" FROM "EodScanCheckpoint" WHERE "itemId"=${id}`;
   if(canonical(saved[0]?.evidence)!==canonical(outcome))throw new Error('SCAN_CHECKPOINT_CONFLICT');

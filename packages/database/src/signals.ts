@@ -3,8 +3,35 @@ import type {MarketEvent,UserSignalDecision} from '@vcp/strategy';
 import {utcInstant,sessionDate} from '@vcp/domain';
 import {canonical} from './indicators.js';
 import {appendMarketAlert} from './alerts.js';
+import {assertCandlePermissions} from './data-permissions.js';
+import type {DailyStructureResult} from './daily-structure.js';
 export async function persistMarketEvent(db:PrismaClient,event:MarketEvent){
  return db.$transaction(tx=>persistMarketEventTransaction(tx,event));
+}
+export async function assertMarketSignalDisplay(db:PrismaClient,eventId:string){
+ const events=await db.$queryRaw<{evidence:MarketEvent}[]>`SELECT "evidence" FROM "MarketEvent" WHERE "id"=${eventId}`;
+ const event=events[0]?.evidence;if(!event)throw new Error('MARKET_EVENT_UNAVAILABLE');
+   const executions=await db.$queryRaw<{evidence:DailyStructureResult}[]>`SELECT "evidence" FROM "DailyStructureExecution" WHERE "evidence"->'breakout'->'event'->>'id'=${event.id}`;
+   const execution=executions[0]?.evidence;
+   if(executions.length!==1||!execution?.previousId||!execution.input?.series?.bars?.length||canonical(execution.breakout.event)!==canonical(event))throw new Error('SOURCE_LINEAGE_MISSING');
+   const previous=await db.$queryRaw<{evidence:DailyStructureResult}[]>`SELECT "evidence" FROM "DailyStructureExecution" WHERE "id"=${execution.previousId}`;
+   const prior=previous[0]?.evidence;
+   if(!prior?.input?.series?.bars?.length||prior.input.listingId!==event.listingId||execution.input.listingId!==event.listingId||prior.input.series.bars.at(-1)!.session!==event.previousSnapshot.session||prior.input.series.dataRevision!==event.previousSnapshot.dataRevision)throw new Error('SOURCE_LINEAGE_MISSING');
+   await assertCandlePermissions(db,[...event.sourceRevisions,...execution.input.series.bars.map(bar=>bar.revision),...prior.input.series.bars.map(bar=>bar.revision)],['DISPLAY','DERIVE']);
+}
+/** Display only signals whose original candle and frozen-pattern lineage is authorized now. */
+export async function readDisplayMarketSignals(db:PrismaClient,type?:'BREAKOUT_CONFIRMED'|'BREAKOUT_PRICE_ONLY'){
+ const result=await readMarketSignals(db,type),items:MarketEvent[]=[],unavailable:{id:string;reason:string}[]=[];
+ for(const event of result.items){
+  try{
+   await assertMarketSignalDisplay(db,event.id);
+   items.push(event);
+  }catch(error){
+   if(!(error instanceof Error)||!['SOURCE_LINEAGE_MISSING','SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS'].includes(error.message))throw error;
+   unavailable.push({id:event.id,reason:error.message});
+  }
+ }
+ return {...result,items,unavailable,state:unavailable.length?(items.length?'PARTIAL':'BLOCKED_DATA'):'KNOWN'};
 }
 /** A bounded research view; market confirmation never grants owner permission. */
 export async function readMarketSignals(db:PrismaClient,type?:'BREAKOUT_CONFIRMED'|'BREAKOUT_PRICE_ONLY'){

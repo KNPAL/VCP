@@ -1,7 +1,8 @@
+import {candlePermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {PrismaClient,ingestCandles,persistAdjustment,receiveCandleChange,replayStoredIndicators,persistInstrumentSnapshot,persistUniverse,persistReadiness,registerProfile,persistRelativeStrengthReplay,replayStoredStructure} from '../packages/database/dist/index.js';
+import {PrismaClient,ingestCandles,persistAdjustment,receiveCandleChange,replayStoredIndicators,persistInstrumentSnapshot,persistUniverse,persistReadiness,persistSource,registerProfile,persistRelativeStrengthReplay,replayStoredStructure} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
 import {queue,createWorker} from '../apps/worker/dist/runtime.js';
@@ -19,12 +20,12 @@ test('pinned RS evidence automatically delivers complete chronological replay wi
   const dates=golden.bars.map(b=>b.session),asOf='2026-10-17T00:00:00Z';
   const calendar=dates.map(date=>({date,kind:'TRADING',opensAt:date+'T03:45:00Z',closesAt:date+'T10:00:00Z',finalizedAt:date+'T10:30:00Z',knownAt:'2023-01-01T00:00:00Z',source:'synthetic',verified:true}));
   async function prepare(flat){
-   const listingId=randomUUID(),provider='synthetic-rs';
+   const listingId=randomUUID(),provider='synthetic-rs-'+randomUUID(),grant=await candlePermission(db,provider);
    const bars=golden.bars.map(b=>({listingId,provider,session:b.session,open:flat?'50':b.open,high:flat?'51':b.high,low:flat?'49':b.low,close:flat?'50':b.close,volume:b.volume,finalizedAt:b.finalizedAt,receivedAt:asOf,zeroVolumeVerified:false}));
    const imported=await ingestCandles(db,{listingId,provider,from:dates[0],to:dates.at(-1),calendar,asOf,bars});
    const revisions=await db.$queryRaw`SELECT "session","revisionId" FROM "RawDailyCandle" WHERE "listingId"=${listingId}::uuid`;
    const adjusted=await persistAdjustment(db,{listingId,asOf,scaleSession:dates.at(-1),source:{id:'synthetic-no-actions',listingId,knownAt:'2023-01-01T00:00:00Z',verified:true,sourceReference:'synthetic',coverageFrom:dates[0],coverageThrough:dates.at(-1),actions:[]},raw:bars.map(b=>({...b,revisionId:revisions.find(r=>r.session.toISOString().slice(0,10)===b.session).revisionId}))});
-   return {listingId,provider,imported,adjusted,bars,revisions};
+   return {listingId,provider,grant,imported,adjusted,bars,revisions};
   }
   const target=await prepare(false),other=await prepare(true),benchmark=await prepare(true);
   await receiveCandleChange(db,target.imported.changes[0]);
@@ -119,5 +120,9 @@ test('pinned RS evidence automatically delivers complete chronological replay wi
   const benchmarkPlans=await db.$queryRaw`SELECT "id","evidence" FROM "StrengthReplayPlan" WHERE "indicatorReceiptId"=${corrected.id} AND "evidence"->>'benchmarkAdjustmentId'=${benchmarkRevision.revision}`;
   assert.equal(benchmarkPlans.length,1);assert.equal((await executeStrengthReplayPlan(db,benchmarkPlans[0].id)).input.benchmarkAdjustmentId,benchmarkRevision.revision);
   assert.equal((await db.$queryRaw`SELECT "id" FROM "MarketEvent" WHERE "listingId"=${target.listingId}::uuid`).length,0);
+  const {id:grantId,...metadata}=benchmark.grant;assert.ok(grantId);
+  await persistSource(db,{...metadata,knownAt:new Date().toISOString(),uses:{...metadata.uses,DERIVE:false}});
+  await assert.rejects(persistRelativeStrengthReplay(db,peerStrength.input),/SOURCE_PERMISSION_REQUIRED/);
+  await assert.rejects(replayStoredStructure(db,{...replayInput,indicatorReceiptId:corrected.id,strengthReplayId:peerStrength.id}),/SOURCE_PERMISSION_REQUIRED/);
  }finally{await worker?.close();if(q){await q.obliterate({force:true});await q.close()}await db.$disconnect()}
 });

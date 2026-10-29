@@ -69,5 +69,6 @@ test('stored correction replay is atomic, repeatable and equal to full recomputa
   const failedReceipts=await db.$queryRaw`SELECT "id" FROM "IndicatorReplayReceipt" WHERE "eventId"=${input.eventId}::uuid AND "adjustmentId"=${conflictAdjustment.revision}`;assert.equal(failedReceipts.length,0);
   const {id:permissionId,...sourcePermission}=permission;assert.ok(permissionId);await persistSource(db,{...sourcePermission,knownAt:new Date().toISOString(),uses:{...permission.uses,DERIVE:false}});
   await assert.rejects(handler(input),/SOURCE_PERMISSION_REQUIRED/,'Cached receipts must not bypass current permission');
+  await assert.rejects(structureHandler(structureInput),/SOURCE_PERMISSION_REQUIRED/,'Structure replay must also recheck cached source authority');
  }finally{await db.$disconnect()}
 });

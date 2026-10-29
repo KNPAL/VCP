@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {candlePermission} from '../fixtures/candle-permission.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
 import {PrismaClient,ingestCandles,persistAdjustment,persistInstrumentSnapshot,registerProfile,appendPortfolio,readPortfolio,readPositionStops,evaluatePositionTrail,evaluatePositionStop,effectivePositionStop} from '../packages/database/dist/index.js';
@@ -9,6 +10,7 @@ const db=new PrismaClient(),hash=v=>createHash('sha256').update(JSON.stringify(v
 test('EOD trails are immutable, effective next session and do not execute fills',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
  try{
+  await candlePermission(db,'fixture-trail');
   const owner=await db.owner.findFirstOrThrow(),profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0);
   for(const {sell,fail,protect} of [{sell:false,fail:false},{sell:true,fail:false},{sell:false,fail:true},{sell:true,fail:false,protect:true}]){
    await new Promise(resolve=>setTimeout(resolve,4000));

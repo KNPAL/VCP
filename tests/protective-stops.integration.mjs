@@ -18,7 +18,7 @@ test('actual BUY freezes one initial stop; protective gap alerts deduplicate and
   const buy={kind:'FILL',isin,side:'BUY',quantity:10,price:'100',fees:'0',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'fixture'},key=randomUUID();
   await appendPortfolio(db,owner.id,key,buy);await appendPortfolio(db,owner.id,key,buy);
   let view=await readPositionStops(db,owner.id);const record=view.items.find(r=>r.isin===isin).record;assert.equal(record.stop.activeStop,'94.950000');assert.equal(record.sourceId,sourceId);assert.equal(view.stops.filter(s=>s.isin===isin).length,1);
-  const quote={listingId,ltp:'90.000000',sourceAt:new Date().toISOString(),receivedAt:new Date().toISOString(),session:date,quality:'FRESH',connection:'CONNECTED',validUntil:new Date(Date.now()+30000).toISOString()};
+  const quote={listingId,provider:'synthetic-protective',ltp:'90.000000',sourceAt:new Date().toISOString(),receivedAt:new Date().toISOString(),session:date,quality:'FRESH',connection:'CONNECTED',validUntil:new Date(Date.now()+30000).toISOString()};
   let waiting;
   await db.$transaction(async tx=>{await tx.$queryRaw`SELECT "id" FROM "Owner" WHERE "id"=${owner.id}::uuid FOR UPDATE`;waiting=evaluatePositionStop(db,owner.id,isin,{...quote,validUntil:new Date(Date.now()+50).toISOString()});await new Promise(resolve=>setTimeout(resolve,100))});
   assert.equal((await waiting).state,'UNABLE_TO_EVALUATE');
@@ -26,7 +26,7 @@ test('actual BUY freezes one initial stop; protective gap alerts deduplicate and
   assert.equal((await recordShadowAudit(db,owner.id,randomUUID(),shadow)).outcome,'VETO');
   assert.equal((await recordShadowAudit(db,owner.id,randomUUID(),{...shadow,response:null})).outcome,'UNAVAILABLE');
   await assert.rejects(recordShadowAudit(db,randomUUID(),randomUUID(),shadow));
-  const results=await Promise.all([1,2,3].map(()=>evaluatePositionStop(db,owner.id,isin,quote)));assert.equal(results.filter(r=>r.created).length,1);assert.equal(results[0].signal.triggeredPrice,'90.000000');assert.equal(results[0].signal.activeStop,'94.950000');
+  const results=await Promise.all([1,2,3].map(()=>evaluatePositionStop(db,owner.id,isin,quote)));assert.equal(results.filter(r=>r.created).length,1);assert.equal(results[0].signal.triggeredPrice,'90.000000');assert.equal(results[0].signal.activeStop,'94.950000');assert.deepEqual(results[0].signal.quote,quote);
   assert.equal((await readPortfolio(db,owner.id)).holdings[isin],10);
   const outbox=await db.$queryRaw`SELECT "id" FROM "NotificationOutbox" WHERE "eventId"=${results[0].signal.id}`;assert.equal(outbox.length,1);
   assert.equal((await evaluatePositionStop(db,owner.id,isin,{...quote,sourceAt:new Date(Date.now()-61000).toISOString()})).state,'UNABLE_TO_EVALUATE');

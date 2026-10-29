@@ -1,3 +1,4 @@
+import {assertCandlePermissions} from './data-permissions.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {replayRelativeStrength,type Series} from '@vcp/indicators';
@@ -9,6 +10,10 @@ export interface StrengthReplayInput {indicatorReceiptId:string;instrumentSnapsh
 export async function persistRelativeStrengthReplay(db:PrismaClient,input:StrengthReplayInput){
  const now=utcInstant(input.evaluatedAt);if(now>new Date())throw new Error('RS_REPLAY_FUTURE_EVIDENCE');
  if(![input.indicatorReceiptId,input.instrumentSnapshotId,input.profileId,input.universeSnapshotId,input.benchmarkAdjustmentId,input.benchmarkProofId,...Object.values(input.memberAdjustmentIds)].every(v=>/^[0-9a-f]{64}$/.test(v)))throw new Error('INVALID_RS_REPLAY_IDENTITY');
+ const adjustmentIds=[...new Set([input.benchmarkAdjustmentId,...Object.values(input.memberAdjustmentIds)])];
+ const permissionRows=await db.$queryRaw<{evidence:{result:{bars:{rawRevisionId:string}[]}}}[]>`SELECT "evidence" FROM "AdjustmentSnapshot" WHERE "id"=ANY(${adjustmentIds}::text[])`;
+ if(permissionRows.length!==adjustmentIds.length)throw new Error('RS_ADJUSTMENT_UNAVAILABLE');
+ const revisionIds=permissionRows.flatMap(row=>row.evidence.result.bars.map(bar=>bar.rawRevisionId)),permission=await assertCandlePermissions(db,revisionIds,['DERIVE','STORE']);
  const id=createHash('sha256').update(canonical(input)).digest('hex');
  const existing=await db.$queryRaw<{evidence:StrengthReplayResult}[]>`SELECT "evidence" FROM "RelativeStrengthReplay" WHERE "id"=${id}`;
  if(existing[0])return existing[0].evidence;
@@ -49,6 +54,7 @@ export async function persistRelativeStrengthReplay(db:PrismaClient,input:Streng
  if(!targetIsin)throw new Error('RS_TARGET_NOT_IN_UNIVERSE');
  const rows=gate.status==='PASS'?replayRelativeStrength({benchmark:benchmark.series,members,intended:universe.isins,sessions}):[];
  const result={id,input,listingId:r.listingId,targetIsin,mode:'RETROSPECTIVE_CORRECTION' as const,state:gate.status==='PASS'?'COMPUTED':'UNKNOWN',reasons:gate.reasons,rows,sessionTimes:Object.fromEntries(calendar.sessions.map(s=>[s.date,s.finalizedAt!]))};
+ const current=await assertCandlePermissions(db,revisionIds,['DERIVE','STORE']);if(canonical(current.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
  await db.$executeRaw`INSERT INTO "RelativeStrengthReplay" ("id","indicatorReceiptId","instrumentSnapshotId","profileId","evidence") VALUES (${id},${input.indicatorReceiptId},${input.instrumentSnapshotId},${input.profileId},${canonical(result)}::jsonb) ON CONFLICT DO NOTHING`;
  return result;
 }

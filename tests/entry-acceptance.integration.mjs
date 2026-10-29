@@ -1,9 +1,10 @@
+import {signalLineage} from '../fixtures/signal-lineage.mjs';
 import {licensedSources} from '../fixtures/licensed-sources.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {PrismaClient,registerProfile,activateProfile,persistInstrumentSnapshot,persistUniverse,persistSectors,pinScanUniverse,persistReadiness,persistSurveillance,persistMarketEvent,appendPortfolio,readPortfolio,recordReconciliation,recordPortfolioRisk,recordEntryRisk,readEntryRisk,saveBrokerConfiguration,installBrokerSession,ownerStreamBinding,readCurrentRegime} from '../packages/database/dist/index.js';
+import {PrismaClient,recordPositionStatus,persistSource,assertPlanQuoteDisplay,assertCandlePermissions,registerProfile,activateProfile,persistInstrumentSnapshot,persistUniverse,persistSectors,pinScanUniverse,persistReadiness,persistSurveillance,persistMarketEvent,appendPortfolio,readPortfolio,recordReconciliation,recordPortfolioRisk,recordEntryRisk,readEntryRisk,saveBrokerConfiguration,installBrokerSession,ownerStreamBinding,readCurrentRegime} from '../packages/database/dist/index.js';
 import {marketRegime} from '../packages/indicators/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {brokerAccountKey} from '../packages/market-data/dist/index.js';
@@ -33,10 +34,10 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   await db.$executeRaw`INSERT INTO "EodScanPlan" ("id","evidence") VALUES (${scanId}::uuid,${JSON.stringify(scan)}::jsonb)`;
   await new Promise(resolve=>setTimeout(resolve,25));const initialRegime=await db.$transaction(tx=>readCurrentRegime(tx,new Date().toISOString()));assert.equal(initialRegime.regime,'GREEN',JSON.stringify(initialRegime.reasons));
   const source={dataset:'surveillance',provider:'synthetic',endpointOrFile:'fixture',licenseRef:'synthetic-only',uses:{STORE:true,DERIVE:true,DISPLAY:true,DOWNLOAD:true,REDISTRIBUTE:false},updateFrequency:'daily',asOf:knownAt,knownAt,effectiveAt:knownAt,validUntil:expiresAt,lastVerified:knownAt,maximumAgeMs:300000,adjustmentPolicy:'raw',coverage:{intended:1,available:1},error:null};
+  const liveSource=await persistSource(db,{...source,dataset:'LIVE_QUOTES',provider:'fixture',endpointOrFile:'synthetic-live'});
   await persistSurveillance(db,{listingId,mappingRevision:mapping.id,source,restrictions:{verified:true,knownAt,sourceAt:knownAt,validUntil:expiresAt,asm:false,gsm:false,esm:false,cashTradable:true,lowerBand:'90',upperBand:'110'}});
   const eventId=hash(randomUUID()),event={id:eventId,logicalId:eventId,listingId,type:'BREAKOUT_CONFIRMED',patternId:eventId,session:day(-1),pivot:'100',lastLow:'94',close:'101',rvol:{numerator:'150',denominator:'100'},reasons:[],occurredAt:calendar[0].closesAt,observedAt:calendar[0].closesAt,decidedAt:knownAt,effectiveAt:knownAt,strategyVersion:'ST_VCP_4_0',configHash:profile.id,dataRevision:eventId,sourceRevisions:[eventId],previousSnapshot:{listingId,patternId:eventId,session:day(-2),state:'READY',pivot:'100',lastLow:'94',asOf:calendar[0].opensAt,configHash:profile.id,dataRevision:eventId}};
-  await persistMarketEvent(db,event);
-  await db.$executeRaw`INSERT INTO "DailyStructureExecution" ("id","listingId","session","configHash","evidence") VALUES (${hash(randomUUID())},${listingId}::uuid,${new Date(day(-1))},${profile.id},${JSON.stringify({input:{scaleRevision:hash([])},breakout:{event}})}::jsonb)`;
+  const signalSource=await signalLineage(db,event);await persistMarketEvent(db,event);
   await appendPortfolio(db,owner.id,randomUUID(),{kind:'INITIAL_CAPITAL',amount:'100000',verified:true,occurredAt:knownAt,sourceId:'synthetic-capital'});
   await recordReconciliation(db,owner.id,randomUUID(),{asOf:new Date().toISOString(),sourceReference:'synthetic-statement',cash:'100000',holdings:[],fillReferences:[],allOutsideActivityIncluded:true});
   const clientCode='T'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase(),accountKey=brokerAccountKey(clientCode),sessionRevision=randomUUID();
@@ -73,7 +74,63 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   assert.equal((await post(JSON.stringify({snapshotId:'f'.repeat(64),estimatedFees:'0'}),{...headers,'idempotency-key':randomUUID()})).status,409);
   assert.equal((await fetch(base+'/api/v1/signals/'+'f'.repeat(64)+'/evaluate-plan',{method:'POST',headers:{...headers,'idempotency-key':randomUUID()},body})).status,422);
   assert.deepEqual((await readPortfolio(db,owner.id)).holdings,{});
+  const {id:liveSourceId,...liveMetadata}=liveSource;assert.ok(liveSourceId);
+  await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString(),uses:{...liveMetadata.uses,DISPLAY:false}});
+  const hiddenQuotes=await (await fetch(base+'/api/v1/portfolio/risk/plans',{headers})).json();assert.equal(hiddenQuotes.items.some(item=>item.evidence.id===plan.id),false);assert.ok(hiddenQuotes.unavailable.some(item=>item.id===plan.id));
+  assert.equal((await fetch(base+'/api/v1/portfolio/risk',{headers})).status,200,'Cash-only valuation does not require unrelated live prices');
+  const deniedRetry=await post(body,{...headers,'idempotency-key':idempotencyKey});assert.equal(deniedRetry.status,403);assert.equal((await deniedRetry.json()).error.code,'FORBIDDEN');
+  await new Promise(resolve=>setTimeout(resolve,25));await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString()});
   const fill={kind:'FILL',isin,side:'BUY',quantity:1,price:'102',fees:'0',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-actual-execution'};await appendPortfolio(db,owner.id,randomUUID(),fill);assert.equal((await readPortfolio(db,owner.id)).holdings[isin],1);assert.equal((await current()).current,false);
+  const {id:sourceId,...sourceMetadata}=signalSource.grant;assert.ok(sourceId);
+  await persistSource(db,{...sourceMetadata,knownAt:new Date().toISOString(),uses:{...sourceMetadata.uses,DISPLAY:false}});
+  await assertCandlePermissions(db,event.sourceRevisions,['DISPLAY','DERIVE']);
+  for(const path of ['/api/v1/signals?type=BUY','/api/v1/portfolio/signals']){
+   const response=await fetch(base+path,{headers});assert.equal(response.status,200);const view=await response.json();assert.deepEqual(view.items,[]);assert.equal(view.state,'BLOCKED_DATA');assert.deepEqual(view.unavailable,[{id:event.id,reason:'SOURCE_PERMISSION_REQUIRED'}]);assert.equal(JSON.stringify(view).includes('previousSnapshot'),false);
+  }
+  for(const path of ['/api/v1/portfolio/risk/plans','/api/v1/portfolio/risk','/api/v1/portfolio']){
+   const response=await fetch(base+path,{headers});assert.equal(response.status,200);const body=await response.json(),plans=path.endsWith('/plans')?body:path.endsWith('/risk')?body.entryPlans:body.risk.entryPlans;
+   assert.deepEqual(plans.items,[]);assert.equal(plans.state,'BLOCKED_DATA');assert.ok(plans.unavailable.some(item=>item.id===plan.id&&item.reason==='SOURCE_PERMISSION_REQUIRED'));
+  }
+  const planCount=await db.$queryRaw`SELECT count(*)::int AS count FROM "EntryRiskPlan"`;
+  for(const route of [endpoint,base+'/api/v1/portfolio/risk/plans']){
+   const response=await fetch(route,{method:'POST',headers,body:route===endpoint?body:JSON.stringify({...JSON.parse(body),marketEventId:event.id})});assert.equal(response.status,403);const denied=await response.json();assert.equal(denied.error.code,'FORBIDDEN');assert.equal(Object.hasOwn(denied,'evidence'),false);
+  }
+  assert.deepEqual(await db.$queryRaw`SELECT count(*)::int AS count FROM "EntryRiskPlan"`,planCount);
+  assert.ok((await readEntryRisk(db,owner.id,reader)).items.some(item=>item.evidence.id===plan.id),'Immutable audit history remains stored');
+  for(const path of ['/api/v1/positions/cards','/api/v1/positions/'+isin+'/detail']){const response=await fetch(base+path,{headers});assert.equal(response.status,200);const value=await response.json();assert.equal(value.riskSnapshotId,risk.id)}
+  const quotedValuation=await recordPortfolioRisk(db,owner.id,{[isin]:quote});
+  await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString(),uses:{...liveMetadata.uses,DISPLAY:false}});
+  await assert.rejects(assertPlanQuoteDisplay(db,{entry:null,valuation:{},snapshotId:quotedValuation.id}),/SOURCE_PERMISSION_REQUIRED/);
+  for(const path of ['/api/v1/portfolio/risk','/api/v1/portfolio','/api/v1/portfolio/dashboard','/api/v1/positions/cards','/api/v1/positions/'+isin+'/detail']){const response=await fetch(base+path,{headers});assert.equal(response.status,403);const value=await response.json();assert.equal(value.error.code,'FORBIDDEN');assert.equal(Object.hasOwn(value,'valuation'),false);assert.equal(Object.hasOwn(value,'risk'),false)}
+  const correctedAt=new Date().toISOString(),correction={...event,id:hash(randomUUID()),dataRevision:hash(randomUUID()),type:'BREAKOUT_PRICE_ONLY',decidedAt:correctedAt,effectiveAt:correctedAt};await persistMarketEvent(db,correction);
+  const corrected=await (await fetch(base+'/api/v1/signals?type=PRICE_ONLY',{headers})).json();assert.deepEqual(corrected.items,[]);assert.deepEqual(corrected.unavailable,[{id:correction.id,reason:'SOURCE_LINEAGE_MISSING'}]);
+  const priorBuy=await (await fetch(base+'/api/v1/signals?type=BUY',{headers})).json();assert.deepEqual(priorBuy.items,[]);assert.deepEqual(priorBuy.unavailable,[]);
+  await persistSource(db,{...sourceMetadata,knownAt:new Date().toISOString()});await recordPortfolioRisk(db,owner.id,{});
+  const stopId=hash(randomUUID()),episodeId=randomUUID(),stopEvidence={id:stopId,isin,episodeId,fillId:randomUUID(),quantityAtCreation:1,state:'KNOWN',reason:null,sourceId:signalSource.executionIds[0],configHash:profile.id,recordedAt:new Date().toISOString(),stop:{listingId,activeStop:'94',scaleRevision:hash([]),effectiveAt:new Date().toISOString()}};
+  await db.$executeRaw`INSERT INTO "InitialPositionStop" ("id","ownerId","isin","episodeId","evidence") VALUES (${stopId},${owner.id}::uuid,${isin},${episodeId}::uuid,${JSON.stringify(stopEvidence)}::jsonb)`;
+  const trailSource=hash(randomUUID()),trailId=hash(randomUUID());
+  await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${trailSource},${listingId}::uuid,${new Date(day(-1))},${new Date()},'KNOWN',${JSON.stringify({result:{bars:[{rawRevisionId:signalSource.rows[1].revision}]},source:actionSource})}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "PositionTrail" ("id","ownerId","stopId","session","decidedAt","state","evidence") VALUES (${trailId},${owner.id}::uuid,${stopId},${new Date(day(-1))},${new Date()},'TRAIL_UPDATE',${JSON.stringify({id:trailId,input:{sourceRevision:trailSource},result:{nextStop:'95'}})}::jsonb)`;
+  const stopRoutes=['/api/v1/positions/stops','/api/v1/positions/cards','/api/v1/positions/'+isin+'/detail','/api/v1/positions/'+isin+'/timeline'];
+  for(const route of stopRoutes)assert.equal((await fetch(base+route,{headers})).status,200,route);
+  const {id:trailGrantId,...trailGrant}=signalSource.currentGrant;assert.ok(trailGrantId);
+  await persistSource(db,{...trailGrant,knownAt:new Date().toISOString(),uses:{...trailGrant.uses,DISPLAY:false}});
+  for(const route of stopRoutes)assert.equal((await fetch(base+route,{headers})).status,403,route);
+  await persistSource(db,{...trailGrant,knownAt:new Date().toISOString()});
+  await persistSource(db,{...sourceMetadata,knownAt:new Date().toISOString(),uses:{...sourceMetadata.uses,DISPLAY:false}});
+  for(const route of stopRoutes){const response=await fetch(base+route,{headers});assert.equal(response.status,403,route);const value=await response.json();assert.equal(value.error.code,'FORBIDDEN');assert.equal(Object.hasOwn(value,'items'),false);assert.equal(Object.hasOwn(value,'stops'),false)}
+  assert.equal((await readPortfolio(db,owner.id)).holdings[isin],1);
+  await persistSource(db,{...sourceMetadata,knownAt:new Date().toISOString()});await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString()});
+  const protectionId=hash(randomUUID());await db.$executeRaw`INSERT INTO "ProtectiveSignal" ("id","ownerId","stopId","session","recognizedAt","evidence") VALUES (${protectionId},${owner.id}::uuid,${stopId},${new Date(day(-1))},${new Date()},${JSON.stringify({id:protectionId,isin,quote,triggeredPrice:'90',scaleRevision:hash([])})}::jsonb)`;
+  const status=await recordPositionStatus(db,owner.id,isin,quote);assert.equal(status.sources.quoteProvider,'fixture');
+  const alertRoutes=[...stopRoutes,'/api/v1/positions/status','/api/v1/positions/sell-alerts','/api/v1/signals?type=SELL'];
+  for(const route of alertRoutes)assert.equal((await fetch(base+route,{headers})).status,200,route);
+  await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString(),uses:{...liveMetadata.uses,DISPLAY:false}});
+  for(const route of alertRoutes){const response=await fetch(base+route,{headers});assert.equal(response.status,403,route);assert.equal((await response.json()).error.code,'FORBIDDEN')}
+  await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString()});
+  const legacyId=hash(randomUUID());await db.$executeRaw`INSERT INTO "ProtectiveSignal" ("id","ownerId","stopId","session","recognizedAt","evidence") VALUES (${legacyId},${owner.id}::uuid,${stopId},${new Date(day(-2))},${new Date()},${JSON.stringify({id:legacyId,isin,triggeredPrice:'89',scaleRevision:hash([])})}::jsonb)`;
+  for(const route of alertRoutes)assert.equal((await fetch(base+route,{headers})).status,403,route+' must not infer a legacy quote provider');
+  assert.equal((await readPortfolio(db,owner.id)).holdings[isin],1);
  }finally{await app?.close();await db?.$disconnect();await admin.$executeRawUnsafe('DROP SCHEMA "'+schema+'" CASCADE');await admin.$disconnect()}
 });
 

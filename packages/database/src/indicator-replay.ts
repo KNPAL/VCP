@@ -53,7 +53,9 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
    const stored=await tx.indicatorSnapshot.findUniqueOrThrow({where:{listingId_session_strategyVersion_dataRevision:key}});
    if(canonical(stored.evidence)!==canonical(evidence))throw new Error('REPLAY_EVIDENCE_CONFLICT');
   }
+  const finalPermission=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(finalPermission.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
   await tx.$executeRaw`INSERT INTO "IndicatorReplayReceipt" ("id","eventId","adjustmentId","calendarHash","evidence") VALUES (${id},${input.eventId}::uuid,${input.adjustmentId},${input.calendarHash},${canonical(receipt)}::jsonb) ON CONFLICT DO NOTHING`;
-  return receipt;
+  const saved=await tx.$queryRaw<{evidence:Prisma.JsonValue}[]>`SELECT "evidence" FROM "IndicatorReplayReceipt" WHERE "id"=${id}`;
+  return saved[0]!.evidence;
  },{timeout:60000});
 }

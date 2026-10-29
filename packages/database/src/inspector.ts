@@ -37,6 +37,7 @@ export async function readInspector(db:PrismaClient,ownerId:string,id:string){
  const episodes=positionEpisodes(journal.events,asOf).episodes;
  const stops=stopRows.map(r=>{const episode=episodes.find(e=>e.id===r.evidence.episodeId);return {...r.evidence,closedAt:episode?.closedAt??null,overlayAllowed:!!episode&&episode.fillIds.includes(r.evidence.fillId)&&r.evidence.stop?.scaleRevision===execution.input.scaleRevision}});
  const trails=trailRows.map(r=>({...r.evidence,overlayAllowed:r.evidence.input.scaleVerified&&stops.some(s=>s.id===r.evidence.stopId&&s.overlayAllowed)}));
+ const current=await assertCandlePermissions(db,execution.input.series.bars.map(bar=>bar.revision),['DISPLAY','DERIVE']);if(JSON.stringify(current.sourceSnapshotIds)!==JSON.stringify(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
  return {id,asOf,permission,sourceAt:execution.input.series.asOf,dataRevision:execution.input.series.dataRevision,adjustmentRevision:execution.input.adjustmentRevision,scaleRevision:execution.input.scaleRevision,configHash:execution.input.configHash,listing:listing?{listingId:listing.listingId,isin:listing.isin,symbol:listing.symbol,exchange:listing.exchange}:null,
   bars,structure:execution.detector.structure,frozen:execution.detector.frozen,breakout:execution.breakout,marketEvents:events.map(r=>r.evidence).filter(e=>e.session>=first&&e.session<=last),fills,stops,trails,
   journalAsOf:journal.asOf,priceScale:'ADJUSTED',fillPriceScale:'RAW',executable:false};

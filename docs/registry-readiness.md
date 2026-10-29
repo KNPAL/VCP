@@ -20,7 +20,7 @@ With DATABASE_URL configured, `node scripts/source-registry.mjs import <reviewed
 
 Backfill bindings now require the currently known source revision before a provider request and again before returning fetched candles for persistence. A changed source revision fails the window with BACKFILL_SOURCE_SUPERSEDED, including revocation during an in-flight request. A later revision never falls back to an earlier passing grant. Historical asOf queries still return only evidence known at that time.
 
-KAN-44 remains In Progress pending explicit G07 binding to all required source revisions and enforcement across remaining derived-data consumers. Run `node scripts/database-command.mjs test source-registry download-preview` for isolated registry, API, revocation and download regression tests.
+KAN-44 remains In Progress pending enforcement across remaining derived-data consumers. G07 source binding is implemented below. Run `node scripts/database-command.mjs test source-registry download-preview` for isolated registry, API, revocation and download regression tests.
 
 ## G07 source bindings
 
@@ -28,4 +28,32 @@ A passing G07 proof must include `details.sourceBindings`: exactly one `{role, s
 
 Submit a reviewed proof through `node scripts/source-registry.mjs proof <reviewed-g07.json>`. It uses the existing GateProof fields: gate, status, probeAt, sourceAt, expiresAt, sourceReference, reason and details. This records supplied evidence; it does not perform legal review or grant rights. Invalid, missing, denied, expired or superseded source bindings cannot be saved as PASS. Legacy unbound PASS records read as UNKNOWN.
 
-Every readiness read reevaluates the bindings. The effective proof deadline is capped by the earliest source expiry or freshness deadline; storedLicenseProof preserves the original immutable proof. A new source revision requires a new reviewed proof, even if its permissions are still affirmative. Revocation immediately blocks subsequent readiness-dependent BUY/broker actions. Standalone derived-data reads and replay enforcement remain under KAN-44; do not treat this as completed licensing rollout.
+Every readiness read reevaluates the bindings. The effective proof deadline is capped by the earliest source expiry or freshness deadline; storedLicenseProof preserves the original immutable proof. A new source revision requires a new reviewed proof, even if its permissions are still affirmative. Revocation immediately blocks subsequent readiness-dependent BUY/broker actions.
+
+## Inspector and correction replay
+
+The chart inspector requires current DISPLAY and DERIVE permission for the actual raw candle revisions behind its saved structure. Missing lineage, denied or expired rights, and ambiguous source scopes return HTTP 403 without chart values. Indicator, relative-strength and structure replay require current DERIVE and STORE permission, including when returning previously computed results. Relative-strength and structure checks include benchmark and peer candles. Permissions are checked again before saving newly computed results; changed authority aborts the operation.
+
+These checks use the current time independently of the historical market-data cutoff. An old replay date cannot bypass a current revocation. Legacy candle lineage identifies its provider rather than a source snapshot, so multiple endpoints or conflicting records with the same latest timestamp are treated as ambiguous. Supply reviewed DAILY_CANDLES metadata for the actual provider; do not use the synthetic test grants in production.
+
+Run `node scripts/database-command.mjs test data-permissions inspector indicator-replay rs-replay` against the isolated test database for lineage, expiry, revocation, HTTP filtering and replay regression coverage. The standalone daily-structure API also requires current DISPLAY and DERIVE permission before returning its saved evidence.
+
+## EOD scans and research
+
+The shared finalized-series loader requires current DERIVE and STORE rights for calculations that persist results. IPO and SME research request DERIVE and DISPLAY instead; unavailable authority leaves their candle-derived observations UNKNOWN. Position trails retain their existing UNKNOWN fallback when the finalized series cannot be used.
+
+EOD planning omits unavailable input series. Saved plans and worker execution revalidate all contributing stock and benchmark revisions, including when a checkpoint already exists. A revoked benchmark therefore prevents reuse of its saved relative-strength calculations. Planning checks authority before saving, and workers check again before saving checkpoints. Run `node scripts/database-command.mjs test eod-scan position-trail ipo-research sme-research inspector` for these paths.
+
+Saved-scan API responses, candidate pages, latest-scan summaries, data-gap summaries and scan-job progress now require DISPLAY and DERIVE permission for every contributor in the original EOD plan. Missing original plan lineage blocks display rather than substituting today's universe. Revocation returns HTTP 403 without saved prices or candidate rows. Internal immutable scan evidence remains available to processing and audit code.
+
+BUY/PRICE_ONLY market signal lists and `/portfolio/signals` now verify current DISPLAY and DERIVE permissions for the event candles, originating daily execution and previous frozen-pattern execution. They withhold unauthorized records while retaining authorized ones. Responses include `unavailable` entries containing only event ID and reason, plus KNOWN, PARTIAL or BLOCKED_DATA state. Missing original lineage cannot fall back to an older signal revision. The BUY screen explains withheld records rather than treating them as absent events.
+
+Owner-plan lists and candidate-plan summaries nested in portfolio responses also recheck the original signal's candle and frozen-pattern permissions. Denied plans are withheld with ID/reason metadata and explicit state. Plan creation and idempotent retry endpoints check before processing and again before returning evidence; denied display returns HTTP 403. Internal audit history remains stored. These checks address the signal-derived portion of plan evidence; live-quote checks are described below.
+
+Saved plan quotes now require current LIVE_QUOTES DISPLAY and DERIVE permission for their actual provider. Their embedded valuation snapshot is checked separately, including when the plan itself has no entry quote. Missing provider lineage and ambiguous endpoint scopes block display. Quote-bearing portfolio risk snapshots are checked before `/portfolio` and `/portfolio/risk` return; cash-only snapshots do not require unrelated live-price authority. Revocation hides affected plans and returns HTTP 403 for affected valuation or plan POST responses. These checks do not substitute candle grants for live-quote grants.
+
+Dashboard, position-card and position-detail API responses now apply the same live-provider check to the exact valuation snapshot used to build their response. Cards and details expose `riskSnapshotId` for that lineage. Dashboard completed-scan and progress summaries separately check their original EOD plan contributors. Missing candle lineage in legacy adjustment snapshots produces a permission error rather than an unhandled failure.
+
+Stop, card, detail and timeline API responses also verify the raw candles behind original stop structures and saved trailing-stop adjustments. Checks include historical episodes, conservatively blocking the response if any relevant stop history lacks permission or lineage. Displayed card EMAs and detail pivots verify their originating daily executions separately. Revocation returns HTTP 403 without stop or timeline payloads; the journal and immutable audit records remain unchanged.
+
+KAN-44 remains In Progress: status and other historical alert sources, SELL and backtest display consumers, storage enforcement and write-time revocation races still need review. The stop checks do not yet establish permission for every quote or corporate-action value contained in historical alerts. This is not a completed licensing rollout.

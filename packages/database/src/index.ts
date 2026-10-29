@@ -4,7 +4,7 @@ export {persistIndicator} from './indicators.js';
 export {persistPattern,supersedePattern} from './patterns.js';
 export {registerProfile,activateProfile,activeProfile,validateProfileVersion,readProfileHistory} from './profiles.js';
 export {persistScan,getScan,latestScan} from './scans.js';
-export {readMarketSignals,persistMarketEvent,persistUserDecision} from './signals.js';
+export {assertMarketSignalDisplay,readDisplayMarketSignals,readMarketSignals,persistMarketEvent,persistUserDecision} from './signals.js';
 export {importInstrumentMaster} from './instrument-master.js';
 export {appendPortfolio,readPortfolio} from './portfolio.js';
 export type {JournalCommand} from './portfolio.js';
@@ -17,7 +17,7 @@ export {createSyncRun,claimSyncWindow,commitSyncWindow,failSyncWindow,syncRunInp
 export {syncJobs,instrumentCoverage} from './sync-progress.js';
 export {persistSource,persistReadiness,getReadiness,readSourceRegistry,currentSource} from './readiness.js';
 export {evaluateLicenseBindings,LICENSE_SOURCE_ROLES} from './licensing.js';
-export {assertCandlePermissions} from './data-permissions.js';
+export {assertCandlePermissions,assertProviderPermissions,assertPlanQuoteDisplay,assertPortfolioQuoteDisplay} from './data-permissions.js';
 export {persistInstrumentSnapshot,persistUniverse,pinScanUniverse,persistSectors,getSector} from './instruments.js';
 export * from './historical-probe.js';
 export * from './broker-credentials.js';
@@ -85,3 +85,4 @@ export * from './broker-keys.js';
 
 export * from './broker-stream-binding.js';
 export * from './surveillance.js';
+export {assertPositionCandleDisplay,assertDailyExecutionDisplay} from './position-permissions.js';

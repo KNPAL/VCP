@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,randomBytes,createHash} from 'node:crypto';
+import {createApp} from '../apps/api/dist/app.js';
 import {PrismaClient,readInspector,inspectorListings,readPortfolio,persistSource} from '../packages/database/dist/index.js';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import {inspectorFixture} from '../fixtures/inspector.mjs';
 const db=new PrismaClient();
 test('inspector keeps immutable detector evidence, production curves and owner-scoped records',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
+ let app;
  try{
   const execution=inspectorFixture(randomUUID()),owner=await db.owner.findFirstOrThrow(),before=await readPortfolio(db,owner.id);
   const provider='synthetic-inspector-'+randomUUID(),permission=await candlePermission(db,provider);
@@ -20,5 +22,7 @@ test('inspector keeps immutable detector evidence, production curves and owner-s
   assert.deepEqual((await readPortfolio(db,owner.id)).events,before.events);
   const {id:permissionId,...sourcePermission}=permission;assert.ok(permissionId);await persistSource(db,{...sourcePermission,knownAt:new Date().toISOString(),uses:{...permission.uses,DISPLAY:false}});
   await assert.rejects(readInspector(db,owner.id,execution.id),/SOURCE_PERMISSION_REQUIRED/);
- }finally{await db.$disconnect()}
+  const token=randomBytes(32).toString('hex'),hash=value=>createHash('sha256').update(value).digest('hex');await db.session.create({data:{id:hash(token),ownerId:owner.id,csrfHash:hash('unused'),expiresAt:new Date(Date.now()+60000)}});
+  app=await createApp({db,secure:false,origin:'http://127.0.0.1:3199',logSink:()=>{}});await app.listen(0,'127.0.0.1');for(const route of ['/api/v1/vcp/inspector/','/api/v1/system/daily-structure/']){const response=await fetch((await app.getUrl())+route+execution.id,{headers:{cookie:'vcp_session='+token}});assert.equal(response.status,403);const denied=await response.json();assert.equal(denied.error.code,'FORBIDDEN');assert.equal(Object.hasOwn(denied,'bars'),false);assert.equal(Object.hasOwn(denied,'input'),false);}
+ }finally{await app?.close();await db.$disconnect()}
 });

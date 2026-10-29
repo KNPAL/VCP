@@ -1,18 +1,21 @@
 import test from 'node:test';
+import {candlePermission} from '../fixtures/candle-permission.mjs';
 import assert from 'node:assert/strict';
-import {randomUUID} from 'node:crypto';
-import {PrismaClient,ingestCandles,persistAdjustment,persistInstrumentSnapshot,persistUniverse,persistReadiness,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
+import {randomUUID,randomBytes,createHash} from 'node:crypto';
+import {createApp} from '../apps/api/dist/app.js';
+import {PrismaClient,ingestCandles,persistAdjustment,persistInstrumentSnapshot,persistUniverse,persistReadiness,persistSource,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {exchangeDate} from '../packages/domain/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
 import {queue,createWorker} from '../apps/worker/dist/runtime.js';
 import {eodScanHandler,dispatchEodScans} from '../apps/worker/dist/eod-scan.js';
-import {readCurrentRegime} from '../packages/database/dist/index.js';
+import {recordPortfolioRisk,readCurrentRegime} from '../packages/database/dist/index.js';
+import {loadSeries} from '../packages/database/dist/index.js';
 process.env.REDIS_PORT??='56379';
 const db=new PrismaClient();
 test('EOD scan pins revisions, resumes lost queue jobs and accounts for every intended member',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
- let q,worker;
+ let q,worker,app;
  try{
   const now=new Date(),date=exchangeDate(now.toISOString()),golden=goldenSeries();
   const offset=Date.parse(date)-Date.parse(golden.bars.at(-1).session);
@@ -21,12 +24,12 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   // The last synthetic session ends just before the test's observation, independent of real exchange hours.
   Object.assign(calendar.at(-1),{opensAt:new Date(now.valueOf()-60000).toISOString(),closesAt:new Date(now.valueOf()-30000).toISOString(),finalizedAt:new Date(now.valueOf()-10000).toISOString()});
   async function instrument(flat){
-   const listingId=randomUUID(),provider='synthetic-eod',observedAt=new Date().toISOString();
+   const listingId=randomUUID(),provider='synthetic-eod-'+randomUUID(),grant=await candlePermission(db,provider),observedAt=new Date().toISOString();
    const bars=golden.bars.map((b,i)=>({listingId,provider,session:dates[i],open:flat?'50':b.open,high:flat?'51':b.high,low:flat?'49':b.low,close:flat?'50':b.close,volume:b.volume,receivedAt:observedAt,finalizedAt:calendar[i].finalizedAt,zeroVolumeVerified:false}));
    const ingested=await ingestCandles(db,{listingId,provider,from:dates[0],to:date,asOf:observedAt,calendar,bars});assert.equal(ingested.inserted,310);
    const revisions=await db.$queryRaw`SELECT "session","revisionId" FROM "RawDailyCandle" WHERE "listingId"=${listingId}::uuid`;
    const input={listingId,asOf:new Date().toISOString(),scaleSession:date,source:{id:'synthetic-no-actions',listingId,knownAt:observedAt,verified:true,sourceReference:'synthetic',coverageFrom:dates[0],coverageThrough:date,actions:[]},raw:bars.map(b=>({...b,revisionId:revisions.find(r=>r.session.toISOString().slice(0,10)===b.session).revisionId}))};
-   const adjusted=await persistAdjustment(db,input);assert.equal(adjusted.state,'KNOWN');return {listingId,provider,ingested,adjusted,input};
+   const adjusted=await persistAdjustment(db,input);assert.equal(adjusted.state,'KNOWN');return {listingId,provider,grant,ingested,adjusted,input};
   }
   const target=await instrument(false),benchmark=await instrument(true);
   const isin='INE'+String(Math.floor(Math.random()*1000000000)).padStart(9,'0'),missing='INE'+String(Math.floor(Math.random()*1000000000)).padStart(9,'0');
@@ -110,5 +113,21 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   // Checkpoints survive deletion of all test queue jobs; completed scan needs no recompute.
   await worker.close();worker=null;await q.obliterate({force:true});await dispatchEodScans(db,q);
   assert.equal((await q.getJobs(['waiting'])).some(j=>complete.items.some(i=>i.id===j.data.itemId)),false);
- }finally{if(worker)await worker.close();if(q){await q.obliterate({force:true});await q.close()}await db.$disconnect()}
+  const owner=await db.owner.findFirstOrThrow(),token=randomBytes(32).toString('hex'),digest=value=>createHash('sha256').update(value).digest('hex');
+  await db.session.create({data:{id:digest(token),ownerId:owner.id,csrfHash:digest('unused'),expiresAt:new Date(Date.now()+60000)}});
+  await recordPortfolioRisk(db,owner.id,{});
+  app=await createApp({db,secure:false,origin:'http://127.0.0.1:3199',logSink:()=>{}});await app.listen(0,'127.0.0.1');
+  const routes=['/api/v1/portfolio/dashboard','/api/v1/system/scans/'+complete.request.scanId,'/api/v1/system/scan-jobs/'+complete.request.scanId,'/api/v1/vcp/candidates?scanId='+complete.request.scanId];
+  const base=await app.getUrl();
+  for(const route of routes){const response=await fetch(base+route,{headers:{cookie:'vcp_session='+token}});assert.equal(response.status,200,route);await response.json()}
+  const {id:grantId,...grant}=benchmark.grant;assert.ok(grantId);
+  await persistSource(db,{...grant,knownAt:new Date().toISOString(),uses:{...grant.uses,DERIVE:false}});
+  await assert.rejects(prepareEodScan(db,complete.request),/SOURCE_PERMISSION_REQUIRED/);
+  await assert.rejects(processEodScanItem(db,complete.items[0].id),/SOURCE_PERMISSION_REQUIRED/);
+  for(const route of routes){const response=await fetch(base+route,{headers:{cookie:'vcp_session='+token}});assert.equal(response.status,403,route);const body=await response.json();assert.equal(body.error.code,'FORBIDDEN');assert.equal(Object.hasOwn(body,'entries'),false);assert.equal(Object.hasOwn(body,'items'),false)}
+  const {id:targetGrantId,...targetGrant}=target.grant;assert.ok(targetGrantId);
+  await persistSource(db,{...targetGrant,knownAt:new Date().toISOString(),uses:{...targetGrant.uses,DISPLAY:false}});
+  assert.equal((await loadSeries(db,target.adjusted.revision,request)).listingId,target.listingId);
+  await assert.rejects(loadSeries(db,target.adjusted.revision,request,['DERIVE','DISPLAY']),/SOURCE_PERMISSION_REQUIRED/);
+ }finally{await app?.close();if(worker)await worker.close();if(q){await q.obliterate({force:true});await q.close()}await db.$disconnect()}
 });
