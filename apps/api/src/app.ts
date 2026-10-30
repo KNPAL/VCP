@@ -16,7 +16,7 @@ import {getScan as getStoredScan,latestScan as latestStoredScan,assertEodScanDis
 import {readInspector,inspectorListings,assertCandlePermissions} from '@vcp/database';
 import {compareBacktestSelection,type BacktestComparisonSelection,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '@vcp/database';
 import {readDataHealth,readBrokerConnection,saveBrokerConfiguration,ownerBrokerBinding,logoutBroker} from '@vcp/database';
-import {readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualDownload,listManualDownloads,cancelManualDownload,retryManualDownload} from '@vcp/database';
+import {readDownloadChoices,readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualDownload,listManualDownloads,cancelManualDownload,retryManualDownload} from '@vcp/database';
 import {readPositionCards,assertPositionCandleDisplay,assertDailyExecutionDisplay} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
 import type {JournalCommand} from '@vcp/database';
@@ -373,6 +373,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('history/downloads')
   class DownloadPreviewController {
+    @Get('choices') choices(@Req() request:AuthRequest){return readDownloadChoices(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'])}
     async mapped<T>(work:()=>Promise<T>){try{return await work()}catch(error){if(error instanceof HttpException)throw error;if(error instanceof Error){if(error.message==='DOWNLOAD_RUN_NOT_FOUND')throw new NotFoundException('Own download not found');if(error.message==='DOWNLOAD_IDEMPOTENCY_CONFLICT'||error.message==='DOWNLOAD_PREVIEW_CHANGED')throw new HttpException(error.message,409);if(error.message.startsWith('DOWNLOAD_')||error.message.startsWith('INVALID_DOWNLOAD_'))throw new HttpException(error.message,422)}throw error}}
     @Get() list(@Req() request:AuthRequest,@Query('cursor') cursor?:string){return this.mapped(()=>listManualDownloads(db,request.ownerId!,cursor))}
     @Get(':id') detail(@Req() request:AuthRequest,@Param('id') id:string){return this.mapped(async()=>({...await readManualDownload(db,request.ownerId!,id),retryEnabled:process.env['VCP_ENABLE_MANUAL_DOWNLOADS']==='true'}))}
