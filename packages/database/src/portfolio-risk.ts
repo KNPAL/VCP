@@ -7,6 +7,7 @@ import {actionScale,type InitialStop} from './protective-stops.js';
 import {effectivePositionStop} from './trail-state.js';
 import {cashAllocations} from './cash-allocation.js';
 import {readCurrentRegime} from './current-regime.js';
+import {assertProviderPermissions} from './data-permissions.js';
 const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 export type PortfolioQuotes=Record<string,NormalizedQuote&{validUntil:string}>;
 type Reconciliation={id:string;journalHash:string;statement:BrokerStatement;result:ReturnType<typeof reconcileStatement>};
@@ -54,10 +55,16 @@ async function calculate(tx:Prisma.TransactionClient,ownerId:string,quotes:Portf
   executable:false};
 }
 export async function recordPortfolioRisk(db:PrismaClient,ownerId:string,quotes:PortfolioQuotes){
+ quotes=structuredClone(quotes);
+ const providers=[...new Set(Object.values(quotes).map(quote=>quote.provider))];
+ const permission=async()=>{for(const provider of providers)await assertProviderPermissions(db,'LIVE_QUOTES',provider,['DERIVE','STORE'])};
+ await permission();
  return db.$transaction(async tx=>{
   await tx.$queryRaw`SELECT "id" FROM "Owner" WHERE "id"=${ownerId}::uuid FOR UPDATE`;
+  await permission();
   const result=await calculate(tx,ownerId,quotes),id=hash([ownerId,result,quotes]),evidence={...result,id,quotes};
   await tx.$executeRaw`INSERT INTO "PortfolioRiskSnapshot" ("id","ownerId","asOf","journalHash","evidence") VALUES (${id},${ownerId}::uuid,${new Date(result.asOf)},${result.journalHash},${canonical(evidence)}::jsonb) ON CONFLICT DO NOTHING`;
+  await permission();
   return evidence;
  },{timeout:15000});
 }

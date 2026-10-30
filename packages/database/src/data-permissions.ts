@@ -22,18 +22,24 @@ export async function assertProviderPermissions(db:Pick<PrismaClient,'$queryRaw'
  return source.id;
 }
 export async function assertPlanQuoteDisplay(db:Pick<PrismaClient,'$queryRaw'>,value:unknown){
+ return assertPlanQuotePermissions(db,value,['DISPLAY','DERIVE']);
+}
+export async function assertPlanQuotePermissions(db:Pick<PrismaClient,'$queryRaw'>,value:unknown,operations:readonly Permission[]){
  const plan=value as {entry?:unknown;snapshotId?:unknown;valuation?:unknown;liveObservation?:{quote?:{provider?:unknown}}|null};
- if(typeof plan.snapshotId==='string')await assertPortfolioQuoteDisplay(db,plan.snapshotId);
+ if(typeof plan.snapshotId==='string')await assertPortfolioQuotePermissions(db,plan.snapshotId,operations);
  else if(plan.valuation)throw new Error('SOURCE_LINEAGE_MISSING');
  const quote=plan.liveObservation?.quote;
  if(!quote){if(plan.entry!==null&&plan.entry!==undefined)throw new Error('SOURCE_LINEAGE_MISSING');return}
  if(typeof quote.provider!=='string')throw new Error('SOURCE_LINEAGE_MISSING');
- await assertProviderPermissions(db,'LIVE_QUOTES',quote.provider,['DISPLAY','DERIVE']);
+ await assertProviderPermissions(db,'LIVE_QUOTES',quote.provider,operations);
 }
 export async function assertPortfolioQuoteDisplay(db:Pick<PrismaClient,'$queryRaw'>,snapshotId:string|null){
+ return assertPortfolioQuotePermissions(db,snapshotId,['DISPLAY','DERIVE']);
+}
+export async function assertPortfolioQuotePermissions(db:Pick<PrismaClient,'$queryRaw'>,snapshotId:string|null,operations:readonly Permission[]){
  if(!snapshotId)return;
  const rows=await db.$queryRaw<{evidence:{quotes?:Record<string,{provider?:unknown}>}}[]>`SELECT "evidence" FROM "PortfolioRiskSnapshot" WHERE "id"=${snapshotId}`;
  if(!rows[0]?.evidence.quotes)throw new Error('SOURCE_LINEAGE_MISSING');
  const providers=new Set(Object.values(rows[0].evidence.quotes).map(quote=>quote.provider));
- for(const provider of providers){if(typeof provider!=='string')throw new Error('SOURCE_LINEAGE_MISSING');await assertProviderPermissions(db,'LIVE_QUOTES',provider,['DISPLAY','DERIVE'])}
+ for(const provider of providers){if(typeof provider!=='string')throw new Error('SOURCE_LINEAGE_MISSING');await assertProviderPermissions(db,'LIVE_QUOTES',provider,operations)}
 }

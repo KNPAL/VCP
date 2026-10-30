@@ -78,6 +78,15 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   assert.equal((await fetch(base+'/api/v1/signals/'+'f'.repeat(64)+'/evaluate-plan',{method:'POST',headers:{...headers,'idempotency-key':randomUUID()},body})).status,422);
   assert.deepEqual((await readPortfolio(db,owner.id)).holdings,{});
   const {id:liveSourceId,...liveMetadata}=liveSource;assert.ok(liveSourceId);
+  const planCounts=()=>db.$queryRaw`SELECT (SELECT count(*) FROM "EntryRiskPlan" WHERE "ownerId"=${owner.id}::uuid)::text AS plans,(SELECT count(*) FROM "IdempotencyRecord" WHERE "ownerId"=${owner.id}::uuid)::text AS receipts`;
+  const beforeStorageDenial=await planCounts();
+  await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString(),uses:{...liveMetadata.uses,STORE:false}});
+  await assert.rejects(recordEntryRisk(db,owner.id,randomUUID(),request,reader),/SOURCE_PERMISSION_REQUIRED/);
+  await assert.rejects(recordEntryRisk(db,owner.id,idempotencyKey,request,reader),/SOURCE_PERMISSION_REQUIRED/);
+  assert.equal((await post(body,{...headers,'idempotency-key':idempotencyKey})).status,403);
+  assert.deepEqual(await planCounts(),beforeStorageDenial);
+  await new Promise(resolve=>setTimeout(resolve,5));await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString()});
+  assert.deepEqual(await recordEntryRisk(db,owner.id,idempotencyKey,request,reader),plan);
   await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString(),uses:{...liveMetadata.uses,DISPLAY:false}});
   const hiddenQuotes=await (await fetch(base+'/api/v1/portfolio/risk/plans',{headers})).json();assert.equal(hiddenQuotes.items.some(item=>item.evidence.id===plan.id),false);assert.ok(hiddenQuotes.unavailable.some(item=>item.id===plan.id));
   assert.equal((await fetch(base+'/api/v1/portfolio/risk',{headers})).status,200,'Cash-only valuation does not require unrelated live prices');
@@ -108,6 +117,11 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   assert.ok((await readEntryRisk(db,owner.id,reader)).items.some(item=>item.evidence.id===plan.id),'Immutable audit history remains stored');
   for(const path of ['/api/v1/positions/cards','/api/v1/positions/'+isin+'/detail']){const response=await fetch(base+path,{headers});assert.equal(response.status,200);const value=await response.json();assert.equal(value.riskSnapshotId,risk.id)}
   const quotedValuation=await recordPortfolioRisk(db,owner.id,{[isin]:quote});
+  await new Promise(resolve=>setTimeout(resolve,5));await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString(),uses:{...liveMetadata.uses,STORE:false}});
+  const beforeEmbeddedDenial=await planCounts();
+  await assert.rejects(recordEntryRisk(db,owner.id,randomUUID(),{...request,snapshotId:quotedValuation.id}),/SOURCE_PERMISSION_REQUIRED/,'Saved valuation quotes require rights even without a live candidate observation');
+  assert.deepEqual(await planCounts(),beforeEmbeddedDenial);
+  await new Promise(resolve=>setTimeout(resolve,5));await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString()});
   await persistSource(db,{...liveMetadata,knownAt:new Date().toISOString(),uses:{...liveMetadata.uses,DISPLAY:false}});
   await assert.rejects(assertPlanQuoteDisplay(db,{entry:null,valuation:{},snapshotId:quotedValuation.id}),/SOURCE_PERMISSION_REQUIRED/);
   for(const path of ['/api/v1/portfolio/risk','/api/v1/portfolio','/api/v1/portfolio/dashboard','/api/v1/positions/cards','/api/v1/positions/'+isin+'/detail']){const response=await fetch(base+path,{headers});assert.equal(response.status,403);const value=await response.json();assert.equal(value.error.code,'FORBIDDEN');assert.equal(Object.hasOwn(value,'valuation'),false);assert.equal(Object.hasOwn(value,'risk'),false)}

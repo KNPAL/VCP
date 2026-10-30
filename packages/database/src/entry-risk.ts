@@ -12,6 +12,7 @@ import {getReadiness} from './readiness.js';
 import {ownerStreamBinding} from './broker-stream-binding.js';
 import {readSurveillance} from './surveillance.js';
 import {authorizeEntryPlan,sameEntryQuote} from './entry-authorization.js';
+import {assertPlanQuotePermissions,assertPortfolioQuotePermissions,assertProviderPermissions} from './data-permissions.js';
 const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 export type LiveEntryObservation={quote:PortfolioQuotes[string];heartbeatAt:string;validUntil:string;bindingRevision:string;settled:boolean};
 export type EntryObservationReader=(ownerId:string,listingId:string)=>Promise<LiveEntryObservation|null>;
@@ -32,12 +33,13 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
  return db.$transaction(async tx=>{
   await tx.$queryRaw`SELECT "id" FROM "Owner" WHERE "id"=${ownerId}::uuid FOR UPDATE`;
   const identity='entry-risk:'+key,requestHash=hash(request),prior=await tx.idempotencyRecord.findUnique({where:{ownerId_key:{ownerId,key:identity}}});
-  if(prior){if(prior.requestHash!==requestHash)throw new Error('STALE_CONFLICT');return prior.response}
+  if(prior){if(prior.requestHash!==requestHash)throw new Error('STALE_CONFLICT');await assertPlanQuotePermissions(db,prior.response,['DERIVE','STORE']);return prior.response}
   const events=await tx.$queryRaw<{evidence:MarketEvent}[]>`SELECT "evidence" FROM "MarketEvent" WHERE "id"=${request.marketEventId}`;
   if(!events[0])throw new Error('MARKET_EVENT_UNAVAILABLE');
   const event=events[0].evidence;
   const snapshots=await tx.$queryRaw<{evidence:{quotes:PortfolioQuotes}}[]>`SELECT "evidence" FROM "PortfolioRiskSnapshot" WHERE "id"=${request.snapshotId} AND "ownerId"=${ownerId}::uuid`;
   if(!snapshots[0])throw new Error('STALE_CONFLICT');
+  await assertPortfolioQuotePermissions(db,request.snapshotId,['DERIVE','STORE']);
   const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
   const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;
   const sectors=await tx.$queryRaw<{id:string;evidence:{mappings:SectorMapping[]}}[]>`SELECT "id","evidence" FROM "SectorSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
@@ -48,6 +50,7 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
   const regimeEvidence=await readCurrentRegime(tx,before);
   const source=await entrySource(tx,ownerId,event.id,new Date().toISOString());
   const observation=readObservation?await readObservation(ownerId,event.listingId).catch(()=>null):null;
+  if(observation)await assertProviderPermissions(db,'LIVE_QUOTES',observation.quote.provider,['DERIVE','STORE']);
   // Last read is the owner-locked, journal-bound valuation; it checks quote deadlines again.
   const risk=await readPortfolioRiskTransaction(tx,ownerId);
   if(risk.snapshotId!==request.snapshotId||risk.reasons.includes('JOURNAL_CHANGED_SINCE_RISK_SNAPSHOT')||Date.parse(risk.validUntil)<=Date.parse(risk.asOf))throw new Error('STALE_CONFLICT');
@@ -84,9 +87,10 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
   const id=hash([ownerId,key,requestHash,risk.journalHash,risk.asOf]),evidence={id,ownerId,request,marketEventId:event.id,snapshotId:risk.snapshotId,journalHash:risk.journalHash,asOf:risk.asOf,expiresAt,...authorization,
    isin,entry:currentQuote?.ltp??null,stop,proposalType:request.topUpQuantity===undefined?'ENTRY':'MANUAL_TOPUP',automatedAdd:false,estimatedFees:request.estimatedFees,riskBudget:sizing?.riskBudget??null,caps:sizing?.caps??null,
    liveObservation:live,sourceRevision:source.revision,sourceIds:{mappingId:mapping?.id??null,calendarId:calendars[0]?.id??null},readinessEvidence:{sectorId:sectors[0]?.id??null,sector,reconciliation:risk.reconciliation,surveillance:source.restrictions},regimeEvidence,valuation:risk.valuation,lossStreak:risk.lossStreak,cashAllocationRevision:risk.cashAllocationRevision,entryEvidence:decision,sizing,executable:false};
+  await assertPlanQuotePermissions(db,evidence,['DERIVE','STORE']);
   await tx.$executeRaw`INSERT INTO "EntryRiskPlan" ("id","ownerId","marketEventId","asOf","expiresAt","journalHash","evidence") VALUES (${id},${ownerId}::uuid,${event.id},${new Date(risk.asOf)},${new Date(expiresAt)},${risk.journalHash},${canonical(evidence)}::jsonb)`;
   const response=JSON.parse(canonical(evidence)) as Prisma.InputJsonValue;
-  await tx.idempotencyRecord.create({data:{ownerId,key:identity,requestHash,response}});return response;
+  await tx.idempotencyRecord.create({data:{ownerId,key:identity,requestHash,response}});await assertPlanQuotePermissions(db,evidence,['DERIVE','STORE']);return response;
  },{timeout:15000});
 }
 export async function readEntryRisk(db:PrismaClient,ownerId:string,readObservation?:EntryObservationReader){

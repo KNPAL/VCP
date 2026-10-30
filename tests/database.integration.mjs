@@ -336,7 +336,7 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   assert.equal((await send('/system/jobs?limit=201',{headers:{cookie:historyCookie}})).status,400);
   assert.equal((await send('/system/coverage/'+historyListing,{headers:{cookie:historyCookie}})).status,400);
   assert.equal((await send('/system/coverage/'+historyListing+'?provider=a&provider=b',{headers:{cookie:historyCookie}})).status,400);
-  assert.equal((await send('/system/data-gaps?listingId='+historyListing+'&provider='+provider,{headers:{cookie:historyCookie}})).status,403);
+  assert.equal((await send('/system/data-gaps?listingId='+historyListing+'&provider='+provider,{headers:{cookie:historyCookie}})).status,200);
   const key=randomUUID();const idem={ownerId:owner.id,key,requestHash:'a'.repeat(64),response:{id:'synthetic'}};
   await db.idempotencyRecord.create({data:idem});
   await assert.rejects(db.idempotencyRecord.create({data:idem}));

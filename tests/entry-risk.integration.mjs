@@ -1,13 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
-import {PrismaClient,persistMarketEvent,persistReadiness,readMarketSignals,recordPortfolioRisk,recordEntryRisk,readEntryRisk,readPortfolio,appendPortfolio,persistSectors} from '../packages/database/dist/index.js';
-const db=new PrismaClient();
+import {persistMarketEvent,persistReadiness,readMarketSignals,recordPortfolioRisk,recordEntryRisk,readEntryRisk,readPortfolio,appendPortfolio,persistSectors,registerProfile} from '../packages/database/dist/index.js';
+import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
+import {breakoutInput} from '../fixtures/signal-golden.mjs';
+import {ST_VCP_4_0,PROFILE_VERSION,evaluateBreakout} from '../packages/strategy/dist/index.js';
+let db;
 test('entry plan retries are immutable, owner scoped and never manufacture quote or gate authority',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
+ const fixture=await isolatedDatabase('entry_risk');db=fixture.db;
  try{
-  const owner=await db.owner.findFirstOrThrow(),events=await db.$queryRaw`SELECT "id" FROM "MarketEvent" ORDER BY "decidedAt" DESC LIMIT 1`;
-  assert.ok(events[0],'Run the database integration fixture before this suite');
+  const owner=await db.owner.findFirstOrThrow(),profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0),input=breakoutInput();
+  input.previous.listingId=randomUUID();input.previous.configHash=profile.id;input.evidence.configHash=profile.id;input.evidence.dataRevision=randomUUID();
+  const event=evaluateBreakout(input).event;await persistMarketEvent(db,event);const events=[event];
+  await appendPortfolio(db,owner.id,randomUUID(),{kind:'INITIAL_CAPITAL',amount:'10000',verified:true,occurredAt:new Date().toISOString(),sourceId:'synthetic-entry-risk'});
   const signals=await readMarketSignals(db);assert.equal(signals.executable,false);assert.ok(signals.items.length>0&&signals.items.length<=50);assert.equal(new Set(signals.items.map(item=>item.logicalId)).size,signals.items.length);for(const item of signals.items){for(const field of ['decidedAt','observedAt','occurredAt'])assert.ok(Date.parse(item[field])<=Date.parse(signals.asOf))}
   const before=await readPortfolio(db,owner.id),snapshot=await recordPortfolioRisk(db,owner.id,{}),key=randomUUID(),request={marketEventId:events[0].id,snapshotId:snapshot.id,estimatedFees:'1.000001'};
   const plans=await Promise.all([1,2,3].map(()=>recordEntryRisk(db,owner.id,key,request)));
@@ -62,5 +68,5 @@ test('entry plan retries are immutable, owner scoped and never manufacture quote
   const latest=await readMarketSignals(db);assert.equal(latest.items.find(item=>item.logicalId===logicalId).id,correction.id);
   assert.equal((await readMarketSignals(db,'BREAKOUT_CONFIRMED')).items.some(item=>item.logicalId===logicalId),false,'Filtering must not resurrect superseded confirmation');
   assert.equal((await readMarketSignals(db,'BREAKOUT_PRICE_ONLY')).items.find(item=>item.logicalId===logicalId).id,correction.id);
- }finally{await db.$disconnect()}
+ }finally{await fixture.close()}
 });

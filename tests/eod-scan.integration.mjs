@@ -122,6 +122,7 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   const routes=['/api/v1/portfolio/dashboard','/api/v1/system/scans/'+complete.request.scanId,'/api/v1/system/scan-jobs/'+complete.request.scanId,'/api/v1/vcp/candidates?scanId='+complete.request.scanId];
   const base=await app.getUrl();
   for(const route of routes){const response=await fetch(base+route,{headers:{cookie:'vcp_session='+token}});assert.equal(response.status,200,route);await response.json()}
+  for(const query of ['state=BOGUS','cursor=broken']){const response=await fetch(base+'/api/v1/vcp/candidates?scanId='+complete.request.scanId+'&'+query,{headers:{cookie:'vcp_session='+token}});assert.equal(response.status,400);await response.json()}
   const {id:grantId,...grant}=benchmark.grant;assert.ok(grantId);
   await persistSource(db,{...grant,knownAt:new Date().toISOString(),uses:{...grant.uses,DERIVE:false}});
   await assert.rejects(prepareEodScan(db,complete.request),/SOURCE_PERMISSION_REQUIRED/);

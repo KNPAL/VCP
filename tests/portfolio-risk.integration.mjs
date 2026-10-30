@@ -2,13 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
 import {parseFixed,formatFixed} from '../packages/domain/dist/index.js';
-import {PrismaClient,appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,persistInstrumentSnapshot,persistSectors} from '../packages/database/dist/index.js';
+import {PrismaClient,appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,persistInstrumentSnapshot,persistSectors,persistSource} from '../packages/database/dist/index.js';
+import {candlePermission} from '../fixtures/candle-permission.mjs';
 const db=new PrismaClient(),hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 test('risk evidence preserves actual fills, expires marks and serializes with journal changes',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
  try{
-  const owner=await db.owner.findFirstOrThrow(),isin='INE'+String(randomInt(1000000000)).padStart(9,'0'),listingId=randomUUID(),date=new Date(Date.now()+19800000).toISOString().slice(0,10),before=new Date(Date.now()-10000).toISOString();
-  const mapping=await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-risk-only',rows:[{companyId:randomUUID(),isin,listingId,exchange:'NSE',series:'EQ',symbol:'RISK',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
+  const owner=await db.owner.findFirstOrThrow(),isin='INE'+String(randomInt(1000000000)).padStart(9,'0'),listingId=randomUUID(),date=new Date(Date.now()+19800000).toISOString().slice(0,10),before=new Date(Date.now()-10000).toISOString(),provider='synthetic-risk-'+randomUUID();
+  const {id:grantId,...grant}=await candlePermission(db,provider);assert.ok(grantId);await persistSource(db,{...grant,dataset:'LIVE_QUOTES'});
+  const mapping=await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-risk-only',rows:[{companyId:randomUUID(),isin,listingId,exchange:'NSE',series:'EQ',symbol:'RISK',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider,token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
   const calendar=[{date,kind:'SPECIAL',opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:new Date(date+'T23:59:59+05:30').toISOString(),finalizedAt:null,knownAt:before,source:'synthetic-risk-test',verified:true}],calendarId=hash(randomUUID());
   await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
   await persistSectors(db,[{isin,sector:'RISK_TEST',validFrom:'2020-01-01',validTo:null,knownAt:before,sourceReference:'synthetic-sector'}],new Date().toISOString());
@@ -16,7 +18,7 @@ test('risk evidence preserves actual fills, expires marks and serializes with jo
   await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${adjustmentId},${listingId}::uuid,${new Date(date)},${new Date(before)},'KNOWN',${JSON.stringify({source:actionSource})}::jsonb)`;
   const buy={kind:'FILL',isin,side:'BUY',quantity:10,price:'100',fees:'0.01',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-risk'};
   await appendPortfolio(db,owner.id,randomUUID(),buy);
-  const quote=()=>({listingId,provider:'fixture',token:'123',mappingRevision:mapping.id,rawLtp:'11000',priceDecimals:2,ltp:'110.000000',sourceAt:new Date().toISOString(),receivedAt:new Date().toISOString(),decidedAt:new Date().toISOString(),session:date,sequence:'1',quality:'FRESH',connection:'CONNECTED',executable:false,validUntil:new Date(Date.now()+20000).toISOString()});
+  const quote=()=>({listingId,provider,token:'123',mappingRevision:mapping.id,rawLtp:'11000',priceDecimals:2,ltp:'110.000000',sourceAt:new Date().toISOString(),receivedAt:new Date().toISOString(),decidedAt:new Date().toISOString(),session:date,sequence:'1',quality:'FRESH',connection:'CONNECTED',executable:false,validUntil:new Date(Date.now()+20000).toISOString()});
   const first=await recordPortfolioRisk(db,owner.id,{[isin]:quote()});
   assert.equal(first.valuation.companyExposure[isin],'1100.000000',JSON.stringify({sources:first.sources,position:first.valuation.positions.find(p=>p.isin===isin)}));assert.equal(first.valuation.sectorExposure.RISK_TEST,'1100.000000');
   assert.equal(first.valuation.positions.find(p=>p.isin===isin).quantity,10);assert.equal(first.plan.state,'BUY_BLOCKED');
