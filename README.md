@@ -66,6 +66,12 @@ Automatic EOD preparation is optional. After configuring verified calendar/readi
 
 If another project owns port 3000, set `VCP_WEB_PORT=3002` in **all three startup terminals** before launching these commands, then open `http://localhost:3002/login`. PowerShell: `$env:VCP_WEB_PORT='3002'`. POSIX shells: `export VCP_WEB_PORT=3002`. The API keeps port 3001 and its allowed browser origin follows the selected web port. Do not stop unrelated applications just to free port 3000.
 
+## Download daily history
+
+After signing in, open **Universe & Data** and choose **Historical download**. Select the NIFTY 500, a saved list, or individual stocks. Choose an inclusive date range and preview stored coverage. The wizard uses the latest session verified for every selected stock. If that date is unknown, supply calendar and provider evidence or select stocks with verified dates.
+
+**Missing sessions only** skips candles already stored. **Reconcile** also checks the latest three finalized sessions. Connect Angel One and select **Start download** to follow the background job. See [manual download configuration](docs/manual-downloads.md) for the signing key, feature flag and worker settings.
+
 ## Stop, restart and update
 
 Press **Ctrl+C** in each application terminal. Stop databases without deleting data:
@@ -283,3 +289,9 @@ Portfolio, dashboard, saved-plan and historical-result views also check current 
 Direct candle imports, including quarantined data, require current DAILY_CANDLES STORE permission. Creating adjusted candles also requires DERIVE permission for the original raw source. A worker reports `SOURCE_PERMISSION_REQUIRED`, `SOURCE_SCOPE_AMBIGUOUS` or `SOURCE_LINEAGE_MISSING` when these checks fail; it releases the current lease without committing candles or advancing the checkpoint. Correct the reviewed source metadata before retrying through the normal download workflow. Historical dates and previously successful imports do not bypass current permission checks.
 
 Saving quote-bearing portfolio risk snapshots and entry plans requires LIVE_QUOTES STORE and DERIVE rights, separately from candle and display permissions. A plan submission or retry can return HTTP 403 after a permission change. No-quote snapshots remain available, and permission failures do not create or modify actual fills. See the source-registry guide for the remaining rollout limits.
+
+## Operations dashboard
+
+Open **Operations** after signing in to inspect G01–G10, hourly broker errors, historical queue delays, the last finalized session, scan coverage, held-position feed age and outstanding SELL deliveries. The page refreshes its metrics every 30 seconds. A failed or unknown gate blocks the readiness result.
+
+The API reads optional host settings. Set `VCP_MONITORED_VOLUME` to the mounted volume to measure its free space. The default warning threshold is 10 percent; override with `VCP_DISK_WARNING_PERCENT`. Set `VCP_SCAN_PUBLICATION_SLA_SECONDS` to your publication target. Point `VCP_BACKUP_STATUS_FILE` at a receipt written by your backup process, containing `{"state":"SUCCESS","completedAt":"2026-11-05T03:00:00Z"}` or a recorded `FAILED` result. Missing evidence appears as UNKNOWN. Receipt times identify the last observed backup result.

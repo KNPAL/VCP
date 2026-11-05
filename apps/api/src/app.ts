@@ -1,3 +1,5 @@
+import {workerQueueMetrics} from './worker-queue-metrics.js';
+import {operationHostMetrics} from './operation-host-metrics.js';
 import {readRuntimeBrokerStatus,type BrokerStatusDependencies} from './broker-status.js';
 import {entryObservationReader} from './entry-observation.js';
 import {loginOwnerBroker,type BrokerLoginDependencies} from './broker-login.js';
@@ -15,7 +17,7 @@ import type { PrismaClient } from '@vcp/database';
 import {getScan as getStoredScan,latestScan as latestStoredScan,assertEodScanDisplay,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
 import {readInspector,inspectorListings,assertCandlePermissions} from '@vcp/database';
 import {compareBacktestSelection,type BacktestComparisonSelection,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '@vcp/database';
-import {readDataHealth,readBrokerConnection,saveBrokerConfiguration,ownerBrokerBinding,logoutBroker} from '@vcp/database';
+import {readOperations,readDataHealth,readBrokerConnection,saveBrokerConfiguration,ownerBrokerBinding,logoutBroker} from '@vcp/database';
 import {readDownloadChoices,readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualDownload,listManualDownloads,cancelManualDownload,retryManualDownload} from '@vcp/database';
 import {readPositionCards,assertPositionCandleDisplay,assertDailyExecutionDisplay} from '@vcp/database';
 import {listSmeResearch,readSmeResearch,listIpoResearch,readIpoResearch,readSellAlerts,readPositionDetail,positionTimeline,acknowledgePositionAlert} from '@vcp/database';
@@ -94,6 +96,9 @@ export const openapi = {
     '/api/v1/history/downloads/{runId}':{get:{operationId:'readHistoricalDownload',security:[{session:[]}],responses:{'200':{description:'Owner request, aggregate attempt counts and immutable status events'},'404':{description:'Own request not found'}}}},
     '/api/v1/history/downloads/{runId}/cancel':{post:{operationId:'cancelHistoricalDownload',security:[{session:[]}],responses:{'201':{description:'Idempotent cancellation; active lease may finish safely'},'403':{description:'CSRF required'}}}},
     '/api/v1/history/downloads/{runId}/retry':{post:{operationId:'retryHistoricalDownload',security:[{session:[]}],responses:{'201':{description:'Idempotent explicit retry of incomplete sessions'},'422':{description:'Current authentication, quota or source readiness prevents retry'},'503':{description:'Manual downloads disabled'}}}},
+    '/api/v1/history/downloads/{id}/candles/{listing}':{get:{operationId:'storedDownloadClosingPrices',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}},{name:'listing',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Stored finalized closing prices for this download range'},'403':{description:'Display permission unavailable'},'404':{description:'Owned listing not found'}}}},
+    '/api/v1/data/operations':{get:{operationId:'getOperationsMetrics',security:[{session:[]}],responses:{'200':{description:'Stored operational metrics and readiness gates'},'401':{description:'Authentication required'}}}},
+    '/api/v1/history/downloads/choices':{get:{operationId:'historicalDownloadChoices',security:[{session:[]}],responses:{'200':{description:'Verified stock selections and latest finalized dates from local evidence'},'401':{description:'Authentication required'}}}},
     '/api/v1/history/downloads/preview':{post:{operationId:'previewHistoricalDownload',security:[{session:[]}],responses:{'201':{description:'Read-only local coverage preview with optional five-minute signed submission authorization'},'401':{description:'Authentication required'},'403':{description:'CSRF or source permission denied'},'404':{description:'Universe not found'},'422':{description:'Invalid preview request'}}}},
     '/api/v1/data/health':{get:{operationId:'universeDataHealth',security:[{session:[]}],responses:{'200':{description:'Stored universe and supported listings, separate scan/job progress, G01-G10 gates and sync checkpoints'}}}},
     '/api/v1/broker/angel-one/config':{put:{operationId:'saveBrokerConfiguration',security:[{session:[]}],responses:{'200':{description:'Idempotent encrypted configuration revision; HTTPS, CSRF and Idempotency-Key required'},'403':{description:'HTTPS or CSRF required'},'409':{description:'Conflicting idempotency receipt'},'422':{description:'Invalid configuration'},'503':{description:'Protected encryption key unavailable'}}}},
@@ -369,6 +374,11 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('data')
   class DataHealthController {
+    @Get('operations') async operations(@Req() request:AuthRequest){
+      const [metrics,host,workerQueue]=await Promise.all([readOperations(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY']),operationHostMetrics(process.env),workerQueueMetrics(process.env)]);
+      const target=Number(process.env['VCP_SCAN_PUBLICATION_SLA_SECONDS']);
+      return {...metrics,...host,workerQueue,scanSla:target>0&&Number.isFinite(target)&&metrics.scan?{targetSeconds:target,state:metrics.scan.publicationLagSeconds<=target?'MET':'MISSED'}:null};
+    }
     @Get('health') health(){return readDataHealth(db)}
   }
   @Controller('history/downloads')
@@ -376,6 +386,22 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Get('choices') choices(@Req() request:AuthRequest){return readDownloadChoices(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'])}
     async mapped<T>(work:()=>Promise<T>){try{return await work()}catch(error){if(error instanceof HttpException)throw error;if(error instanceof Error){if(error.message==='DOWNLOAD_RUN_NOT_FOUND')throw new NotFoundException('Own download not found');if(error.message==='DOWNLOAD_IDEMPOTENCY_CONFLICT'||error.message==='DOWNLOAD_PREVIEW_CHANGED')throw new HttpException(error.message,409);if(error.message.startsWith('DOWNLOAD_')||error.message.startsWith('INVALID_DOWNLOAD_'))throw new HttpException(error.message,422)}throw error}}
     @Get() list(@Req() request:AuthRequest,@Query('cursor') cursor?:string){return this.mapped(()=>listManualDownloads(db,request.ownerId!,cursor))}
+    @Get(':id/candles/:listing') async candles(@Req() request:AuthRequest,@Param('id') id:string,@Param('listing') listing:string){
+      const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+      if(!uuid.test(id)||!uuid.test(listing))throw new NotFoundException('Download listing not found');
+      const [item]=await db.$queryRaw<{symbol:string;from:string;to:string}[]>`
+        SELECT stock->>'symbol' AS symbol,r.evidence->'request'->>'fromDate' AS "from",r.evidence->'request'->>'toDate' AS "to"
+        FROM "ManualDownloadRun" r CROSS JOIN LATERAL jsonb_array_elements(r.evidence->'items') stock
+        WHERE r.id=${id}::uuid AND r."ownerId"=${request.ownerId}::uuid AND stock->>'listingId'=${listing} LIMIT 1`;
+      if(!item)throw new NotFoundException('Download listing not found');
+      const at=new Date();
+      const bars=await db.rawDailyCandle.findMany({where:{listingId:listing,provider:'ANGEL_ONE',session:{gte:new Date(item.from),lte:new Date(item.to)},finalizedAt:{lte:at},receivedAt:{lte:at}},select:{session:true,close:true,revisionId:true},orderBy:{session:'asc'}});
+      if(bars.length){
+        try{await assertCandlePermissions(db,bars.map(bar=>bar.revisionId),['DISPLAY'])}
+        catch(error){if(error instanceof Error&&permissionErrors.includes(error.message))throw new HttpException('Candle display permission unavailable',403);throw error}
+      }
+      return {symbol:item.symbol,bars:bars.map(bar=>({session:bar.session.toISOString().slice(0,10),close:bar.close.toString()}))};
+    }
     @Get(':id') detail(@Req() request:AuthRequest,@Param('id') id:string){return this.mapped(async()=>({...await readManualDownload(db,request.ownerId!,id),retryEnabled:process.env['VCP_ENABLE_MANUAL_DOWNLOADS']==='true'}))}
     @Post() async submit(@Req() request:AuthRequest,@Res({passthrough:true}) response:AuthResponse){
       if(process.env['VCP_ENABLE_MANUAL_DOWNLOADS']!=='true')throw new HttpException('MANUAL_DOWNLOADS_DISABLED',503);

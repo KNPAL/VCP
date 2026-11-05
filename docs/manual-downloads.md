@@ -25,7 +25,7 @@ All routes require the owner session. Writes also require CSRF. Submission, canc
 - `POST /api/v1/history/downloads/{runId}/cancel` with `{}`: stops future claims; a live request can finish safely. Committed candles remain stored.
 - `POST /api/v1/history/downloads/{runId}/retry` with `{}`: requires valid current context and authentication, and respects an outstanding quota delay. Only incomplete requested sessions are prepared.
 
-The preview screen retains the same submission key after a failed response. Job pages poll every five seconds, show UTC evidence formatted in IST, and expose eligible cancel/retry controls. The API remains authoritative for every action. `retryEnabled` indicates the API feature flag, not guaranteed authentication or quota availability. `dispatchAvailable: false` in the legacy read projection is not a worker heartbeat and should not be used as an operational health signal.
+The preview screen retains the same submission key after a failed response. Job pages poll every ten seconds while online, show UTC evidence formatted in IST, and ask for confirmation before cancelling and preserve the last received progress while offline. The API remains authoritative for every action. `retryEnabled` indicates the API feature flag, not guaranteed authentication or quota availability. `dispatchAvailable: false` in the legacy read projection is not a worker heartbeat and should not be used as an operational health signal.
 
 Changing saved broker configuration pauses queued/running jobs and blocks further claims. Their pinned configuration revision cannot be replaced by retrying; create a fresh preview for the new configuration. An already active provider request may finish its checkpoint safely.
 

@@ -7,7 +7,7 @@ import {writeFile,unlink} from 'node:fs/promises';
 import {createApp} from '../apps/api/dist/app.js';
 import {processBackfillWindow} from '../apps/worker/dist/backfill.js';
 import {randomUUID,randomInt,randomBytes,createHash} from 'node:crypto';
-import {PrismaClient,saveBrokerConfiguration,ownerBrokerBinding,recordHistoricalProbe,persistInstrumentSnapshot,persistUniverse,persistSource,ingestCandles,readDownloadPreview,validateDownloadPreviewRequest,verifyDownloadPreview,signDownloadPreview,retryManualDownload,failSyncWindow,cancelManualDownload,reconcileManualDownloads,claimSyncWindow,commitSyncWindow,acceptManualDownload,prepareManualDownload,readManualDownload,installBrokerSession,persistReadiness} from '../packages/database/dist/index.js';
+import {PrismaClient,listManualDownloads,readDownloadChoices,saveBrokerConfiguration,ownerBrokerBinding,recordHistoricalProbe,persistInstrumentSnapshot,persistUniverse,persistSource,ingestCandles,readDownloadPreview,validateDownloadPreviewRequest,verifyDownloadPreview,signDownloadPreview,retryManualDownload,failSyncWindow,cancelManualDownload,reconcileManualDownloads,claimSyncWindow,commitSyncWindow,acceptManualDownload,prepareManualDownload,readManualDownload,installBrokerSession,persistReadiness} from '../packages/database/dist/index.js';
 import {brokerAccountKey,HISTORICAL_ENDPOINT} from '../packages/market-data/dist/index.js';
 test('preview authorization, acceptance and worker preparation preserve ownership, revisions and checkpoints',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');const db=new PrismaClient();
@@ -20,6 +20,9 @@ test('preview authorization, acceptance and worker preparation preserve ownershi
   const bars=calendar.filter((_,i)=>i!==1).map(d=>({listingId,provider:'ANGEL_ONE',session:d.date,open:'10',high:'11',low:'9',close:'10',volume:'100',receivedAt:knownAt,finalizedAt:d.finalizedAt,zeroVolumeVerified:false}));
   const request={universeId:'NIFTY_500',listingIds:[listingId],interval:'1d',fromDate:'2025-01-01',toDate:'2025-01-03',mode:'MISSING_ONLY'};
   await ingestCandles(db,{bars,calendar,from:request.fromDate,to:request.toDate,asOf:knownAt,listingId,provider:'ANGEL_ONE'});
+  const choices=await readDownloadChoices(db,owner);
+  assert.equal(choices.state,'KNOWN');
+  assert.equal(choices.items.find(item=>item.listingId===listingId)?.finalizedThrough,request.toDate);
   const counts=()=>db.$queryRaw`SELECT (SELECT count(*) FROM "HistoricalSyncRun")::text AS runs,(SELECT count(*) FROM "RawDailyCandle")::text AS candles`;
   const before=await counts(),preview=await readDownloadPreview(db,owner,request);assert.equal(preview.items.length,1);assert.equal(preview.alreadyStoredCount,2);assert.equal(preview.missingCount,1);assert.equal(preview.executable,false);assert.equal(Date.parse(preview.expiresAt)-Date.parse(preview.checkedAt),300000);assert.match(preview.previewId,/^[a-f0-9]{64}$/);assert.ok(preview.warnings.includes('BROKER_HISTORY_UNAVAILABLE_LOCAL_PREVIEW_ONLY'));assert.ok(!JSON.stringify(preview).includes('12345'));assert.deepEqual(await counts(),before);
   const earlierGap=await readDownloadPreview(db,owner,{...request,toDate:'2025-01-02'});assert.equal(earlierGap.items[0].state,'KNOWN');assert.deepEqual(earlierGap.items[0].rangesToFetch.flatMap(w=>w.sessions),['2025-01-02']);await assert.rejects(readDownloadPreview(db,owner,{...request,toDate:'2025-01-04'}),/SESSION_NOT_PROVIDER_FINALIZED/);
@@ -71,6 +74,12 @@ test('preview authorization, acceptance and worker preparation preserve ownershi
   assert.equal((await processBackfillWindow(db,child[0].syncRunId,gateway)).state,'IDLE');assert.equal(fetched,1);
   const completed=await db.$queryRaw`SELECT "state" FROM "HistoricalSyncWindow" WHERE "runId"=${child[0].syncRunId}::uuid`;assert.equal(completed[0].state,'COMPLETE');
   await reconcileManualDownloads(db);const finishedRun=await readManualDownload(db,owner,accepted.runId);assert.equal(finishedRun.status,'COMPLETED');assert.equal(finishedRun.candleChanges.newCandles,'1');assert.equal(finishedRun.progress.instruments[0].storedCandles,3);assert.deepEqual(finishedRun.progress.instruments[0].remainingCoverageRanges,[]);assert.deepEqual(finishedRun.progress.instruments[0].remainingRequestRanges,[]);assert.equal(finishedRun.progress.instruments[0].latestSuccessfulSession,'2025-01-02');assert.equal(finishedRun.windowCounts[0].state,'COMPLETE');assert.equal((await cancelManualDownload(db,owner,accepted.runId,randomUUID())).status,'COMPLETED');
+  const summary=(await listManualDownloads(db,owner)).items.find(item=>item.runId===accepted.runId);
+  assert.equal(summary.completedWindows,1);
+  assert.equal(summary.totalWindows,1);
+  assert.ok(summary.completedAt);
+  assert.equal(finishedRun.progress.fetchedCandles,1);
+
   const resumePreview=await readDownloadPreview(db,owner,{...request,mode:'RECONCILE'},accountKey),pausedRun=await acceptManualDownload(db,owner,{previewToken:signDownloadPreview(resumePreview,owner,authorizationKey),mode:'RECONCILE',idempotencyKey:randomUUID()},authorizationKey,accountKey);
   await db.brokerCircuit.update({where:{accountKey},data:{open:true}});let paused;for(let i=0;i<100;i++){const next=await prepareManualDownload(db);if(next.runId===pausedRun.runId){paused=next;break}if(next.state==='IDLE')break}assert.equal(paused?.state,'PAUSED_AUTH');const pausedChildren=await db.$queryRaw`SELECT count(*)::integer AS count FROM "ManualDownloadChild" WHERE "manualRunId"=${pausedRun.runId}::uuid`;assert.equal(pausedChildren[0].count,0);
   assert.equal((await cancelManualDownload(db,owner,pausedRun.runId,randomUUID())).status,'CANCELLED');
@@ -105,6 +114,11 @@ test('preview authorization, acceptance and worker preparation preserve ownershi
    publicApp=await createApp({db,origin,secure:false,logSink:()=>{}});await publicApp.listen(0,'127.0.0.1');const base=await publicApp.getUrl(),headers={origin,'content-type':'application/json',cookie:'vcp_session='+sessionToken,'x-csrf-token':csrf};
    const previewResponse=await fetch(base+'/api/v1/history/downloads/preview',{method:'POST',headers,body:JSON.stringify({...request,mode:'RECONCILE'})});assert.equal(previewResponse.status,201);const publicPreview=await previewResponse.json();assert.equal(publicPreview.submissionEnabled,true);assert.equal(publicPreview.previewId,publicPreview.previewToken);
    const postHeaders={...headers,'idempotency-key':randomUUID()},body=JSON.stringify({previewId:publicPreview.previewId,mode:'RECONCILE'}),post=()=>fetch(base+'/api/v1/history/downloads',{method:'POST',headers:postHeaders,body});const first=await post();assert.equal(first.status,202);const created=await first.json(),second=await post();assert.equal(second.status,202);assert.equal((await second.json()).runId,created.runId);
+   const candleUrl=base+created.statusUrl+'/candles/'+listingId;
+   assert.equal((await fetch(candleUrl)).status,401);
+   assert.equal((await fetch(base+created.statusUrl+'/candles/'+randomUUID(),{headers})).status,404);
+   const prices=await fetch(candleUrl,{headers});assert.equal(prices.status,200);
+   const storedPrices=await prices.json();assert.equal(storedPrices.symbol,row.symbol);assert.equal(storedPrices.bars.at(-1).session,request.toDate);
    assert.equal((await fetch(base+'/api/v1/history/downloads')).status,401);const list=await fetch(base+'/api/v1/history/downloads',{headers});assert.equal(list.status,200);assert.ok((await list.json()).items.some(r=>r.runId===created.runId));const detail=await fetch(base+created.statusUrl,{headers});assert.equal(detail.status,200);assert.equal((await detail.json()).status,'QUEUED');
    assert.equal((await fetch(base+created.statusUrl+'/cancel',{method:'POST',headers:{origin,'content-type':'application/json',cookie:headers.cookie,'idempotency-key':randomUUID()},body:'{}'})).status,403);
    const cancelled=await fetch(base+created.statusUrl+'/cancel',{method:'POST',headers:{...headers,'idempotency-key':randomUUID()},body:'{}'});assert.equal(cancelled.status,201);assert.equal((await cancelled.json()).status,'CANCELLED');

@@ -87,3 +87,4 @@ export * from './broker-keys.js';
 export * from './broker-stream-binding.js';
 export * from './surveillance.js';
 export {assertPositionCandleDisplay,assertDailyExecutionDisplay} from './position-permissions.js';
+export {readOperations} from './operations.js';

@@ -48,7 +48,32 @@ async function readManualDownloadSnapshot(db:Pick<PrismaClient,'$queryRaw'>,owne
 export async function listManualDownloads(db:PrismaClient,ownerId:string,cursor?:string){
  let before:{createdAt:string;id:string}|null=null;
  if(cursor){if(cursor.length>1000)throw new Error('INVALID_DOWNLOAD_CURSOR');try{before=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'));if(!before||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(before.id)||!Number.isFinite(Date.parse(before.createdAt)))throw new Error()}catch{throw new Error('INVALID_DOWNLOAD_CURSOR')}}
- const rows=await db.$queryRaw<{id:string;state:string;createdAt:Date;evidence:{request:unknown}}[]>`SELECT "id","state","createdAt","evidence" FROM "ManualDownloadRun" WHERE "ownerId"=${ownerId}::uuid AND (${before?.id??null}::uuid IS NULL OR ("createdAt","id")<(${before?new Date(before.createdAt):null}::timestamptz,${before?.id??null}::uuid)) ORDER BY "createdAt" DESC,"id" DESC LIMIT 26`;
- const items=rows.slice(0,25).map(r=>({runId:r.id,status:r.state,createdAt:r.createdAt.toISOString(),request:r.evidence.request})),last=items.at(-1);
+ const rows=await db.$queryRaw<{
+  id:string;state:string;createdAt:Date;request:unknown;updatedAt:Date;completedAt:Date|null;
+  completedWindows:number;totalWindows:number;failedWindows:number;retriedWindows:number;
+ }[]>`
+  WITH page AS (
+   SELECT "id","state","createdAt","evidence"->'request' AS request
+   FROM "ManualDownloadRun"
+   WHERE "ownerId"=${ownerId}::uuid AND (${before?.id??null}::uuid IS NULL OR ("createdAt","id")<(${before?new Date(before.createdAt):null}::timestamptz,${before?.id??null}::uuid))
+   ORDER BY "createdAt" DESC,"id" DESC LIMIT 26
+  )
+  SELECT p.*,greatest(p."createdAt",e.latest,w.latest) AS "updatedAt",e.completed AS "completedAt",
+   w.success AS "completedWindows",w.total AS "totalWindows",w.failed AS "failedWindows",w.retried AS "retriedWindows"
+  FROM page p
+  CROSS JOIN LATERAL (
+   SELECT max("createdAt") AS latest,max("createdAt") FILTER (WHERE "state"='COMPLETED') AS completed
+   FROM "ManualDownloadEvent" WHERE "runId"=p.id
+  ) e
+  CROSS JOIN LATERAL (
+   SELECT max(win."updatedAt") AS latest,
+    count(*) FILTER (WHERE win.state='COMPLETE')::int AS success,
+    count(*) FILTER (WHERE win.state<>'SPLIT')::int AS total,
+    count(*) FILTER (WHERE win.state='FAILED')::int AS failed,
+    count(*) FILTER (WHERE win.attempts>1 OR c.generation>0)::int AS retried
+   FROM "ManualDownloadChild" c JOIN "HistoricalSyncWindow" win ON win."runId"=c."syncRunId"
+   WHERE c."manualRunId"=p.id
+  ) w ORDER BY p."createdAt" DESC,p.id DESC`;
+ const items=rows.slice(0,25).map(({id,state,...item})=>({...item,runId:id,status:state,createdAt:item.createdAt.toISOString(),updatedAt:item.updatedAt.toISOString(),completedAt:item.completedAt?.toISOString()??null})),last=items.at(-1);
  return {items,nextCursor:rows.length>25&&last?Buffer.from(JSON.stringify({createdAt:last.createdAt,id:last.runId})).toString('base64url'):null};
 }
