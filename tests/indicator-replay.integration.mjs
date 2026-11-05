@@ -1,3 +1,4 @@
+import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
@@ -22,7 +23,7 @@ test('stored correction replay is atomic, repeatable and equal to full recomputa
    const rows=await db.$queryRaw`SELECT "session","revisionId" FROM "RawDailyCandle" WHERE "listingId"=${listingId}::uuid ORDER BY "session"`;
    return bars.map(b=>({...b,revisionId:rows.find(r=>r.session.toISOString().slice(0,10)===b.session).revisionId}));
   };
-  const source={id:'synthetic-actions',listingId,knownAt:asOf,verified:true,sourceReference:'synthetic-no-actions',coverageFrom:dates[0],coverageThrough:dates.at(-1),actions:[]};
+  const source={sourceSnapshotId:await actionPermission(db),id:'synthetic-actions',listingId,knownAt:asOf,verified:true,sourceReference:'synthetic-no-actions',coverageFrom:dates[0],coverageThrough:dates.at(-1),actions:[]};
   const original=await persistAdjustment(db,{listingId,asOf,scaleSession:dates.at(-1),source,raw:await raw()});
   await receiveCandleChange(db,first.changes[0]);
   const initial=await replayStoredIndicators(db,{eventId:first.changes[0],adjustmentId:original.revision,calendarHash:first.calendarHash});

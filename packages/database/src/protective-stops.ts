@@ -39,7 +39,7 @@ export async function actionScale(tx:Prisma.TransactionClient,listingId:string,a
  const row=rows[0],source=row?.evidence.source,date=exchangeDate(asOf);
  if(!row||row.state!=='KNOWN'||!source||!source.verified||!source.sourceReference||source.coverageFrom>date||source.coverageThrough<date||utcInstant(source.knownAt)>utcInstant(asOf))return null;
  const actions=source.actions.filter(a=>exchangeDate(a.effectiveAt)<=date).sort((a,b)=>a.id.localeCompare(b.id));
- if(actions.some(a=>!a.verified||!a.sourceReference||utcInstant(a.knownAt)>utcInstant(asOf)||utcInstant(a.effectiveAt)>utcInstant(asOf)))return null;
+ if(actions.some(a=>!a.rawBasis||!a.verified||!a.sourceReference||utcInstant(a.knownAt)>utcInstant(asOf)||utcInstant(a.effectiveAt)>utcInstant(asOf)))return null;
  return hash(actions);
 }
 export async function evaluatePositionStop(db:PrismaClient,ownerId:string,isin:string,quote:ProtectiveQuote|null){

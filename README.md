@@ -2,7 +2,7 @@
 
 Indian-equities research and manual-trade tracking application implementing `ST_VCP_4_0`, using Next.js, NestJS, PostgreSQL, Redis and BullMQ. **It does not place broker orders.**
 
-Development is ongoing. You can run the app, sign in and use implemented portfolio/data services, but some screens and trading workflows remain incomplete. Empty data and `UNKNOWN` states are expected until verified data is supplied. See [implementation status](docs/implementation-status.md) and [Jira requirements](docs/jira-requirements.json). No Figma account is needed.
+The local setup runs the web application, API, worker, PostgreSQL and Redis. You can sign in and open the research screens with an empty database. Market data, signals and portfolio readiness depend on verified inputs, so a fresh installation shows empty results or `UNKNOWN`. See [implementation status](docs/implementation-status.md) and [Jira requirements](docs/jira-requirements.json). No Figma account is needed.
 
 ## Prerequisites
 
@@ -295,3 +295,11 @@ Saving quote-bearing portfolio risk snapshots and entry plans requires LIVE_QUOT
 Open **Operations** after signing in to inspect G01–G10, hourly broker errors, historical queue delays, the last finalized session, scan coverage, held-position feed age and outstanding SELL deliveries. The page refreshes its metrics every 30 seconds. A failed or unknown gate blocks the readiness result.
 
 The API reads optional host settings. Set `VCP_MONITORED_VOLUME` to the mounted volume to measure its free space. The default warning threshold is 10 percent; override with `VCP_DISK_WARNING_PERCENT`. Set `VCP_SCAN_PUBLICATION_SLA_SECONDS` to your publication target. Point `VCP_BACKUP_STATUS_FILE` at a receipt written by your backup process, containing `{"state":"SUCCESS","completedAt":"2026-11-05T03:00:00Z"}` or a recorded `FAILED` result. Missing evidence appears as UNKNOWN. Receipt times identify the last observed backup result.
+
+## Alert delivery
+
+Open **Alert inbox** after signing in. Apply the database migrations and run the API, web app and worker. In-app delivery is enabled by default. To receive desktop alerts while the workspace is open, enable browser notifications in the inbox and grant permission in the browser. Review the source time and quantity before acknowledging or dismissing a signal.
+
+Email is optional. Set `VCP_ALERT_EMAIL_OWNER` to the application's owner UUID in both the API and worker environments. In the worker, set `VCP_ALERT_EMAIL_TO` to the owner's address, `VCP_ALERT_EMAIL_FROM` to a verified Resend sender, and `VCP_ALERT_EMAIL_KEY_FILE` to a server-readable secret file with a sending key. Container deployments must mount that file into the worker. Restart the affected services, then opt in from the inbox. The email timestamp records provider acceptance. Delivery attempts use a stable event key and stop after four attempts. See [Resend idempotency keys](https://resend.com/docs/dashboard/emails/idempotency-keys).
+
+For G04, the licensed NIFTY 500 price-index reference, calendar and independent review must be available before enabling trade readiness. See [benchmark verification](docs/registry-readiness.md#g04-benchmark-verification) for the import command and evidence fields.

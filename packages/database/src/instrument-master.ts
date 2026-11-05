@@ -1,3 +1,4 @@
+import {currentSource,lockSourceScope} from './source-authority.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {normalizeInstrumentMaster,type MasterImport} from '@vcp/market-data';
@@ -7,6 +8,9 @@ const hash=(value:unknown)=>createHash('sha256').update(canonical(value)).digest
 export async function importInstrumentMaster(db:PrismaClient,input:MasterImport){
  const asOf=new Date().toISOString(),normalized=normalizeInstrumentMaster(input,asOf),id=hash(input);
  return db.$transaction(async tx=>{
+  await lockSourceScope(tx,input.source);
+  const registered=await currentSource(tx,input.source,new Date().toISOString());
+  if(!registered||registered.id!==hash(input.source))throw new Error('MASTER_SOURCE_NOT_PERMITTED');
   const prior=await tx.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "InstrumentMasterImport" WHERE "id"=${id}`;if(prior[0])return prior[0].evidence;
   const snapshot=await persistInstrumentSnapshotTransaction(tx,{knownAt:input.knownAt,sourceReference:id,rows:normalized.rows});
   const evidence={id,asOf,source:input.source,tickDivisor:input.tickDivisor,inputHash:id,snapshotId:snapshot.id,status:normalized.status,counts:normalized.counts,report:normalized.report};

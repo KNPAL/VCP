@@ -1,3 +1,4 @@
+import {lockProviderAuthority} from './source-authority.js';
 import {Prisma,PrismaClient} from '@prisma/client';
 import {randomUUID,createHash} from 'node:crypto';
 import {inspectCandleBatch,candleHash,verifiedCalendar} from '@vcp/market-data';
@@ -43,6 +44,7 @@ export async function ingestCandles(db:PrismaClient,input:ImportInput,onCommit?:
   const report={state:inspected.state,from:input.from,to:input.to,calendarHash,expectedCount:inspected.expectedCount,actualResponseCount:inspected.actualCount,missing:inspected.missing,calendarReasons:calendar.reasons,inserted,revised,unchanged,quarantined:inspected.quarantined.length,watermark:watermark?.toISOString().slice(0,10)??null,changes};
   const evidence=canonical(report);await tx.$executeRaw`INSERT INTO "CandleCoverage" ("listingId","provider","fromSession","watermark","checkedAt","evidence") VALUES (${input.listingId}::uuid,${input.provider},${new Date(from)},${watermark},${checkedAt},${evidence}::jsonb) ON CONFLICT ("listingId","provider") DO UPDATE SET "fromSession"=EXCLUDED."fromSession","watermark"=EXCLUDED."watermark","checkedAt"=EXCLUDED."checkedAt","evidence"=EXCLUDED."evidence"`;
   if(onCommit)await onCommit(tx,report);
+  await lockProviderAuthority(tx,'DAILY_CANDLES',providers,'READ');
   await storagePermission();
   return report;
  },{isolationLevel:Prisma.TransactionIsolationLevel.Serializable,timeout:60000})}catch(error){

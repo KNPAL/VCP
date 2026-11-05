@@ -5,6 +5,7 @@ KAN-41 imports an already acquired SmartAPI JSON master with independently revie
 Apply migration 63, build market-data and database, and provide DATABASE_URL as described in the root README. Run:
 
 ```powershell
+node scripts/source-registry.mjs import <reviewed-source-metadata.json>
 node scripts/instrument-master.mjs import <reviewed-master-envelope.json>
 ```
 
@@ -27,3 +28,5 @@ Verification uses only synthetic fixtures in vcp_test:
 node --test tests/instrument-master.test.mjs tests/instruments.test.mjs
 node scripts/database-command.mjs test instrument-master
 ```
+
+The master envelope must contain the same source object as the independently reviewed registry metadata. Imports and retries lock that dataset/provider/endpoint scope, then verify the current registry revision before accessing saved imports or writing listings. A newer denial, missing authority or two conflicting latest revisions blocks the import.

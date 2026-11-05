@@ -38,3 +38,4 @@ Authenticated read endpoints:
 
 No credentials or synthetic data are required to exercise the tests. `node scripts/database-command.mjs test` runs against `vcp_test`, including queue loss, immutable revisions, missing coverage, complete RS coverage and repeated delivery. Production source access and verification remain deployment prerequisites.
 
+The current EOD path also rechecks the pinned benchmark's actual finalized, calendar-aligned series against the 252-session minimum. A nominal G04 PASS with only 251 sessions still produces an unknown regime and no benchmark revision in the research plan. A production verification requires an independently identified NIFTY 500 **price** index and documented source rights.

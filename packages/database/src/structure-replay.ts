@@ -6,7 +6,7 @@ import {verifiedCalendar} from '@vcp/market-data';
 import type {Series} from '@vcp/indicators';
 import {canonical} from './indicators.js';
 import type {StrengthReplayResult} from './rs-replay.js';
-import {assertCandlePermissions} from './data-permissions.js';
+import {assertActionPermissions,assertCandlePermissions} from './data-permissions.js';
 export interface StructureReplayInput {indicatorReceiptId:string;instrumentSnapshotId:string;profileId:string;strengthReplayId?:string}
 export async function replayStoredStructure(db:PrismaClient,input:StructureReplayInput){
  if(!Object.values(input).every(id=>typeof id==='string'&&/^[0-9a-f]{64}$/.test(id)))throw new Error('INVALID_STRUCTURE_REPLAY_IDENTITY');
@@ -24,15 +24,18 @@ export async function replayStoredStructure(db:PrismaClient,input:StructureRepla
  const calendar=verifiedCalendar(calendars[0]?.evidence??null,r.from,r.to,r.asOf);
  const adjusted=snapshots[0]?.evidence.result.bars;
  if(!adjusted||calendar.state!=='KNOWN'||canonical(calendar.sessions.map(d=>d.date))!==canonical(adjusted.map(b=>b.session)))throw new Error('REPLAY_CALENDAR_INCOMPLETE');
+ const contributions=[r.adjustmentId];
  const revisionIds=adjusted.map(bar=>bar.rawRevisionId);
  if(input.strengthReplayId){
   const strength=await db.$queryRaw<{evidence:StrengthReplayResult}[]>`SELECT "evidence" FROM "RelativeStrengthReplay" WHERE "id"=${input.strengthReplayId}`;
   if(!strength[0])throw new Error('RS_REPLAY_CONTEXT_MISMATCH');
   const adjustmentIds=[...new Set([strength[0].evidence.input.benchmarkAdjustmentId,...Object.values(strength[0].evidence.input.memberAdjustmentIds)])];
+  contributions.push(...adjustmentIds);
   const sources=await db.$queryRaw<{evidence:{result:{bars:{rawRevisionId:string}[]}}}[]>`SELECT "evidence" FROM "AdjustmentSnapshot" WHERE "id"=ANY(${adjustmentIds}::text[])`;
   if(sources.length!==adjustmentIds.length)throw new Error('SOURCE_LINEAGE_MISSING');
   revisionIds.push(...sources.flatMap(row=>row.evidence.result.bars.map(bar=>bar.rawRevisionId)));
  }
+ await assertActionPermissions(db,contributions,['DERIVE','STORE']);
  const permission=await assertCandlePermissions(db,revisionIds,['DERIVE','STORE']);
  if(prior[0])return prior[0].evidence;
  const ticks=adjusted.map(bar=>{
@@ -52,6 +55,7 @@ export async function replayStoredStructure(db:PrismaClient,input:StructureRepla
  const bars=adjusted.map((bar,i)=>({...bar,revision:bar.rawRevisionId,endedAt:calendar.sessions[i]!.closesAt!}));
  const sessions=replayStructure({listingId:r.listingId,series:{priceScale:'ADJUSTED',bars,sessions:bars.map(b=>b.session),asOf:r.asOf,dataRevision:id},tick:ticks[0]!,adjustmentRevision:r.adjustmentId,configHash:profile.id,decidedAt,strength});
  const complete=sessions.length>=252&&sessions.slice(250).every(s=>s.rs.state==='KNOWN');
+ await assertActionPermissions(db,contributions,['DERIVE','STORE']);
  const current=await assertCandlePermissions(db,revisionIds,['DERIVE','STORE']);if(canonical(current.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
  const result={id,...input,listingId:r.listingId,mode:'RETROSPECTIVE_CORRECTION',state:complete?'REPLAYED':'PARTIAL',reasons:complete?[]:['HISTORICAL_RS_UNAVAILABLE'],decidedAt,dataRevision:id,adjustmentId:r.adjustmentId,calendarHash:r.calendarHash,sessions,remainingStages:complete?['SCANS']:['RS_CONTEXT','SCANS']};
  await db.$executeRaw`INSERT INTO "StructureReplayResult" ("id","indicatorReceiptId","instrumentSnapshotId","profileId","strengthReplayId","evidence") VALUES (${id},${input.indicatorReceiptId},${input.instrumentSnapshotId},${input.profileId},${input.strengthReplayId??null},${canonical(result)}::jsonb) ON CONFLICT DO NOTHING`;

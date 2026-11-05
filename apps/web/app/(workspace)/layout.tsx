@@ -1,3 +1,4 @@
+import {BrowserAlerts} from '../../components/alert-inbox';
 import {BrokerHealthProvider,BrokerHealthIndicator} from '../../components/broker-health';
 import {cookies} from 'next/headers';
 import {redirect} from 'next/navigation';
@@ -11,6 +12,6 @@ export default async function Workspace({children}:{children:ReactNode}){
  if(response.status===401||response.status===403)redirect('/login');
  if(!response.ok)throw new Error('Session service unavailable');
  const {owner}=await response.json();
- return <BrokerHealthProvider><div className="shell"><a className="skip" href="#main">Skip to content</a><aside className="sidebar"><div className="brand"><span className="mark">↗</span><span>Study Trade<small>VCP WORKSPACE</small></span></div><div className="navgroup">YOUR WORKSPACE</div><Navigation/><div className="sidefoot">ST_VCP_4_0<br/>Research. Plan. Record.<br/>Manual execution only.</div></aside><div><header className="topbar"><span className="mobilebrand">Study Trade</span><BrokerHealthIndicator/><div className="topright"><LiveUpdates/><span>{owner.login}</span><Logout/></div></header><main id="main" className="content">{children}</main></div></div></BrokerHealthProvider>;
+ return <BrokerHealthProvider><div className="shell"><a className="skip" href="#main">Skip to content</a><aside className="sidebar"><div className="brand"><span className="mark">↗</span><span>Study Trade<small>VCP WORKSPACE</small></span></div><div className="navgroup">YOUR WORKSPACE</div><Navigation/><div className="sidefoot">ST_VCP_4_0<br/>Research. Plan. Record.<br/>Manual execution only.</div></aside><div><header className="topbar"><span className="mobilebrand">Study Trade</span><BrokerHealthIndicator/><div className="topright"><BrowserAlerts owner={owner.id}/><LiveUpdates/><span>{owner.login}</span><Logout/></div></header><main id="main" className="content">{children}</main></div></div></BrokerHealthProvider>;
 }
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {adjustCandles} from '../packages/market-data/dist/index.js';
 import {vdu,adv20} from '../packages/indicators/dist/index.js';
 const listingId='00000000-0000-4000-8000-000000000001';
-const action={id:'split-1',listingId,kind:'SPLIT',effectiveAt:'2026-10-16T03:45:00Z',knownAt:'2026-10-15T12:00:00Z',sharesBefore:'1',sharesAfter:'2',verified:true,sourceReference:'synthetic-exchange-notice'};
+const action={id:'split-1',listingId,kind:'SPLIT',effectiveAt:'2026-10-16T03:45:00Z',knownAt:'2026-10-15T12:00:00Z',sharesBefore:'1',sharesAfter:'2',verified:true,sourceReference:'synthetic-exchange-notice',rawBasis:{exchange:'NSE',sourceReference:'exchange-bhavcopy',listingId,session:'2026-10-15',knownAt:'2026-10-15T12:00:00Z',close:'104',volume:'1001'}};
 const source={id:'source-1',listingId,knownAt:'2026-10-16T11:00:00Z',verified:true,sourceReference:'synthetic-register',coverageFrom:'2026-10-01',coverageThrough:'2026-10-16',actions:[action]};
 const raw=['2026-10-15','2026-10-16'].map((session,i)=>({listingId,session,provider:'synthetic',open:i?'50':'100',high:i?'55':'110',low:i?'49':'98',close:i?'52':'104',volume:i?'2001':'1001',receivedAt:'2026-10-16T12:00:00Z',finalizedAt:session+'T10:30:00Z',zeroVolumeVerified:false,revisionId:'raw-'+i}));
 const input={listingId,asOf:'2026-10-16T12:00:00Z',scaleSession:'2026-10-16',source,raw};
@@ -44,4 +44,28 @@ test('adjusted fractional volume works in indicator ratios while raw turnover re
  const sessions=Array.from({length:20},(_,i)=>'2026-09-'+String(i+1).padStart(2,'0'));
  const series={priceScale:'ADJUSTED',asOf:input.asOf,dataRevision:'adjusted-fixture',sessions,bars:sessions.map(session=>({session,open:'100',high:'110',low:'99',close:'105',volume:'1501.50000000',revision:'a1',finalizedAt:session+'T10:30:00Z',adjustmentVerified:true}))};
  assert.equal(vdu(series).value,'1.00000000');assert.equal(adv20({...series,priceScale:'RAW'}).state,'UNKNOWN');
+});
+
+test('missing independent record, gapped prior session and already-adjusted provider values quarantine the series',()=>{
+ for(const rawBasis of [undefined,{...action.rawBasis,session:'2026-10-14'},{...action.rawBasis,close:'52'},{...action.rawBasis,volume:'2002'}]){
+  const result=adjustCandles({...input,source:{...source,actions:[{...action,rawBasis}]}});
+  assert.equal(result.state,'UNKNOWN');assert.equal(result.signalsAllowed,false);assert.deepEqual(result.bars,[]);
+  assert.match(result.reasons.join(','),/CORPORATE_ACTION_RAW_BASIS/);
+ }
+});
+test('a split within the golden VCP base preserves its verified legs and pivot',async()=>{
+ const {goldenSeries}=await import('../fixtures/vcp-golden.mjs');
+ const {detect}=await import('../packages/vcp/dist/index.js');
+ const baseline=goldenSeries(),boundary=286,exDate=baseline.sessions[boundary],scaleSession=baseline.sessions.at(-1);
+ const bars=baseline.bars.map((bar,i)=>{
+  const prices=Object.fromEntries(['open','high','low','close'].map(k=>[k,(Number(bar[k])*(i<boundary?2:1)).toFixed(6)]));
+  return {...bar,...prices,volume:String(Number(bar.volume)/(i<boundary?2:1)),listingId,provider:'fixture-broker',receivedAt:bar.finalizedAt,revisionId:bar.revision,zeroVolumeVerified:false};
+ });
+ const previous=bars[boundary-1],split={...action,effectiveAt:exDate+'T03:45:00Z',knownAt:previous.finalizedAt,
+  rawBasis:{exchange:'NSE',sourceReference:'synthetic-exchange-tape',listingId,knownAt:previous.finalizedAt,session:previous.session,close:previous.close,volume:previous.volume}};
+ const adjusted=adjustCandles({listingId,raw:bars,scaleSession,asOf:baseline.asOf,source:{...source,knownAt:baseline.asOf,coverageFrom:baseline.sessions[0],coverageThrough:scaleSession,actions:[split]}});
+ assert.equal(adjusted.state,'KNOWN');
+ const options={listingId,tick:'0.05',adjustmentRevision:'verified',currentScaleFactor:'1',rs:'85',decidedAt:baseline.asOf};
+ const after={...baseline,bars:adjusted.bars.map((bar,i)=>({...baseline.bars[i],...bar}))};
+ assert.deepEqual(detect(after,options).primary,detect(baseline,options).primary);
 });

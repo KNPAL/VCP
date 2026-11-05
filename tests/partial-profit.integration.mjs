@@ -1,11 +1,13 @@
+import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
-import {PrismaClient,appendPortfolio,readPortfolio,registerProfile,persistInstrumentSnapshot,evaluatePartialProfit,dismissPartialProfit,evaluatePositionStop,readPositionStops,readSellAlerts,acknowledgePositionAlert,evaluateExitDecisions,hasHigherExit} from '../packages/database/dist/index.js';
+import {appendPortfolio,readPortfolio,registerProfile,persistInstrumentSnapshot,evaluatePartialProfit,dismissPartialProfit,evaluatePositionStop,readPositionStops,readSellAlerts,acknowledgePositionAlert,evaluateExitDecisions,hasHigherExit} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
-const db=new PrismaClient(),hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
+const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 test('partial alerts deduplicate, resolve from actual fills or dismissal, and yield to full SELL',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
+ const fixture=await isolatedDatabase('partial_profit',{initialCapital:'1000000'}),db=fixture.db;
  try{
   const owner=await db.owner.findFirstOrThrow(),profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0);
   for(const outcome of ['DISMISSED','ACTUAL_SELL_RECORDED','CANCELLED_FULL_SELL']){
@@ -48,6 +50,6 @@ test('partial alerts deduplicate, resolve from actual fills or dismissal, and yi
    }
    await assert.rejects(db.$executeRaw`DELETE FROM "PartialProfitSignal" WHERE "id"=${signal.id}`);
   }
- }finally{await db.$disconnect()}
+ }finally{await fixture.close()}
 });
 

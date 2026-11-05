@@ -4,9 +4,9 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-Verified against Jira on 2026-10-29: 111 of the original 136 tickets are Coded. The additional dependency tickets KAN-140–145 are also Coded and are excluded from that count.
+Verified against Jira on 2026-11-05. Of the original 136 tickets, 126 are Coded. Additional tickets KAN-140 through KAN-148 are Coded.
 
-25 tickets remain: KAN-4–17, KAN-44–45, KAN-48, KAN-110 and KAN-129–135. KAN-4–12 and KAN-44–45 are In Progress; the others are To Do. Working status never implies verified completion. Dated entries below retain their historical counts.
+Ten remain. KAN-4, KAN-6, KAN-44, KAN-45 and KAN-134 are In Progress. KAN-16, KAN-130, KAN-132, KAN-133 and KAN-135 are To Do. Recent closeouts include the application screens, alert adapters, recovery drill and their parent epics. The dated notes below describe earlier board states.
 
 ## Implemented areas
 
@@ -16,7 +16,7 @@ Verified against Jira on 2026-10-29: 111 of the original 136 tickets are Coded. 
 - Persisted scan coverage, deterministic candidate ranking, nested pattern evidence and cursor API.
 - Immutable breakout/user-decision evidence, structural stops and pure entry eligibility rules.
 - Durable cash and actual-fill journal, FIFO costs, reversal/replacement corrections, idempotent API and concurrency protection.
-- Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Other feature screens remain incomplete.
+- Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Dashboard, broker setup, data history, inspector, BUY/SELL, portfolio detail, operations, alerts and backtest results have authenticated routes.
 
 ## Current pipeline work
 

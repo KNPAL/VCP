@@ -32,5 +32,10 @@ test('benchmark needs 252 aligned completed sessions with independently verified
  const dates=Array.from({length:252},(_,i)=>new Date(Date.UTC(2025,0,i+1)).toISOString().slice(0,10));
  const data={identifier:'NIFTY_500_PRICE',identityVerified:true,calendarVerified:true,expectedSessions:dates,bars:dates.map(session=>({session,close:'100',finalizedAt:session+'T11:00:00Z',adjustmentVerified:true,sourceRevision:'r1'})),asOf:now};
  assert.equal(benchmarkReadiness(data).status,'PASS');
+ for(const patch of [{close:'corrupt'},{finalizedAt:'invalid'},{sourceRevision:' '},{finalizedAt:'2024-01-01T00:00:00Z'}]){
+  const result=benchmarkReadiness({...data,bars:[{...data.bars[0],...patch},...data.bars.slice(1)]});
+  assert.equal(result.status,'UNKNOWN');assert.equal(result.riskMultiplier,'0');
+ }
+ assert.equal(benchmarkReadiness({...data,expectedSessions:['2025-02-30',...dates.slice(1)]}).status,'UNKNOWN');
  for(const update of [{identifier:'NIFTY_50'},{identityVerified:false},{calendarVerified:false},{bars:data.bars.slice(1)},{expectedSessions:dates.slice(1),bars:data.bars.slice(1)}]){const result=benchmarkReadiness({...data,...update});assert.equal(result.status,'UNKNOWN');assert.equal(result.riskMultiplier,'0')}
 });

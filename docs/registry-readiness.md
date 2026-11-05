@@ -73,3 +73,17 @@ Entry-plan writes and idempotent retries separately verify live observations and
 Run `node scripts/database-command.mjs test data-permissions database indicator-replay rs-replay eod-scan position-trail` after building the workspace. The main database and EOD fixtures use isolated schemas so old records from other suites cannot satisfy or invalidate their source checks. Pre-commit rechecks detect observed revocations but do not yet serialize every source-registry update with dataset commits.
 
 KAN-44 remains In Progress: corporate-action/reference-data lineage, other storage consumers and write-time revocation races still need review. This is not a completed licensing rollout.
+
+The source registry, download preview and G07 binding checks now fail closed on conflicting latest records for the same endpoint and timestamp. Instrument-master imports and their retries serialize against registry updates for their source scope. Register the reviewed source metadata before importing the master.
+
+Adjustment imports require `source.sourceSnapshotId` from a reviewed CORPORATE_ACTIONS registry record, including snapshots that confirm no actions. The worker must have DERIVE and STORE authority for both the action feed and the raw candle providers. Indicator, relative-strength and structure replay, EOD planning and saved-scan display recheck the pinned action authority. Historical records missing this linkage require a newly reviewed adjustment snapshot. A provider-level lock now fences the final permission check and commit for raw candle ingestion and live-quote portfolio valuation writes.
+
+## G04 benchmark verification
+
+Register metadata for the independent benchmark publisher with dataset `BENCHMARK`, and register the raw-candle and corporate-action sources separately. With an independently identified NIFTY 500 **price** index reference file, prepare a G04 proof for the stored adjusted series and exchange-calendar revision. The independent publisher must differ from every contributing raw-candle provider. Obtain permission to use the reference before computing its digest.
+
+Set the proof's `details.identifier` to `NIFTY_500_PRICE`. Include `details.adjustmentId`, `details.calendarId`, and `details.identityReview` containing the same identifier, the benchmark listing UUID, the independent source's `sourceSnapshotId`, its UTC `knownAt`, and `seriesSha256`. Compute the digest from the independent reference closes in ascending session order with `benchmarkSeriesDigest` from `@vcp/database`. The digest covers JSON pairs of ISO session date and close normalized to six decimals. Record the reviewed document reference in the proof's `sourceReference`. Set the review's listing field to `listingId`.
+
+Run `node scripts/source-registry.mjs proof <reviewed-g04.json>`. A passing proof requires at least 252 aligned, finalized sessions, verified adjustments, permitted sources and matching independent closes. Record an UNKNOWN or FAIL proof with a reason when evidence is unavailable. The application rechecks stored proof evidence on readiness reads and rejects superseded or denied source rights. These steps require actual independently supplied data for production.
+
+Surveillance imports must also match the current registered source metadata. Register the reviewed feed under dataset `SURVEILLANCE` before ingestion. Storage checks and registry updates serialize for the endpoint. Price-band reads and entry eligibility recheck DERIVE and DISPLAY permission; a superseded grant withholds both bands until new evidence is reviewed.

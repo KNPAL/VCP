@@ -27,7 +27,7 @@ export async function recordPositionMonitor(db:PrismaClient,ownerId:string,asses
    const event=async(kind:string,start:string|null,end:string|null,reason:string)=>{
     const id=hash([ownerId,isin,prior?.asOf??null,asOf,kind]),evidence={id,ownerId,isin,quantity,kind,eventAt:asOf,sourceAt:assessment.sourceAt,decidedAt:asOf,gapStartedAt:start,gapEndedAt:end,reason,priority:kind==='MONITOR_DEGRADED'?'URGENT':'INFO',executable:false as const};
     await tx.$executeRaw`INSERT INTO "PositionMonitorEvent" ("id","ownerId","isin","eventAt","evidence") VALUES (${id},${ownerId}::uuid,${isin},${at},${canonical(evidence)}::jsonb)`;
-    if(kind==='MONITOR_DEGRADED')await appendAlert(tx,{...evidence,sourceEventId:id,sourceAt:asOf,occurredAt:asOf,effectiveAt:asOf,strategyVersion:PROFILE_VERSION,configHash:configurationHash(ST_VCP_4_0),dataRevision:hash(assessment)},[ownerId]);
+    if(kind==='MONITOR_DEGRADED')await appendAlert(tx,{...evidence,quoteSourceAt:assessment.sourceAt,sourceEventId:id,sourceAt:asOf,occurredAt:asOf,effectiveAt:asOf,strategyVersion:PROFILE_VERSION,configHash:configurationHash(ST_VCP_4_0),dataRevision:hash(assessment)},[ownerId]);
    };
    if(!gapStartedAt&&(state==='MONITOR_DEGRADED'||stopped)){
     gapStartedAt=stopped?prior!.asOf:asOf;await event('MONITOR_DEGRADED',gapStartedAt,null,stopped?'MONITOR_POLL_GAP':assessment.reason);

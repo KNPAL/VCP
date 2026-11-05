@@ -1,3 +1,4 @@
+import {lockProviderAuthority} from './source-authority.js';
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
 import {openEpisode,projectPortfolio,valuePortfolio,lossStreak,actualRisk,type PortfolioEvent,type BrokerStatement,reconcileStatement} from '@vcp/portfolio';
@@ -64,6 +65,7 @@ export async function recordPortfolioRisk(db:PrismaClient,ownerId:string,quotes:
   await permission();
   const result=await calculate(tx,ownerId,quotes),id=hash([ownerId,result,quotes]),evidence={...result,id,quotes};
   await tx.$executeRaw`INSERT INTO "PortfolioRiskSnapshot" ("id","ownerId","asOf","journalHash","evidence") VALUES (${id},${ownerId}::uuid,${new Date(result.asOf)},${result.journalHash},${canonical(evidence)}::jsonb) ON CONFLICT DO NOTHING`;
+  await lockProviderAuthority(tx,'LIVE_QUOTES',providers,'READ');
   await permission();
   return evidence;
  },{timeout:15000});

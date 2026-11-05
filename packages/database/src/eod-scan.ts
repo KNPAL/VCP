@@ -1,7 +1,8 @@
+import {verifyBenchmarkIdentity} from './benchmark-identity.js';
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
 import {utcInstant,sessionDate,exchangeDate} from '@vcp/domain';
-import {verifiedCalendar,readiness,type CalendarDay,type ActionSnapshot,type GateProof,type Permission} from '@vcp/market-data';
+import {benchmarkReadiness,verifiedCalendar,readiness,type CalendarDay,type ActionSnapshot,type GateProof,type Permission} from '@vcp/market-data';
 import {validateSeries,relativeStrength,percentiles,adv20,snapshot,sma,marketRegime,type Series} from '@vcp/indicators';
 import {companyCandidate,configurationHash,ST_VCP_4_0,type DailyStructureInput,type ScanOutcome} from '@vcp/strategy';
 import {canonical,persistIndicator} from './indicators.js';
@@ -9,7 +10,7 @@ import {pinScanUniverse} from './instruments.js';
 import {activeProfile} from './profiles.js';
 import {processDailyStructure} from './daily-structure.js';
 import {persistScan,getScan} from './scans.js';
-import {assertCandlePermissions} from './data-permissions.js';
+import {assertActionPermissions,assertCandlePermissions} from './data-permissions.js';
 const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 const uuid=(v:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
 export interface EodScanRequest {scanId:string;session:string;asOf:string;calendarId:string}
@@ -25,6 +26,7 @@ export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:str
  const row=rows[0];if(!row||row.state!=='KNOWN'||row.asOf>cutoff||row.createdAt>cutoff||row.scaleSession.toISOString().slice(0,10)!==request.session)throw new MissingInput('ADJUSTMENT_UNAVAILABLE');
  const bars=row.evidence.result.bars;
  if(!bars.length||bars.at(-1)!.session!==request.session)throw new MissingInput('CURRENT_SESSION_MISSING');
+ if(row.evidence.source.actions.some(action=>exchangeDate(action.effectiveAt)>bars[0]!.session&&exchangeDate(action.effectiveAt)<=request.session&&!action.rawBasis))throw new MissingInput('CORPORATE_ACTION_RAW_BASIS_UNVERIFIED');
  const calendars=await db.$queryRaw<{evidence:CalendarDay[];createdAt:Date}[]>`SELECT "evidence","createdAt" FROM "CalendarSnapshot" WHERE "id"=${request.calendarId}`;
  const calendar=verifiedCalendar(calendars[0]?.createdAt&&calendars[0].createdAt<=cutoff?calendars[0].evidence:null,bars[0]!.session,request.session,request.asOf);
  if(calendar.state!=='KNOWN'||canonical(calendar.sessions.map(s=>s.date))!==canonical(bars.map(b=>b.session)))throw new MissingInput('CALENDAR_OR_COVERAGE_INCOMPLETE');
@@ -33,7 +35,7 @@ export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:str
  try{validateSeries(series)}catch{throw new MissingInput('INVALID_FINALIZED_SERIES')}
  const raw=await db.candleRevision.findMany({where:{id:{in:bars.map(b=>b.rawRevisionId)}}});
  if(raw.length!==bars.length||raw.some(b=>b.listingId!==row.listingId||b.receivedAt>cutoff||!b.finalizedAt||b.finalizedAt>cutoff))throw new MissingInput('RAW_SOURCE_NOT_YET_KNOWN');
- try{await assertCandlePermissions(db,raw.map(row=>row.id),operations)}catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new MissingInput(error.message);throw error}
+ try{await assertActionPermissions(db,[id],operations);await assertCandlePermissions(db,raw.map(row=>row.id),operations)}catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new MissingInput(error.message);throw error}
  const byId=new Map(raw.map(b=>[b.id,b]));
  const rawSeries:Series={...series,priceScale:'RAW',bars:bars.map(b=>{const r=byId.get(b.rawRevisionId)!;return {session:r.session.toISOString().slice(0,10),open:r.open.toFixed(6),high:r.high.toFixed(6),low:r.low.toFixed(6),close:r.close.toFixed(6),volume:r.volume.toString(),revision:r.id,finalizedAt:r.finalizedAt!.toISOString(),adjustmentVerified:false}})};
  // The basis stays stable across daily snapshots and changes for action revisions.
@@ -45,6 +47,7 @@ async function assertPlanPermissions(db:PrismaClient|Prisma.TransactionClient,pl
  if(!ids.length)return;
  const rows=await db.$queryRaw<AdjustmentRow[]>`SELECT * FROM "AdjustmentSnapshot" WHERE "id"=ANY(${ids}::text[])`;
  if(rows.length!==ids.length||rows.some(row=>!Array.isArray(row.evidence.result?.bars)||!row.evidence.result.bars.length))throw new Error('SOURCE_LINEAGE_MISSING');
+ await assertActionPermissions(db,ids,operations);
  await assertCandlePermissions(db,rows.flatMap(row=>row.evidence.result.bars.map(bar=>bar.rawRevisionId)),operations);
 }
 /** Public displays must verify the original contributors, never today's replacement universe. */
@@ -67,10 +70,17 @@ export async function prepareEodScan(db:PrismaClient,request:EodScanRequest){
  const day=verifiedCalendar(calendars[0]?.createdAt&&calendars[0].createdAt<=at?calendars[0].evidence:null,request.session,request.session,request.asOf);
  if(day.state!=='KNOWN'||day.sessions.length!==1)throw new Error('SCAN_SESSION_NOT_FINAL');
  const proofs=await db.$queryRaw<{id:string;evidence:GateProof}[]>`SELECT "id","evidence" FROM "ReadinessProof" WHERE "gate"='G04' AND "probeAt"<=${at} ORDER BY "probeAt" DESC,"id" LIMIT 1`;
- const proof=proofs[0],details=proof?.evidence.details as {identifier?:string;adjustmentId?:string}|undefined;
+ const proof=proofs[0],details=proof?.evidence.details as {identifier?:string;adjustmentId?:string;identityReview?:unknown}|undefined;
  let benchmark:Awaited<ReturnType<typeof loadSeries>>|null=null,benchmarkAdjustmentId:string|null=null;
  if(proof&&readiness([proof.evidence],request.asOf).items.find(g=>g.gate==='G04')?.status==='PASS'&&details?.identifier==='NIFTY_500_PRICE'&&details.adjustmentId){
-  try{benchmark=await loadSeries(db,details.adjustmentId,request);benchmarkAdjustmentId=details.adjustmentId}catch(e){if(!(e instanceof MissingInput))throw e}
+  try{
+   const candidate=await loadSeries(db,details.adjustmentId,request);
+   const evaluated=benchmarkReadiness({
+    identifier:details.identifier,identityVerified:await verifyBenchmarkIdentity(db,details.identityReview,candidate.listingId,candidate.series.bars,request.asOf),calendarVerified:true,asOf:request.asOf,
+    expectedSessions:candidate.series.sessions,bars:candidate.series.bars.map(bar=>({...bar,sourceRevision:bar.revision,finalizedAt:bar.finalizedAt??null,adjustmentVerified:bar.adjustmentVerified===true}))
+   });
+   if(evaluated.status==='PASS'){benchmark=candidate;benchmarkAdjustmentId=details.adjustmentId}
+  }catch(e){if(!(e instanceof MissingInput))throw e}
  }
  const rawStrength:{isin:string;value:string|null}[]=[],items:Item[]=[],breadth:RegimeEvidence['members']=[];
  for(const member of universe.listings){

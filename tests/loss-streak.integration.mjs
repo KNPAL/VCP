@@ -1,11 +1,13 @@
+import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt} from 'node:crypto';
-import {PrismaClient,appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,recordCashAllocation,cashAllocations} from '../packages/database/dist/index.js';
+import {appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,recordCashAllocation,cashAllocations} from '../packages/database/dist/index.js';
 import {lossStreak} from '../packages/portfolio/dist/index.js';
-const db=new PrismaClient();
+
 test('cash attribution is versioned, serialized and journal-neutral; loss evidence is immutable',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
+ const fixture=await isolatedDatabase('loss_streak',{initialCapital:'1000000'}),db=fixture.db;
  try{
   const owner=await db.owner.findFirstOrThrow(),isin='INE'+String(randomInt(1000000000)).padStart(9,'0');
   const fill=(side)=>({kind:'FILL',isin,side,quantity:1,price:side==='BUY'?'100':'99',fees:'0',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-streak'});
@@ -32,5 +34,5 @@ test('cash attribution is versioned, serialized and journal-neutral; loss eviden
   await assert.rejects(db.$executeRaw`DELETE FROM "PortfolioCashAllocation" WHERE "id"=${results[0].id}`);
   await assert.rejects(db.$executeRaw`UPDATE "PortfolioCashAllocation" SET "episodeId"=${third.eventIds[0]}::uuid WHERE "id"=${results[0].id}`);
   assert.equal((await readPortfolioRisk(db,randomUUID())).lossStreak.source,'REAL');
- }finally{await db.$disconnect()}
+ }finally{await fixture.close()}
 });

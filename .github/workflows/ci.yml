@@ -51,3 +51,30 @@ jobs:
         run: |
           mkdir -p .runtime
           VCP_PLAYWRIGHT_MODULE="$RUNNER_TEMP/vcp-browser/node_modules/playwright/index.mjs" VCP_BROWSER_CHANNEL=chromium node scripts/ci-broker-ui.mjs
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot the isolated TLS stack from a clean checkout
+        run: |
+          node scripts/init-local.mjs
+          # Compose file-backed secrets retain host permissions. These files exist
+          # only on this disposable runner, inside an owner-only directory.
+          chmod 700 .runtime
+          chmod 444 .runtime/database-password .runtime/owner-password
+          docker compose -p vcp-ci-smoke -f infra/compose.yml -f infra/compose.app.yml up --build --wait --wait-timeout 180
+      - name: Verify TLS, authentication, database and worker health
+        run: |
+          stack=(docker compose -p vcp-ci-smoke -f infra/compose.yml -f infra/compose.app.yml)
+          "${stack[@]}" exec -T proxy curl --silent --show-error --fail --cacert /data/caddy/pki/authorities/local/root.crt https://localhost:8443/login > /dev/null
+          status=$("${stack[@]}" exec -T proxy curl --silent --output /dev/null --write-out '%{http_code}' --cacert /data/caddy/pki/authorities/local/root.crt https://localhost:8443/api/v1/auth/session)
+          test "$status" = 401
+          "${stack[@]}" exec -T postgres pg_isready -U vcp -d vcp
+          "${stack[@]}" exec -T redis redis-cli ping | grep -qx PONG
+          "${stack[@]}" exec -T worker node -e "process.exit(Date.now()-require('fs').statSync('/tmp/vcp-worker-health').mtimeMs < 20000 ? 0 : 1)"
+          VCP_SMOKE_PROJECT=vcp-ci-smoke node scripts/ci-compose-auth.mjs
+      - name: Remove disposable CI services
+        if: always()
+        run: docker compose -p vcp-ci-smoke -f infra/compose.yml -f infra/compose.app.yml down --volumes

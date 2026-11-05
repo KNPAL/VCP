@@ -1,3 +1,4 @@
+import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import assert from 'node:assert/strict';
@@ -27,7 +28,7 @@ test('EOD trails are immutable, effective next session and do not execute fills'
    const observedAt=new Date().toISOString(),bars=dates.map((d,i)=>({listingId,provider:'fixture-trail',session:d,open:'110',high:'112',low:sell&&i===49?'99':'108',close:sell&&i===49?'100':'110',volume:'1000000',receivedAt:observedAt,finalizedAt:calendar[i].finalizedAt,zeroVolumeVerified:false}));
    await ingestCandles(db,{listingId,provider:'fixture-trail',from:dates[0],to:date,asOf:observedAt,calendar,bars});
    const revisions=await db.$queryRaw`SELECT "session","revisionId" FROM "RawDailyCandle" WHERE "listingId"=${listingId}::uuid`;
-   await persistAdjustment(db,{listingId,asOf:new Date().toISOString(),scaleSession:date,source:{id:hash(randomUUID()),listingId,knownAt:before,verified:true,sourceReference:'synthetic-trail',coverageFrom:dates[0],coverageThrough:tomorrow,actions:[]},raw:bars.map(b=>({...b,revisionId:revisions.find(r=>r.session.toISOString().slice(0,10)===b.session).revisionId}))});
+   await persistAdjustment(db,{listingId,asOf:new Date().toISOString(),scaleSession:date,source:{sourceSnapshotId:await actionPermission(db),id:hash(randomUUID()),listingId,knownAt:before,verified:true,sourceReference:'synthetic-trail',coverageFrom:dates[0],coverageThrough:tomorrow,actions:[]},raw:bars.map(b=>({...b,revisionId:revisions.find(r=>r.session.toISOString().slice(0,10)===b.session).revisionId}))});
    await appendPortfolio(db,owner.id,randomUUID(),{kind:'FILL',isin,side:'BUY',quantity:10,price:sell?'90':'100',fees:'0',brokerReference:randomUUID(),occurredAt:boughtAt,sourceId:'synthetic-trail'});
    const initial=(await readPositionStops(db,owner.id)).items.find(p=>p.isin===isin).record;
    await persistInstrumentSnapshot(db,{...mapping,knownAt:new Date().toISOString(),sourceReference:'synthetic-trail-current'});

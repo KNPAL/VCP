@@ -88,3 +88,6 @@ export * from './broker-stream-binding.js';
 export * from './surveillance.js';
 export {assertPositionCandleDisplay,assertDailyExecutionDisplay} from './position-permissions.js';
 export {readOperations} from './operations.js';
+export * from './inbox.js';
+
+export {benchmarkSeriesDigest,verifyBenchmarkIdentity} from './benchmark-identity.js';

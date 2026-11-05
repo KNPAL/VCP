@@ -4,14 +4,14 @@ import {replay,type Series} from '@vcp/indicators';
 import {verifiedCalendar,type CalendarDay} from '@vcp/market-data';
 import {STRATEGY_VERSION,utcInstant} from '@vcp/domain';
 import {canonical} from './indicators.js';
-import {assertCandlePermissions} from './data-permissions.js';
+import {assertActionPermissions,assertCandlePermissions} from './data-permissions.js';
 type AdjustedBar=Series['bars'][number]&{rawRevisionId:string};
 export interface IndicatorReplayInput {eventId:string;adjustmentId:string;calendarHash:string}
 export async function pendingIndicatorReplays(db:PrismaClient,limit=25){
  if(!Number.isSafeInteger(limit)||limit<1||limit>100)throw new Error('INVALID_REPLAY_LIMIT');
  return db.$queryRaw<IndicatorReplayInput[]>`SELECT r."eventId",a."id" AS "adjustmentId",r."evidence"->>'calendarHash' AS "calendarHash"
  FROM "CorrectionReplayRequest" r
- JOIN LATERAL (SELECT s."id" FROM "AdjustmentSnapshot" s WHERE s."listingId"=r."listingId" AND s."state"='KNOWN' AND s."asOf"<=CURRENT_TIMESTAMP AND (s."evidence"->'rawRevisionIds') @> jsonb_build_array(r."dataRevision"::text) ORDER BY s."asOf" DESC,s."id" DESC LIMIT 1) a ON true
+ JOIN LATERAL (SELECT s."id",s."state" FROM "AdjustmentSnapshot" s WHERE s."listingId"=r."listingId" AND s."asOf"<=CURRENT_TIMESTAMP AND (s."evidence"->'rawRevisionIds') @> jsonb_build_array(r."dataRevision"::text) ORDER BY s."asOf" DESC,s."createdAt" DESC,s."id" DESC LIMIT 1) a ON a."state"='KNOWN'
  LEFT JOIN "IndicatorReplayDispatch" d ON d."eventId"=r."eventId" AND d."adjustmentId"=a."id" AND d."calendarHash"=r."evidence"->>'calendarHash'
  WHERE NOT EXISTS (SELECT 1 FROM "IndicatorReplayReceipt" done WHERE done."eventId"=r."eventId" AND done."adjustmentId"=a."id" AND done."calendarHash"=r."evidence"->>'calendarHash')
  ORDER BY COALESCE(d."checkedAt",r."createdAt"),r."eventId" LIMIT ${limit}`;
@@ -32,6 +32,7 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${input.calendarHash}`;
  const bars=snapshot.evidence.result.bars;
  if(!bars.length)throw new Error('REPLAY_SERIES_EMPTY');
+ await assertActionPermissions(db,[input.adjustmentId],['DERIVE','STORE']);
  const permission=await assertCandlePermissions(db,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);
  if(prior[0])return prior[0].evidence;
  const asOf=snapshot.asOf.toISOString();
@@ -45,7 +46,8 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  const outputs=replay(series,0);
  const receipt={id,...input,listingId:request.listingId,dataRevision,state:'INDICATORS_REPLAYED',mode:'RETROSPECTIVE_CORRECTION',asOf,permission,from:bars[0]!.session,to:bars.at(-1)!.session,count:outputs.length,remainingStages:['MARKET_SIGNALS','VCP','SCANS']};
  return db.$transaction(async tx=>{
-  const current=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(current.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
+  await assertActionPermissions(tx,[input.adjustmentId],['DERIVE','STORE']);
+ const current=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(current.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
   for(const output of outputs){
    const key={listingId:request.listingId,session:new Date(output.session),strategyVersion:STRATEGY_VERSION,dataRevision};
    const evidence=JSON.parse(canonical({...output.evidence,replay:{mode:'RETROSPECTIVE_CORRECTION',adjustmentId:input.adjustmentId,calendarHash:input.calendarHash}})) as Prisma.InputJsonValue;
@@ -53,7 +55,8 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
    const stored=await tx.indicatorSnapshot.findUniqueOrThrow({where:{listingId_session_strategyVersion_dataRevision:key}});
    if(canonical(stored.evidence)!==canonical(evidence))throw new Error('REPLAY_EVIDENCE_CONFLICT');
   }
-  const finalPermission=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(finalPermission.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
+  await assertActionPermissions(tx,[input.adjustmentId],['DERIVE','STORE']);
+ const finalPermission=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(finalPermission.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
   await tx.$executeRaw`INSERT INTO "IndicatorReplayReceipt" ("id","eventId","adjustmentId","calendarHash","evidence") VALUES (${id},${input.eventId}::uuid,${input.adjustmentId},${input.calendarHash},${canonical(receipt)}::jsonb) ON CONFLICT DO NOTHING`;
   const saved=await tx.$queryRaw<{evidence:Prisma.JsonValue}[]>`SELECT "evidence" FROM "IndicatorReplayReceipt" WHERE "id"=${id}`;
   return saved[0]!.evidence;

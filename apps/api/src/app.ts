@@ -1,3 +1,4 @@
+import {readInbox,reviewInbox,setAlertPreference,browserDelivery,finishBrowserDelivery} from '@vcp/database';
 import {workerQueueMetrics} from './worker-queue-metrics.js';
 import {operationHostMetrics} from './operation-host-metrics.js';
 import {readRuntimeBrokerStatus,type BrokerStatusDependencies} from './broker-status.js';
@@ -58,6 +59,11 @@ export const openapi = {
   openapi: '3.1.0', info: { title: 'Study Trade VCP', version: '4.0.0' },
   components: { schemas: wireSchemas, securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: 'vcp_session' } } },
   paths: {
+    '/api/v1/alerts/inbox':{"get":{"operationId":"listAlertInbox","security":[{"session":[]}],"responses":{"200":{"description":"Owner inbox, preferences, review and per-channel delivery timestamps"}}}},
+    '/api/v1/alerts/inbox/{id}/review':{"post":{"operationId":"reviewAlertInbox","security":[{"session":[]}],"responses":{"201":{"description":"Record an acknowledgement or dismissal"}},"parameters":[{"name":"X-CSRF-Token","in":"header","required":true,"schema":{"type":"string"}},{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"properties":{"kind":{"enum":["ACKNOWLEDGED","DISMISSED"]}},"required":["kind"]}}}}}},
+    '/api/v1/alerts/preferences':{"post":{"operationId":"setAlertPreference","security":[{"session":[]}],"responses":{"201":{"description":"Save owner channel preference"}},"parameters":[{"name":"X-CSRF-Token","in":"header","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"properties":{"channel":{"enum":["BROWSER","EMAIL"]},"enabled":{"type":"boolean"}},"required":["channel","enabled"]}}}}}},
+    '/api/v1/alerts/browser/next':{"post":{"operationId":"claimBrowserAlert","security":[{"session":[]}],"responses":{"201":{"description":"Next eligible browser alert and lease token, or null"}},"parameters":[{"name":"X-CSRF-Token","in":"header","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"properties":{},"required":[]}}}}}},
+    '/api/v1/alerts/browser/receipt':{"post":{"operationId":"recordBrowserReceipt","security":[{"session":[]}],"responses":{"201":{"description":"Record the result of a leased browser delivery"}},"parameters":[{"name":"X-CSRF-Token","in":"header","required":true,"schema":{"type":"string"}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"},"token":{"type":"string","format":"uuid"},"shown":{"type":"boolean"}},"required":["id","token","shown"]}}}}}},
     '/api/v1/stream/events':{get:{operationId:'streamReplay',security:[{session:[]}],responses:{'200':{description:'Owner-scoped persistent event references and scope-bound replay cursor; transient quotes are never replayed'},'400':{description:'Invalid scope, cursor or limit'},'401':{description:'Authentication required'}}}},
     '/api/v1/positions/stops':{get:{operationId:'protectiveStopEvidence',security:[{session:[]}],responses:{'200':{description:'Own current holding episodes, immutable initial stops, exit observations and partial resolutions; no execution implied'},'401':{description:'Authentication required'}}}},
     '/api/v1/positions/status':{get:{operationId:'positionLifecycleHistory',security:[{session:[]}],responses:{'200':{description:'Owner-scoped lifecycle, recommendation and independent monitoring health with immutable observation history'},'401':{description:'Authentication required'}}}},
@@ -354,6 +360,33 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     const entry=result['entryEvidence'] as {quote?:{at:string}|null;configHash:string};
     return {id:result['id'],signalId:result['marketEventId'],state:result['state'],proposedQuantity:result['quantity'],entry:result['entry'],stop:result['stop'],caps:result['caps'],riskBudget:result['riskBudget'],quoteAt:entry.quote?.at??null,expiryAt:result['expiresAt'],reasons:result['reasons'],configHash:entry.configHash,flags:{executable:false,automatedAdd:false,manualExecutionOnly:true},evidence:result};
   }
+  @Controller('alerts')
+  class AlertController {
+    @Get('inbox') async inbox(@Req() request:AuthRequest){
+      return {...await readInbox(db,request.ownerId!),emailConfigured:request.ownerId===process.env['VCP_ALERT_EMAIL_OWNER']};
+    }
+    @Post('preferences') preference(@Req() request:AuthRequest){
+      const {channel,enabled}=strictBody(request,['channel','enabled']);
+      if((channel!=='EMAIL'&&channel!=='BROWSER')||typeof enabled!=='boolean')throw new BadRequestException('Invalid alert preference');
+      if(channel==='EMAIL'&&enabled&&request.ownerId!==process.env['VCP_ALERT_EMAIL_OWNER'])throw new BadRequestException('Email recipient is unconfigured');
+      return setAlertPreference(db,request.ownerId!,channel,enabled);
+    }
+    @Post('inbox/:id/review') async review(@Param('id') id:string,@Req() request:AuthRequest){
+      const {kind}=strictBody(request,['kind']);
+      if(!/^[a-f0-9]{64}$/.test(id)||(kind!=='ACKNOWLEDGED'&&kind!=='DISMISSED'))throw new BadRequestException('Invalid inbox review');
+      if(!await reviewInbox(db,request.ownerId!,id,kind))throw new NotFoundException('Alert unavailable');
+      return {kind};
+    }
+    @Post('browser/next') async next(@Req() request:AuthRequest){
+      strictBody(request,[]);
+      return {delivery:await browserDelivery(db,request.ownerId!)};
+    }
+    @Post('browser/receipt') async receipt(@Req() request:AuthRequest){
+      const {id,token,shown}=strictBody(request,['id','token','shown']);
+      if(typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)||typeof token!=='string'||! /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(token)||typeof shown!=='boolean')throw new BadRequestException('Invalid browser receipt');
+      return {accepted:await finishBrowserDelivery(db,request.ownerId!,id,token,shown)};
+    }
+  }
   @Controller('signals')
   class SignalController {
     @Get() async list(@Req() request:AuthRequest,@Query() query:Record<string,unknown>){
@@ -516,7 +549,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[SignalController,DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await entryObservations.close();await db.$disconnect()}}}]})
+  @Module({controllers:[AlertController,SignalController,DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await entryObservations.close();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   if(trustedProxies.length)app.getHttpAdapter().getInstance().set('trust proxy',trustedProxies);

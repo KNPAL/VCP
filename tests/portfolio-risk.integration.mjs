@@ -1,12 +1,14 @@
+import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
 import {parseFixed,formatFixed} from '../packages/domain/dist/index.js';
-import {PrismaClient,appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,persistInstrumentSnapshot,persistSectors,persistSource} from '../packages/database/dist/index.js';
+import {appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,persistInstrumentSnapshot,persistSectors,persistSource} from '../packages/database/dist/index.js';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
-const db=new PrismaClient(),hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
+const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 test('risk evidence preserves actual fills, expires marks and serializes with journal changes',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');
+ const fixture=await isolatedDatabase('portfolio_risk',{initialCapital:'1000000'}),db=fixture.db;
  try{
   const owner=await db.owner.findFirstOrThrow(),isin='INE'+String(randomInt(1000000000)).padStart(9,'0'),listingId=randomUUID(),date=new Date(Date.now()+19800000).toISOString().slice(0,10),before=new Date(Date.now()-10000).toISOString(),provider='synthetic-risk-'+randomUUID();
   const {id:grantId,...grant}=await candlePermission(db,provider);assert.ok(grantId);await persistSource(db,{...grant,dataset:'LIVE_QUOTES'});
@@ -61,7 +63,7 @@ test('risk evidence preserves actual fills, expires marks and serializes with jo
   await appendPortfolio(db,owner.id,randomUUID(),{...outsideFill,side:'SELL',quantity:8,price:'97.5',brokerReference:randomUUID(),occurredAt:new Date().toISOString()});
   await appendPortfolio(db,owner.id,randomUUID(),{kind:'DEPOSIT',amount:formatFixed(withdrawal-parseFixed('40')),verified:true,occurredAt:new Date().toISOString(),sourceId:'synthetic-topup-restore'});
   assert.equal(parseFixed((await readPortfolio(db,owner.id)).cash),cashBefore);
- }finally{await db.$disconnect()}
+ }finally{await fixture.close()}
 });
 
 

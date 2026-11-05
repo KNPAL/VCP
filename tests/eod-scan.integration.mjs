@@ -1,6 +1,7 @@
+import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
-import {candlePermission} from '../fixtures/candle-permission.mjs';
+import {benchmarkReview,candlePermission} from '../fixtures/candle-permission.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {createApp} from '../apps/api/dist/app.js';
@@ -30,15 +31,17 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
    const bars=golden.bars.map((b,i)=>({listingId,provider,session:dates[i],open:flat?'50':b.open,high:flat?'51':b.high,low:flat?'49':b.low,close:flat?'50':b.close,volume:b.volume,receivedAt:observedAt,finalizedAt:calendar[i].finalizedAt,zeroVolumeVerified:false}));
    const ingested=await ingestCandles(db,{listingId,provider,from:dates[0],to:date,asOf:observedAt,calendar,bars});assert.equal(ingested.inserted,310);
    const revisions=await db.$queryRaw`SELECT "session","revisionId" FROM "RawDailyCandle" WHERE "listingId"=${listingId}::uuid`;
-   const input={listingId,asOf:new Date().toISOString(),scaleSession:date,source:{id:'synthetic-no-actions',listingId,knownAt:observedAt,verified:true,sourceReference:'synthetic',coverageFrom:dates[0],coverageThrough:date,actions:[]},raw:bars.map(b=>({...b,revisionId:revisions.find(r=>r.session.toISOString().slice(0,10)===b.session).revisionId}))};
-   const adjusted=await persistAdjustment(db,input);assert.equal(adjusted.state,'KNOWN');return {listingId,provider,grant,ingested,adjusted,input};
+   const input={listingId,asOf:new Date().toISOString(),scaleSession:date,source:{sourceSnapshotId:await actionPermission(db),id:'synthetic-no-actions',listingId,knownAt:observedAt,verified:true,sourceReference:'synthetic',coverageFrom:dates[0],coverageThrough:date,actions:[]},raw:bars.map(b=>({...b,revisionId:revisions.find(r=>r.session.toISOString().slice(0,10)===b.session).revisionId}))};
+   const short=flat?await persistAdjustment(db,{...input,raw:input.raw.slice(-251)}):null;
+   input.asOf=new Date().toISOString();
+   const adjusted=await persistAdjustment(db,input);assert.equal(adjusted.state,'KNOWN');return {listingId,provider,grant,ingested,adjusted,input,short};
   }
   const target=await instrument(false),benchmark=await instrument(true);
   const isin='INE'+String(Math.floor(Math.random()*1000000000)).padStart(9,'0'),missing='INE'+String(Math.floor(Math.random()*1000000000)).padStart(9,'0');
   await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-eod',rows:[{companyId:randomUUID(),listingId:target.listingId,isin,exchange:'NSE',series:'EQ',symbol:'SYNTH-EOD',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:target.provider,token:'1',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
   await persistUniverse(db,{universe:'NIFTY_500',knownAt:new Date().toISOString(),effectiveFrom:'2020-01-01',effectiveTo:null,sourceReference:'synthetic-eod',historicalConstituentsVerified:true,isins:[isin,missing]});
-  const profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0),activated=new Date().toISOString();await activateProfile(db,profile.id,activated,activated);
-  const proofAt=new Date().toISOString();await persistReadiness(db,{gate:'G04',status:'PASS',probeAt:proofAt,sourceAt:proofAt,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic',reason:null,details:{identifier:'NIFTY_500_PRICE',adjustmentId:benchmark.adjusted.revision}});
+  const profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0),activated=profile.createdAt.toISOString();await activateProfile(db,profile.id,activated,activated);
+  const proofAt=new Date().toISOString();await persistReadiness(db,{gate:'G04',status:'PASS',probeAt:proofAt,sourceAt:proofAt,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic',reason:null,details:{identifier:'NIFTY_500_PRICE',calendarId:target.ingested.calendarHash,adjustmentId:benchmark.adjusted.revision,identityReview:await benchmarkReview(db,benchmark.listingId,benchmark.input.raw)}});
   const request={scanId:randomUUID(),session:date,asOf:new Date().toISOString(),calendarId:target.ingested.calendarHash};
   const plan=await prepareEodScan(db,request);assert.equal(plan.items.length,2);assert.equal(plan.benchmarkAdjustmentId,benchmark.adjusted.revision);
   assert.equal(plan.items.find(i=>i.isin===isin).rs,null); // only 50% comparable: missing member remains in denominator
@@ -132,5 +135,20 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   await persistSource(db,{...targetGrant,knownAt:new Date().toISOString(),uses:{...targetGrant.uses,DISPLAY:false}});
   assert.equal((await loadSeries(db,target.adjusted.revision,request)).listingId,target.listingId);
   await assert.rejects(loadSeries(db,target.adjusted.revision,request,['DERIVE','DISPLAY']),/SOURCE_PERMISSION_REQUIRED/);
+  await persistSource(db,{...grant,knownAt:new Date().toISOString()});
+  const digestReview=await benchmarkReview(db,benchmark.listingId,benchmark.input.raw);
+  for(const wrong of [{seriesSha256:'0'.repeat(64)},{identifier:'NIFTY_500_TRI'},{listingId:target.listingId}]){
+   const at=new Date().toISOString();
+   await assert.rejects(persistReadiness(db,{gate:'G04',status:'PASS',probeAt:at,sourceAt:at,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic-review',reason:null,details:{identifier:'NIFTY_500_PRICE',calendarId:target.ingested.calendarHash,adjustmentId:benchmark.adjusted.revision,identityReview:{...digestReview,...wrong}}}),/INVALID_READINESS_PROOF/);
+
+  }
+  const shortAt=new Date().toISOString();
+  await assert.rejects(persistReadiness(db,{gate:'G04',status:'PASS',probeAt:shortAt,sourceAt:shortAt,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic-independent-index-review',reason:null,details:{identifier:'NIFTY_500_PRICE',calendarId:target.ingested.calendarHash,adjustmentId:benchmark.short.revision,identityReview:await benchmarkReview(db,benchmark.listingId,benchmark.input.raw.slice(-251))}}),/BENCHMARK_HISTORY_INCOMPLETE/);
+  await persistReadiness(db,{gate:'G04',status:'UNKNOWN',probeAt:shortAt,sourceAt:shortAt,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic-independent-index-review',reason:'BENCHMARK_HISTORY_INCOMPLETE',details:null});
+  const shortPlan=await prepareEodScan(db,{scanId:randomUUID(),session:date,asOf:new Date().toISOString(),calendarId:target.ingested.calendarHash});
+  assert.equal(shortPlan.benchmarkAdjustmentId,null);
+  assert.equal(shortPlan.regime.result.regime,'UNKNOWN');
+  assert.equal(shortPlan.items.length,shortPlan.universe.universe.members.length);
+  assert.ok(shortPlan.items.length>0);
  }finally{await app?.close();if(worker)await worker.close();if(q){await q.obliterate({force:true});await q.close()}await fixture?.close()}
 });

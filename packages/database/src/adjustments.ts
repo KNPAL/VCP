@@ -1,6 +1,7 @@
+import {currentSource,lockSourceScope} from './source-authority.js';
 import type {PrismaClient} from '@prisma/client';
 import {parseFixed} from '@vcp/domain';
-import {adjustCandles,type AdjustmentInput} from '@vcp/market-data';
+import {sourcePermission,adjustCandles,type SourceRecord,type AdjustmentInput} from '@vcp/market-data';
 import {canonical} from './indicators.js';
 import {assertCandlePermissions} from './data-permissions.js';
 
@@ -10,6 +11,16 @@ export async function persistAdjustment(db:PrismaClient,input:AdjustmentInput){
  await permission();
  const result=adjustCandles(input),evidence=canonical({source:{...input.source,actions:[...input.source.actions].sort((a,b)=>a.id.localeCompare(b.id))},result,rawRevisionIds:input.raw.map(bar=>bar.revisionId).sort()});
  return db.$transaction(async tx=>{
+  const sourceId=input.source.sourceSnapshotId;
+  if(!sourceId||!(/^[0-9a-f]{64}$/).test(sourceId))throw new Error('ACTION_SOURCE_PERMISSION_REQUIRED');
+  const [authority]=await tx.$queryRaw<{evidence:SourceRecord}[]>`SELECT evidence FROM "SourceSnapshot" WHERE id=${sourceId} AND dataset='CORPORATE_ACTIONS'`;
+  if(!authority)throw new Error('ACTION_SOURCE_PERMISSION_REQUIRED');
+  await lockSourceScope(tx,authority.evidence);
+  const authorize=async()=>{
+   const at=new Date().toISOString(),current=await currentSource(tx,authority.evidence,at);
+   if(current?.id!==sourceId||(['STORE','DERIVE'] as const).some(use=>sourcePermission(authority.evidence,use,at).status!=='PASS'))throw new Error('ACTION_SOURCE_PERMISSION_REQUIRED');
+  };
+  await authorize();
   const originals=await tx.candleRevision.findMany({where:{id:{in:input.raw.map(bar=>bar.revisionId)}}});
   for(const bar of input.raw){
    const stored=originals.find(row=>row.id===bar.revisionId);
@@ -24,6 +35,7 @@ export async function persistAdjustment(db:PrismaClient,input:AdjustmentInput){
    await tx.$executeRaw`INSERT INTO "AdjustedDailyCandle" ("adjustmentId","rawRevisionId","session","open","high","low","close","volume","evidence") VALUES (${result.revision},${bar.rawRevisionId}::uuid,${new Date(bar.session)},${bar.open}::numeric,${bar.high}::numeric,${bar.low}::numeric,${bar.close}::numeric,${bar.volume}::numeric,${details}::jsonb) ON CONFLICT ("adjustmentId","session") DO NOTHING`;
   }
   await permission();
+  await authorize();
   return result;
  });
 }

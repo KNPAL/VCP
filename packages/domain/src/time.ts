@@ -9,8 +9,9 @@ export function utcInstant(value: string): Date {
   if (!Number.isFinite(date.valueOf()) || date.toISOString() !== value.replace(/(?<=:\d{2})Z$/, '.000Z')) throw new InputError('Invalid timestamp');
   return date;
 }
+const exchangeDateFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
 export function exchangeDate(value: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(utcInstant(value));
+  return exchangeDateFormatter.format(utcInstant(value));
 }
 /** Calendar must come from verified exchange data; never infer holidays from weekdays. */
 export function completedSessions(sessions: readonly TradingSession[] | null, asOf: string): Known<readonly TradingSession[]> {

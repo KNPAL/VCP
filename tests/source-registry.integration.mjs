@@ -32,5 +32,9 @@ test('registry retains denials, rejects malformed grants and fences superseded b
   app=await createApp({db,secure:false,origin:'http://127.0.0.1:3199',logSink:()=>{}});await app.listen(0,'127.0.0.1');const base=await app.getUrl(),headers={cookie:'vcp_session='+token};
   assert.equal((await fetch(base+'/api/v1/sources/registry')).status,401);assert.equal((await fetch(base+'/api/v1/sources/registry?dataset=',{headers})).status,400);
   const response=await fetch(base+'/api/v1/sources/registry?dataset=DAILY_CANDLES',{headers});assert.equal(response.status,200);assert.equal((await response.json()).items.find(item=>item.id===denied.id).permissions.STORE.status,'FAIL');
+  await persistSource(db,{...source,knownAt:deniedAt,licenseRef:'conflicting-review'});
+  assert.equal(await currentSource(db,source,deniedAt),null);
+  const conflict=(await readSourceRegistry(db,source.dataset,deniedAt)).items.find(i=>i.source.provider===source.provider&&i.source.endpointOrFile===source.endpointOrFile);
+  assert.deepEqual(conflict.permissions.STORE,{status:'UNKNOWN',reasons:['SOURCE_SCOPE_AMBIGUOUS']});
  }finally{await app?.close();await db.$disconnect()}
 });

@@ -1,3 +1,4 @@
+import {actionPermission} from '../fixtures/candle-permission.mjs';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {test} from 'node:test';
@@ -228,7 +229,7 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   const failedSync=await synchronizeStoredCandles(db,{...syncInput,asOf:'2026-10-16T16:00:00Z'},{now:()=> '2026-10-16T16:00:00Z',fetch:async()=>{throw new Error('synthetic broker outage')}});
   assert.equal(failedSync.reason,'BROKER_FETCH_FAILED');
   assert.deepEqual(await db.$queryRaw`SELECT * FROM "CandleCoverage" WHERE "listingId"=${syncListing}::uuid`,beforeFailure);
-  const adjustmentInput={listingId:rawListing,asOf:'2026-10-18T12:00:00Z',scaleSession:'2026-10-18',raw:[{...rawBar,revisionId:revisions[0].id}],source:{id:'synthetic-split',listingId:rawListing,knownAt:'2026-10-18T11:00:00Z',verified:true,sourceReference:'synthetic-exchange',coverageFrom:barDate,coverageThrough:'2026-10-18',actions:[{id:'split',listingId:rawListing,kind:'SPLIT',effectiveAt:'2026-10-18T03:45:00Z',knownAt:'2026-10-17T11:00:00Z',sharesBefore:'1',sharesAfter:'2',verified:true,sourceReference:'synthetic-notice'}]}};
+  const adjustmentInput={listingId:rawListing,asOf:'2026-10-18T12:00:00Z',scaleSession:'2026-10-18',raw:[{...rawBar,revisionId:revisions[0].id}],source:{sourceSnapshotId:await actionPermission(db),id:'synthetic-split',listingId:rawListing,knownAt:'2026-10-18T11:00:00Z',verified:true,sourceReference:'synthetic-exchange',coverageFrom:barDate,coverageThrough:'2026-10-18',actions:[{id:'split',listingId:rawListing,kind:'SPLIT',effectiveAt:'2026-10-18T03:45:00Z',knownAt:'2026-10-17T11:00:00Z',sharesBefore:'1',sharesAfter:'2',verified:true,sourceReference:'synthetic-notice',rawBasis:{exchange:'NSE',listingId:rawListing,sourceReference:'synthetic-official-close',knownAt:'2026-10-18T10:00:00Z',session:barDate,close:'105',volume:'1000'}}]}};
   const adjusted=await persistAdjustment(db,adjustmentInput);assert.equal(adjusted.state,'KNOWN');assert.equal(adjusted.bars[0].close,'52.500000');assert.equal(adjusted.bars[0].volume,'2000.00000000');
   assert.deepEqual(await persistAdjustment(db,adjustmentInput),adjusted);
   assert.equal((await db.candleRevision.findUnique({where:{id:revisions[0].id}})).close.toString(),'105');

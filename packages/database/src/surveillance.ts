@@ -1,3 +1,4 @@
+import {registeredSourceReasons,lockSourceScope} from './source-authority.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {utcInstant} from '@vcp/domain';
@@ -20,7 +21,11 @@ export async function persistSurveillance(db:PrismaClient,input:SurveillanceEvid
  const mapping=rows[0]?.evidence,isin=mapping?.rows.find(row=>row.listingId===evidence.listingId)?.isin;
  if(!isin||canonicalListings(mapping?[mapping]:[],[isin],at)[0]?.primary?.listingId!==evidence.listingId)throw new Error('SURVEILLANCE_MAPPING_MISMATCH');
  const json=canonical(evidence),id=createHash('sha256').update(json).digest('hex');
- await db.$executeRaw`INSERT INTO "SurveillanceSnapshot" ("id","listingId","knownAt","evidence") VALUES (${id},${evidence.listingId}::uuid,${utcInstant(at)},${json}::jsonb) ON CONFLICT DO NOTHING`;
+ await db.$transaction(async tx=>{
+  await lockSourceScope(tx,evidence.source);
+  if(evidence.source.dataset!=='SURVEILLANCE'||(await registeredSourceReasons(tx,evidence.source,['STORE'],new Date().toISOString())).length)throw new Error('SURVEILLANCE_STORAGE_DENIED');
+  await tx.$executeRaw`INSERT INTO "SurveillanceSnapshot" ("id","listingId","knownAt","evidence") VALUES (${id},${evidence.listingId}::uuid,${utcInstant(at)},${json}::jsonb) ON CONFLICT DO NOTHING`;
+ });
  return {id,listingId:evidence.listingId,executable:false};
 }
 export async function readSurveillance(db:Reader,listingId:string,requestedAsOf?:string){
@@ -30,6 +35,8 @@ export async function readSurveillance(db:Reader,listingId:string,requestedAsOf?
  const row=rows[0],base={listingId,asOf,revision:row?.id??null,lowerBand:null as string|null,upperBand:null as string|null,executable:false};
  if(!row)return {...base,status:'UNKNOWN' as const,reasons:['SURVEILLANCE_MISSING'],validUntil:asOf};
  const evidence=validate(row.evidence),result=surveillance(evidence.restrictions,asOf),rights=['DERIVE','DISPLAY'].flatMap(op=>sourcePermission(evidence.source,op as 'DERIVE'|'DISPLAY',asOf).reasons);
+ if(evidence.source.dataset!=='SURVEILLANCE')rights.push('SOURCE_DATASET_MISMATCH');
+ rights.push(...await registeredSourceReasons(db,evidence.source,['DERIVE','DISPLAY'],new Date().toISOString()));
  const mappings=await db.$queryRaw<{id:string;evidence:InstrumentSnapshot}[]>`SELECT "id","evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`;
  const mapping=mappings[0],isin=mapping?.evidence.rows.find(r=>r.listingId===listingId)?.isin;
  const matched=mapping?.id===evidence.mappingRevision&&!!isin&&canonicalListings([mapping.evidence],[isin],asOf)[0]?.primary?.listingId===listingId;

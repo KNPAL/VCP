@@ -954,3 +954,14 @@ model InstrumentMasterImport {
  recordedAt DateTime @default(now()) @db.Timestamptz(6)
  evidence Json
 }
+model AlertChannelPreference {
+ ownerId String @id @db.Uuid
+ browserEnabled Boolean @default(false)
+ emailEnabled Boolean @default(false)
+}
+model AlertInboxReview {
+ inboxId String
+ kind String
+ reviewedAt DateTime @default(now()) @db.Timestamptz(6)
+ @@id([inboxId,kind])
+}

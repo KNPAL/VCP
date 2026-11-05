@@ -56,11 +56,21 @@ export function readiness(proofs:readonly GateProof[],asOf:string){
 }
 export function benchmarkReadiness(input:{identifier:string;identityVerified:boolean;calendarVerified:boolean;expectedSessions:readonly string[];bars:readonly {session:string;close:string;finalizedAt:string|null;adjustmentVerified:boolean;sourceRevision:string}[];asOf:string}|null){
  if(!input)return {status:'UNKNOWN',reasons:['BENCHMARK_MISSING'],riskMultiplier:'0'};
- const reasons:string[]=[],now=at(input.asOf);
- if(input.identifier!=='NIFTY_500_PRICE'||!input.identityVerified)reasons.push('BENCHMARK_IDENTITY_UNVERIFIED');
- if(!input.calendarVerified||input.expectedSessions.length<252)reasons.push('BENCHMARK_CALENDAR_INCOMPLETE');
- if(input.expectedSessions.some((session,i)=>{sessionDate(session);return session>exchangeDate(input.asOf)||(i>0&&session<=input.expectedSessions[i-1]!)}))reasons.push('BENCHMARK_CALENDAR_INVALID');
- if(input.bars.length!==input.expectedSessions.length||input.bars.some((bar,i)=>bar.session!==input.expectedSessions[i]||!bar.finalizedAt||at(bar.finalizedAt)>now||!bar.adjustmentVerified||!bar.sourceRevision||parseFixed(bar.close)<=0n))reasons.push('BENCHMARK_UNALIGNED_OR_UNVERIFIED');
+ const reasons:string[]=[];
+ if(input.identifier!=='NIFTY_500_PRICE'||input.identityVerified!==true)reasons.push('BENCHMARK_IDENTITY_UNVERIFIED');
+ const sessions=input.expectedSessions,bars=input.bars;
+ if(input.calendarVerified!==true||!Array.isArray(sessions)||sessions.length<252)reasons.push('BENCHMARK_CALENDAR_INCOMPLETE');
+ try{
+  const asOfSession=exchangeDate(input.asOf);
+  if(!Array.isArray(sessions)||sessions.some((date,i)=>sessionDate(date)>asOfSession||(i>0&&date<=sessions[i-1]!)))reasons.push('BENCHMARK_CALENDAR_INVALID');
+ }catch{reasons.push('BENCHMARK_CALENDAR_INVALID')}
+ try{
+  const cutoff=at(input.asOf);
+  if(!Array.isArray(bars)||!Array.isArray(sessions)||bars.length!==sessions.length||bars.some((bar,i)=>
+   bar.session!==sessions[i]||!bar.finalizedAt||at(bar.finalizedAt)>cutoff||exchangeDate(bar.finalizedAt)<bar.session||
+   bar.adjustmentVerified!==true||typeof bar.sourceRevision!=='string'||!bar.sourceRevision.trim()||parseFixed(bar.close)<=0n
+  ))reasons.push('BENCHMARK_UNALIGNED_OR_UNVERIFIED');
+ }catch{reasons.push('BENCHMARK_UNALIGNED_OR_UNVERIFIED')}
  return {status:reasons.length?'UNKNOWN':'PASS',reasons,riskMultiplier:reasons.length?'0':null};
 }
 export function surveillance(input:{verified:boolean;knownAt:string;validUntil:string;sourceAt:string;asm:boolean|null;gsm:boolean|null;esm:boolean|null;cashTradable:boolean|null;lowerBand:string|null;upperBand:string|null}|null,asOf:string){

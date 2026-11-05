@@ -6,8 +6,13 @@ export interface CorporateAction {
  id:string;listingId:string;kind:'SPLIT'|'BONUS';effectiveAt:string;knownAt:string;
  /** Total shares after / shares before. A 1:2 bonus is 3 / 2, not 1 / 2. */
  sharesAfter:string;sharesBefore:string;verified:boolean;sourceReference:string;
+ /** Official exchange record for the immediately preceding trading session. */
+ rawBasis?:{exchange:'NSE'|'BSE';listingId:string;sourceReference:string;knownAt:string;session:string;close:string;volume:string};
+
 }
 export interface ActionSnapshot {
+ /** Registry revision authorizing this corporate-action feed. */
+ sourceSnapshotId?:string;
  id:string;listingId:string;knownAt:string;verified:boolean;sourceReference:string;
  coverageFrom:string;coverageThrough:string;actions:readonly CorporateAction[];
 }
@@ -41,6 +46,21 @@ export function adjustCandles(input:AdjustmentInput){
   if(instant(action.knownAt)>instant(source.knownAt))throw new Error('ACTION_NOT_KNOWN_AT_SNAPSHOT');
   if(exchangeDate(action.effectiveAt)<=input.scaleSession&&instant(action.effectiveAt)>cutoff)reasons.push('CORPORATE_ACTION_NOT_EFFECTIVE:'+action.id);
   if(exchangeDate(action.effectiveAt)<=input.scaleSession&&(!action.verified||!action.sourceReference||instant(action.knownAt)>cutoff))reasons.push('CORPORATE_ACTION_UNVERIFIED:'+action.id);
+ }
+ for(const action of actions){
+  const effectiveSession=exchangeDate(action.effectiveAt);
+  if(effectiveSession>input.scaleSession||effectiveSession<=raw[0]!.session)continue;
+  const proof=action.rawBasis,previous=raw.filter(bar=>bar.session<effectiveSession).at(-1)!;
+  if(!proof||!['NSE','BSE'].includes(proof.exchange)||!proof.sourceReference?.trim()||proof.listingId!==input.listingId||
+     proof.exchange===previous.provider.toUpperCase()||proof.sourceReference===previous.provider||
+     !Number.isFinite(Date.parse(proof.knownAt))||Date.parse(proof.knownAt)>instant(source.knownAt)||
+     Date.parse(proof.knownAt)<instant(previous.finalizedAt!)||proof.session!==previous.session){
+   reasons.push('CORPORATE_ACTION_RAW_BASIS_UNVERIFIED:'+action.id);continue;
+  }
+  try{
+   if(parseFixed(proof.close)!==parseFixed(previous.close)||!/^\d+$/.test(proof.volume)||BigInt(proof.volume)!==BigInt(previous.volume))
+    reasons.push('CORPORATE_ACTION_RAW_BASIS_MISMATCH:'+action.id);
+  }catch{reasons.push('CORPORATE_ACTION_RAW_BASIS_INVALID:'+action.id)}
  }
  const revision=hash({listingId:input.listingId,asOf:input.asOf,scaleSession:input.scaleSession,source:{...source,actions},raw:raw.map(bar=>[bar.revisionId,bar.session])});
  if(reasons.length)return {state:'UNKNOWN' as const,signalsAllowed:false,revision,reasons,bars:[]};

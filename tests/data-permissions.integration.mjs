@@ -1,3 +1,5 @@
+import {assertActionPermissions} from '../packages/database/dist/data-permissions.js';
+import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -54,7 +56,7 @@ test('adjustment persistence requires current raw-source derivation and storage 
   const listingId=randomUUID(),revisionId=randomUUID(),provider='synthetic-adjustment-'+randomUUID(),date='2025-01-02',asOf='2025-01-03T00:00:00Z';
   const raw={listingId,provider,session:date,revisionId,open:'10',high:'12',low:'9',close:'11',volume:'100',receivedAt:asOf,finalizedAt:date+'T10:30:00Z',zeroVolumeVerified:false};
   await db.candleRevision.create({data:{id:revisionId,listingId,session:new Date(date),scale:'RAW',revision:1,open:raw.open,high:raw.high,low:raw.low,close:raw.close,volume:100n,source:provider,receivedAt:new Date(asOf),finalizedAt:new Date(raw.finalizedAt)}});
-  const input={listingId,asOf,scaleSession:date,raw:[raw],source:{id:'synthetic-no-actions',listingId,knownAt:asOf,verified:true,sourceReference:'synthetic',coverageFrom:date,coverageThrough:date,actions:[]}};
+  const input={listingId,asOf,scaleSession:date,raw:[raw],source:{sourceSnapshotId:await actionPermission(db),id:'synthetic-no-actions',listingId,knownAt:asOf,verified:true,sourceReference:'synthetic',coverageFrom:date,coverageThrough:date,actions:[]}};
   const counts=()=>db.$queryRaw`SELECT (SELECT count(*) FROM "AdjustmentSnapshot" WHERE "listingId"=${listingId}::uuid)::text AS snapshots,(SELECT count(*) FROM "AdjustedDailyCandle" WHERE "rawRevisionId"=${revisionId}::uuid)::text AS candles`;
   const empty=await counts();await assert.rejects(persistAdjustment(db,input),/SOURCE_PERMISSION_REQUIRED/);assert.deepEqual(await counts(),empty);
   const {id,...grant}=await candlePermission(db,provider,{DISPLAY:false});assert.ok(id);
@@ -67,6 +69,15 @@ test('adjustment persistence requires current raw-source derivation and storage 
   }
   await new Promise(resolve=>setTimeout(resolve,5));await persistSource(db,{...grant,knownAt:new Date().toISOString()});
   assert.deepEqual(await persistAdjustment(db,input),saved);
+  for(const sourceSnapshotId of [undefined,id]){
+   await assert.rejects(persistAdjustment(db,{...input,source:{...input.source,sourceSnapshotId}}),/ACTION_SOURCE_PERMISSION_REQUIRED/);
+  }
+  await assertActionPermissions(db,[saved.revision],['DISPLAY']);
+  const [authority]=await db.$queryRaw`SELECT evidence FROM "SourceSnapshot" WHERE id=${input.source.sourceSnapshotId}`;
+  await persistSource(db,{...authority.evidence,knownAt:new Date().toISOString(),uses:{...authority.evidence.uses,STORE:false}});
+  await assert.rejects(persistAdjustment(db,input),/ACTION_SOURCE_PERMISSION_REQUIRED/);
+  await assert.rejects(assertActionPermissions(db,[saved.revision],['DERIVE']),/SOURCE_PERMISSION_REQUIRED/);
+  assert.deepEqual(await counts(),stored);
  }finally{await db.$disconnect()}
 });
 
