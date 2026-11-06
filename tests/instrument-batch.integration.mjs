@@ -1,8 +1,9 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
-import {persistInstrumentSnapshot,assertEodScanDisplay,persistSource} from '../packages/database/dist/index.js';
+import {assertEodScanDisplay,persistSource} from '../packages/database/dist/index.js';
 import {actionPermission,candlePermission} from '../fixtures/candle-permission.mjs';
 
 test('full-universe instrument batch retries atomically and rejects identity conflicts',async()=>{
@@ -42,7 +43,7 @@ test('server-side scan lineage rejects absent, malformed and unlicensed raw cont
   await db.$executeRaw`INSERT INTO "EodScanPlan" (id,evidence) VALUES (${fast}::uuid,${JSON.stringify({benchmarkAdjustmentId:null,items:[],permissionLineage:{providers:[provider],actionSourceIds:[sourceSnapshotId]}})}::jsonb)`;
   await assertEodScanDisplay(db,fast);
   const [source]=await db.$queryRaw`SELECT evidence FROM "SourceSnapshot" WHERE id=${sourceSnapshotId}`;
-  const {id,...grant}=source.evidence;assert.equal(id,sourceSnapshotId);
+  const grant=source.evidence;
   await persistSource(db,{...grant,knownAt:new Date().toISOString(),uses:{...grant.uses,DISPLAY:false}});
   for(const scan of [valid,fast])await assert.rejects(assertEodScanDisplay(db,scan),/SOURCE_PERMISSION_REQUIRED/);
  }finally{await fixture.close()}

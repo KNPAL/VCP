@@ -1,10 +1,12 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
 import {actionPermission,benchmarkReview,candlePermission} from '../fixtures/candle-permission.mjs';
-import {registerProfile,activateProfile,persistInstrumentSnapshot,persistUniverse,persistReadiness,prepareEodScan,processEodScanItem,getScan} from '../packages/database/dist/index.js';
+import {registerProfile,activateProfile,persistReadiness,prepareEodScan,processEodScanItem,getScan} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {createApp} from '../apps/api/dist/app.js';
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');

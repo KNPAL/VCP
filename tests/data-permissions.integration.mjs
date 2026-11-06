@@ -3,10 +3,58 @@ import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {PrismaClient,assertCandlePermissions,persistSource,ingestCandles,createSyncRun,persistAdjustment,recordPortfolioRisk,readPortfolio} from '../packages/database/dist/index.js';
+import {PrismaClient,assertCandlePermissions,persistSource,ingestCandles,createSyncRun,persistAdjustment,recordPortfolioRisk,readPortfolio,persistSectors,getSector,persistUniverse} from '../packages/database/dist/index.js';
+import {authorizedUniverseAt,assertUniversePermission} from '../packages/database/dist/instruments.js';
+import {persistInstrumentSnapshot,authorizeInstrumentRows} from '../packages/database/dist/index.js';
+import {masterFixture} from '../fixtures/instrument-master.mjs';
+import {referenceSource} from '../fixtures/reference-source.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {processBackfillWindow} from '../apps/worker/dist/backfill.js';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
+
+test('instrument masters cannot bypass registration and revocation masks the selected revision',async()=>{
+ const fixture=await isolatedDatabase('master_permissions'),db=fixture.db;
+ try{
+  const knownAt=new Date(Date.now()-1000).toISOString(),input={knownAt,sourceReference:'synthetic-master',rows:masterFixture(knownAt).mappings};
+  await assert.rejects(persistInstrumentSnapshot(db,input),/INSTRUMENT_STORAGE_PERMISSION_REQUIRED/);
+  const source=await referenceSource(db,'instrument-master',knownAt),snapshot=await persistInstrumentSnapshot(db,{...input,source});
+  assert.equal((await authorizeInstrumentRows(db,[{evidence:snapshot}]))[0].evidence.rows.length,1);
+  await persistSource(db,{...source,knownAt:new Date().toISOString(),uses:{...source.uses,STORE:false,DERIVE:false,DISPLAY:false}});
+  const hidden=(await authorizeInstrumentRows(db,[{evidence:snapshot}]))[0].evidence;
+  assert.equal(hidden.id,snapshot.id);assert.deepEqual(hidden.rows,[]);
+  await assert.rejects(persistInstrumentSnapshot(db,{...input,source}),/INSTRUMENT_STORAGE_PERMISSION_REQUIRED/);
+ }finally{await fixture.close()}
+});
+
+test('universe membership requires registered rights and never falls back after revocation',async()=>{
+ const fixture=await isolatedDatabase('universe_permissions'),db=fixture.db;
+ try{
+  const knownAt=new Date(Date.now()-1000).toISOString(),input={universe:'NIFTY_500',knownAt,effectiveFrom:'2020-01-01',effectiveTo:null,sourceReference:'synthetic',historicalConstituentsVerified:true,isins:['INE000000001']};
+  await assert.rejects(persistUniverse(db,input),/UNIVERSE_STORAGE_PERMISSION_REQUIRED/);
+  const source=await referenceSource(db,'UNIVERSE',knownAt),saved=await persistUniverse(db,{...input,source});
+  assert.deepEqual((await authorizedUniverseAt(db,[saved],knownAt)).members,input.isins);
+  await persistSource(db,{...source,knownAt:new Date().toISOString(),uses:{...source.uses,STORE:false,DERIVE:false,DISPLAY:false}});
+  const hidden=await authorizedUniverseAt(db,[saved],knownAt);assert.equal(hidden.state,'UNKNOWN');assert.deepEqual(hidden.members,[]);
+  await assert.rejects(assertUniversePermission(db,saved.id,['DISPLAY']),/SOURCE_PERMISSION_REQUIRED/);
+  await assert.rejects(persistUniverse(db,{...input,source}),/UNIVERSE_STORAGE_PERMISSION_REQUIRED/);
+  assert.equal(await db.universeSnapshot.count(),1);
+ }finally{await fixture.close()}
+});
+
+test('sector authority gates storage and historical reads; revocation cannot leave known sectors',async()=>{
+ const fixture=await isolatedDatabase('sector_permissions'),db=fixture.db;
+ try{
+  const at=new Date(Date.now()-1000).toISOString(),isin='INE000000001',mappings=[{isin,sector:'TECH',validFrom:'2020-01-01',validTo:null,knownAt:at,sourceReference:'synthetic'}];
+  await assert.rejects(persistSectors(db,mappings,at),/SECTOR_STORAGE_PERMISSION_REQUIRED/);
+  const source=await referenceSource(db,'SECTORS',at);
+  const saved=await persistSectors(db,mappings,at,source);assert.equal((await persistSectors(db,mappings,at,source)).id,saved.id);
+  assert.equal((await getSector(db,isin)).sector,'TECH');
+  await persistSource(db,{...source,knownAt:new Date().toISOString(),uses:{...source.uses,STORE:false,DISPLAY:false,DERIVE:false}});
+  assert.equal((await getSector(db,isin,at)).status,'UNKNOWN');
+  await assert.rejects(persistSectors(db,mappings,at,source),/SECTOR_STORAGE_PERMISSION_REQUIRED/);
+  assert.equal(await db.sectorSnapshot.count(),1);
+ }finally{await fixture.close()}
+});
 
 test('risk snapshot quote storage requires live rights and rechecks after owner lock waits',async()=>{
  const fixture=await isolatedDatabase('risk_permissions'),db=fixture.db;

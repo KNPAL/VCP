@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import type {PrismaClient} from '@prisma/client';
 import {sourcePermission,HISTORICAL_ENDPOINT,normalizeHistoricalResponse,type InstrumentSnapshot,type SourceRecord} from '@vcp/market-data';
 import {syncRunInput} from './sync-windows.js';
@@ -7,7 +8,7 @@ export interface BackfillBinding {runId:string;credentialReference:string;instru
 export async function backfillBinding(db:PrismaClient,runId:string){const rows=await db.$queryRaw<{evidence:BackfillBinding}[]>`SELECT "evidence" FROM "BackfillBinding" WHERE "runId"=${runId}::uuid`;return rows[0]?.evidence??null}
 export async function backfillContext(db:PrismaClient,binding:BackfillBinding,now:string){
  const run=await syncRunInput(db,binding.runId);if(!run||run.provider!=='ANGEL_ONE')throw new Error('BACKFILL_CONTEXT_UNAVAILABLE');
- const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${binding.instrumentSnapshotId}`;
+ const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${binding.instrumentSnapshotId}`.then(rows=>authorizeInstrumentRows(db,rows));
  const sources=await db.$queryRaw<{evidence:SourceRecord}[]>`SELECT "evidence" FROM "SourceSnapshot" WHERE "id"=${binding.sourceSnapshotId}`;
  const mapping=mappings[0]?.evidence,source=sources[0]?.evidence;
  if(!mapping||!source||source.provider!==run.provider||source.dataset!=='DAILY_CANDLES'||source.endpointOrFile!==HISTORICAL_ENDPOINT||sourcePermission(source,'DOWNLOAD',now).status!=='PASS'||sourcePermission(source,'STORE',now).status!=='PASS')throw new Error('BACKFILL_CONTEXT_UNAVAILABLE');

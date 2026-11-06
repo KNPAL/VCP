@@ -1,4 +1,6 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {verifyBenchmarkIdentity} from './benchmark-identity.js';
+import {assertUniversePermission} from './instruments.js';
 import {assertActionPermissions,assertCandlePermissions} from './data-permissions.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
@@ -21,10 +23,11 @@ export async function persistRelativeStrengthReplay(db:PrismaClient,input:Streng
  const receipts=await db.$queryRaw<{createdAt:Date;evidence:{listingId:string;adjustmentId:string;calendarHash:string;from:string;to:string;state:string}}[]>`SELECT "createdAt","evidence" FROM "IndicatorReplayReceipt" WHERE "id"=${input.indicatorReceiptId}`;
  const receipt=receipts[0];if(!receipt||receipt.createdAt>now||receipt.evidence.state!=='INDICATORS_REPLAYED')throw new Error('RS_INDICATOR_RECEIPT_UNAVAILABLE');const r=receipt.evidence;
  const universes=await db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "id"=${input.universeSnapshotId}`;
- const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${input.instrumentSnapshotId}`;
+ const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${input.instrumentSnapshotId}`.then(rows=>authorizeInstrumentRows(db,rows));
  const proofs=await db.$queryRaw<{evidence:GateProof}[]>`SELECT "evidence" FROM "ReadinessProof" WHERE "id"=${input.benchmarkProofId}`;
  const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${r.calendarHash}`;
  const profile=await db.strategyProfile.findUnique({where:{id:input.profileId}});
+ await assertUniversePermission(db,input.universeSnapshotId,['DERIVE','STORE']);
  const universe=universes[0]?.evidence,mapping=mappings[0]?.evidence,proof=proofs[0]?.evidence;
  if(!universe||universe.universe!=='NIFTY_500'||!universe.historicalConstituentsVerified||!universe.sourceReference||utcInstant(universe.knownAt)>now||universe.effectiveFrom>r.from||(universe.effectiveTo!==null&&universe.effectiveTo<=r.to))throw new Error('RS_HISTORICAL_UNIVERSE_UNAVAILABLE');
  if(!mapping||utcInstant(mapping.knownAt)>now||!profile||profile.createdAt>now||configurationHash(profile.configuration)!==configurationHash(ST_VCP_4_0))throw new Error('RS_CONTEXT_UNAVAILABLE');
@@ -57,6 +60,7 @@ export async function persistRelativeStrengthReplay(db:PrismaClient,input:Streng
  const rows=gate.status==='PASS'?replayRelativeStrength({benchmark:benchmark.series,members,intended:universe.isins,sessions}):[];
  const result={id,input,listingId:r.listingId,targetIsin,mode:'RETROSPECTIVE_CORRECTION' as const,state:gate.status==='PASS'?'COMPUTED':'UNKNOWN',reasons:gate.reasons,rows,sessionTimes:Object.fromEntries(calendar.sessions.map(s=>[s.date,s.finalizedAt!]))};
  if(existing[0])return gate.status==='PASS'?existing[0].evidence:result;
+ await assertUniversePermission(db,input.universeSnapshotId,['DERIVE','STORE']);
  await assertActionPermissions(db,adjustmentIds,['DERIVE','STORE']);
  const current=await assertCandlePermissions(db,revisionIds,['DERIVE','STORE']);if(canonical(current.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
  await db.$executeRaw`INSERT INTO "RelativeStrengthReplay" ("id","indicatorReceiptId","instrumentSnapshotId","profileId","evidence") VALUES (${id},${input.indicatorReceiptId},${input.instrumentSnapshotId},${input.profileId},${canonical(result)}::jsonb) ON CONFLICT DO NOTHING`;

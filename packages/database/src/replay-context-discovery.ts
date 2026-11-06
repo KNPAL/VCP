@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {readiness,type InstrumentSnapshot,type UniverseSnapshot,type GateProof} from '@vcp/market-data';
@@ -16,7 +17,7 @@ export async function discoverStrengthReplayContext(db:PrismaClient,receiptId:st
   await db.$executeRaw`INSERT INTO "ReplayContextDiscovery" ("indicatorReceiptId","state","reason") VALUES (${receiptId},'WAITING',${reason}) ON CONFLICT ("indicatorReceiptId") DO UPDATE SET "state"='WAITING',"reason"=EXCLUDED."reason","checkedAt"=CURRENT_TIMESTAMP`;
   return {state:'WAITING' as const,id:null,reason};
  }
- const mappings=await db.$queryRaw<{id:string;evidence:InstrumentSnapshot}[]>`SELECT "id","evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${now} ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+ const mappings=await db.$queryRaw<{id:string;evidence:InstrumentSnapshot}[]>`SELECT "id","evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${now} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows));
  const mapping=mappings[0];if(!mapping)return waiting('RS_MAPPING_UNAVAILABLE');
  const target=mapping.evidence.rows.filter(row=>row.listingId===r.listingId&&row.enabled&&row.verified&&row.instrumentType==='EQUITY'&&row.validFrom<=r.from&&(row.validTo===null||row.validTo>r.to)&&((row.exchange==='NSE'&&row.series==='EQ')||(row.exchange==='BSE'&&row.series==='CASH')));
  if(target.length!==1)return waiting('RS_TARGET_MAPPING_UNAVAILABLE');

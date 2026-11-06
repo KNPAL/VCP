@@ -1,3 +1,6 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
+import {referenceSource} from '../fixtures/reference-source.mjs';
 import {benchmarkReview,actionPermission} from '../fixtures/candle-permission.mjs';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import {signalLineage} from '../fixtures/signal-lineage.mjs';
@@ -6,7 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {PrismaClient,recordPositionStatus,persistSource,assertPlanQuoteDisplay,assertCandlePermissions,registerProfile,activateProfile,persistInstrumentSnapshot,persistUniverse,persistSectors,pinScanUniverse,persistReadiness,persistSurveillance,persistMarketEvent,appendPortfolio,readPortfolio,recordReconciliation,recordPortfolioRisk,recordEntryRisk,readEntryRisk,saveBrokerConfiguration,installBrokerSession,ownerStreamBinding,readCurrentRegime} from '../packages/database/dist/index.js';
+import {PrismaClient,recordPositionStatus,persistSource,assertPlanQuoteDisplay,assertCandlePermissions,registerProfile,activateProfile,persistSectors,pinScanUniverse,persistReadiness,persistSurveillance,persistMarketEvent,appendPortfolio,readPortfolio,recordReconciliation,recordPortfolioRisk,recordEntryRisk,readEntryRisk,saveBrokerConfiguration,installBrokerSession,ownerStreamBinding,readCurrentRegime} from '../packages/database/dist/index.js';
 import {marketRegime} from '../packages/indicators/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {brokerAccountKey} from '../packages/market-data/dist/index.js';
@@ -25,7 +28,7 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   const profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0);await new Promise(resolve=>setTimeout(resolve,25));const activatedAt=new Date(Math.max(Date.now(),profile.createdAt.valueOf())).toISOString();await activateProfile(db,profile.id,activatedAt,activatedAt);
   const mapping=await persistInstrumentSnapshot(db,{knownAt,sourceReference:'synthetic-positive-entry',rows:[{companyId:randomUUID(),listingId,isin,exchange:'NSE',series:'EQ',symbol:'ENTRY',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
   const calendar=[-1,0,1].map(offset=>({date:day(offset),kind:'SPECIAL',opensAt:new Date(day(offset)+'T00:00:00+05:30').toISOString(),closesAt:new Date(day(offset)+'T23:59:59+05:30').toISOString(),finalizedAt:offset<0?new Date(day(offset)+'T23:59:59+05:30').toISOString():null,knownAt,source:'synthetic-all-day-calendar',verified:true}));
-  await persistSectors(db,[{isin,sector:'TECH',validFrom:'2020-01-01',validTo:null,knownAt,sourceReference:'synthetic-sector'}],knownAt);
+  await persistSectors(db,[{isin,sector:'TECH',validFrom:'2020-01-01',validTo:null,knownAt,sourceReference:'synthetic-sector'}],knownAt,await referenceSource(db,'SECTORS',knownAt));
   await persistUniverse(db,{universe:'NIFTY_500',knownAt,effectiveFrom:'2020-01-01',effectiveTo:null,sourceReference:'synthetic-universe',historicalConstituentsVerified:true,isins:[isin]});
   const benchmarkProvider='synthetic-regime-'+randomUUID(),benchmarkGrant=await candlePermission(db,benchmarkProvider),indexListing=randomUUID();
   const history=Array.from({length:252},(_,i)=>day(i-252));

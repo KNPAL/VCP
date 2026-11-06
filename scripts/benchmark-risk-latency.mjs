@@ -1,10 +1,11 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
 import {performance} from 'node:perf_hooks';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {candlePermission,actionPermission} from '../fixtures/candle-permission.mjs';
-import {appendPortfolio,persistInstrumentSnapshot,registerProfile} from '../packages/database/dist/index.js';
+import {appendPortfolio,registerProfile} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {queue,acquireLease} from '../apps/worker/dist/runtime.js';
 import {publishLiveTick,recordQuoteConnection} from '../apps/worker/dist/live-quotes.js';

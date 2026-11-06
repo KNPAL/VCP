@@ -1,5 +1,7 @@
+import {authorizeInstrumentRows} from './instruments.js';
+import {authorizedUniverseAt} from './instruments.js';
 import type {PrismaClient} from '@prisma/client';
-import {canonicalListings,universeAt,type InstrumentSnapshot,type UniverseSnapshot} from '@vcp/market-data';
+import {canonicalListings,type InstrumentSnapshot,type UniverseSnapshot} from '@vcp/market-data';
 import type {CompletedScan} from '@vcp/strategy';
 import {getReadiness} from './readiness.js';
 import {syncJobs} from './sync-progress.js';
@@ -19,11 +21,11 @@ export async function readDataHealth(db:PrismaClient){
  const asOf=new Date().toISOString(),at=new Date(asOf);
  const [universes,instruments,scans,plans,readiness,jobs]=await Promise.all([
  db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "knownAt"<=${at}`,
- db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" ASC LIMIT 1`,
+ db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" ASC LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows)),
  db.$queryRaw<{evidence:CompletedScan}[]>`SELECT "evidence" FROM "ScanResult" WHERE "asOf"<=${at} ORDER BY "asOf" DESC,"createdAt" DESC,"id" DESC LIMIT 1`,
  db.$queryRaw<{id:string}[]>`SELECT "id" FROM "EodScanPlan" WHERE "createdAt"<=${at} AND "evidence"->'request'->>'asOf'<=${asOf} ORDER BY "evidence"->'request'->>'asOf' DESC,"createdAt" DESC,"id" LIMIT 1`,
  getReadiness(db,asOf),syncJobs(db,{limit:50})]);
- const universe=universeAt(universes.map(r=>r.evidence),asOf),source=instruments[0]?.evidence,canonical=canonicalListings(source?[source]:[],universe.members,asOf),progress=plans[0]?await eodScanProgress(db,plans[0].id):null,scan=scans[0]?.evidence;
+ const universe=await authorizedUniverseAt(db,universes.map(r=>r.evidence),asOf),source=instruments[0]?.evidence,canonical=canonicalListings(source?[source]:[],universe.members,asOf),progress=plans[0]?await eodScanProgress(db,plans[0].id):null,scan=scans[0]?.evidence;
  const safe=(r:NonNullable<typeof source>['rows'][number])=>({listingId:r.listingId,symbol:r.symbol,exchange:r.exchange,series:r.series,instrumentType:r.instrumentType,provider:r.provider,verified:r.verified,enabled:r.enabled});
  return {asOf,executable:false,universe:{...universe,intended:universe.members.length},instrumentRevision:source?.id??null,instrumentSourceAt:source?.knownAt??null,members:canonical.map(r=>({isin:r.isin,status:r.status,reason:r.reason,primary:r.primary?safe(r.primary):null,otherListings:r.otherListings.map(safe)})),scan:scan?{scanId:scan.scanId,asOf:scan.asOf,counts:scan.counts,status:scan.status,dataRevision:scan.dataRevision}:null,progress:progress?{scanId:progress.scanId,asOf:progress.request.asOf,intended:progress.intended,processed:progress.completed,finished:progress.result!==null}:null,readiness,jobs};
 }

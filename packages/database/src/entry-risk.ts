@@ -1,9 +1,11 @@
+import {authorizeInstrumentRows} from './instruments.js';
+import {readSectorSnapshot} from './instruments.js';
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
 import {parseFixed,utcInstant} from '@vcp/domain';
 import {sizeEntry,sizeTopUp,entrySizingGates} from '@vcp/portfolio';
 import {evaluateEntry,structuralStop,type MarketEvent} from '@vcp/strategy';
-import {assessHeldQuote,canonicalListings,sectorAt,verifiedCalendar,type InstrumentSnapshot,type CalendarDay,type SectorMapping} from '@vcp/market-data';
+import {assessHeldQuote,canonicalListings,sectorAt,verifiedCalendar,type InstrumentSnapshot,type CalendarDay} from '@vcp/market-data';
 import {canonical} from './indicators.js';
 import {readPortfolioRiskTransaction,type PortfolioQuotes} from './portfolio-risk.js';
 import {actionScale} from './protective-stops.js';
@@ -40,9 +42,9 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
   const snapshots=await tx.$queryRaw<{evidence:{quotes:PortfolioQuotes}}[]>`SELECT "evidence" FROM "PortfolioRiskSnapshot" WHERE "id"=${request.snapshotId} AND "ownerId"=${ownerId}::uuid`;
   if(!snapshots[0])throw new Error('STALE_CONFLICT');
   await assertPortfolioQuotePermissions(db,request.snapshotId,['DERIVE','STORE']);
-  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
   const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;
-  const sectors=await tx.$queryRaw<{id:string;evidence:{mappings:SectorMapping[]}}[]>`SELECT "id","evidence" FROM "SectorSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+  const sectors=[await readSectorSnapshot(tx)];
   const structures=await tx.$queryRaw<{evidence:{input:{scaleRevision:string}}}[]>`SELECT "evidence" FROM "DailyStructureExecution" WHERE "listingId"=${event.listingId}::uuid AND "evidence"->'breakout'->'event'->>'id'=${event.id} LIMIT 1`;
   const mapping=mappings[0]?.evidence??null,isin=mapping?.rows.find(r=>r.listingId===event.listingId)?.isin??null;
   const before=new Date().toISOString(),listing=isin?canonicalListings(mapping?[mapping]:[],[isin],before)[0]?.primary:null;

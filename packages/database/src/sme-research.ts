@@ -1,15 +1,28 @@
+import {authorizeInstrumentRows} from './instruments.js';
+import {registeredSourceReasons,lockSourceScope} from './source-authority.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
-import {sourcePermission,validateSmeResearch,smeResearch,type SmeResearchEvidence,type InstrumentMapping,type ActionSnapshot} from '@vcp/market-data';
+import {sourcePermission,validateSmeResearch,smeResearch,type SmeResearchEvidence,type InstrumentSnapshot,type InstrumentMapping,type ActionSnapshot} from '@vcp/market-data';
 import {utcInstant,exchangeDate} from '@vcp/domain';
 import {canonical} from './indicators.js';
 import {loadSeries} from './eod-scan.js';
 export async function persistSmeResearch(db:PrismaClient,evidence:SmeResearchEvidence){
  evidence=structuredClone(validateSmeResearch(evidence));if(utcInstant(evidence.knownAt)>new Date())throw new Error('SME_FUTURE_SOURCE');if(sourcePermission(evidence.source,'STORE',evidence.knownAt).status!=='PASS')throw new Error('SME_STORAGE_PERMISSION_REQUIRED');
- if(evidence.segmentVerified||evidence.lotVerified){const rows=await db.$queryRaw<{evidence:InstrumentMapping}[]>`SELECT m."evidence" FROM "ListingMapping" m JOIN "InstrumentSnapshot" s ON s."id"=m."snapshotId" WHERE m."listingId"=${evidence.listingId}::uuid AND s."knownAt"<=${utcInstant(evidence.knownAt)} ORDER BY s."knownAt" DESC,s."id",m."id" LIMIT 1`;const row=rows[0]?.evidence;if(!row?.verified||row.isin!==evidence.isin||row.exchange!==evidence.exchange||row.instrumentType!=='EQUITY'||row.series!==evidence.exchangeSegmentCode||row.validFrom>exchangeDate(evidence.knownAt)||row.validTo!==null&&row.validTo<=exchangeDate(evidence.knownAt)||evidence.lotVerified&&row.lot!==evidence.lot)throw new Error('SME_VERIFIED_LISTING_MISMATCH')}
- const value=canonical(evidence),id=createHash('sha256').update(value).digest('hex');await db.$executeRaw`INSERT INTO "SmeResearchSnapshot" ("id","listingId","knownAt","evidence") VALUES (${id},${evidence.listingId}::uuid,${utcInstant(evidence.knownAt)},${value}::jsonb) ON CONFLICT DO NOTHING`;return {id,executable:false};
+ if(evidence.segmentVerified||evidence.lotVerified){const rows=await db.$queryRaw<{evidence:InstrumentMapping;master:InstrumentSnapshot}[]>`SELECT m."evidence",s."evidence" AS master FROM "ListingMapping" m JOIN "InstrumentSnapshot" s ON s."id"=m."snapshotId" WHERE m."listingId"=${evidence.listingId}::uuid AND s."knownAt"<=${utcInstant(evidence.knownAt)} ORDER BY s."knownAt" DESC,s."id",m."id" LIMIT 1`;const row=(await authorizeInstrumentRows(db,rows.map(row=>({evidence:row.master}))))[0]?.evidence.rows.length?rows[0]?.evidence:undefined;if(!row?.verified||row.isin!==evidence.isin||row.exchange!==evidence.exchange||row.instrumentType!=='EQUITY'||row.series!==evidence.exchangeSegmentCode||row.validFrom>exchangeDate(evidence.knownAt)||row.validTo!==null&&row.validTo<=exchangeDate(evidence.knownAt)||evidence.lotVerified&&row.lot!==evidence.lot)throw new Error('SME_VERIFIED_LISTING_MISMATCH')}
+ const value=canonical(evidence),id=createHash('sha256').update(value).digest('hex');
+ await db.$transaction(async tx=>{
+  await lockSourceScope(tx,evidence.source);
+  if(evidence.source.dataset!=='SME_METADATA'||(await registeredSourceReasons(tx,evidence.source,['STORE'],new Date().toISOString())).length)throw new Error('SME_STORAGE_PERMISSION_REQUIRED');
+  await tx.$executeRaw`INSERT INTO "SmeResearchSnapshot" ("id","listingId","knownAt","evidence") VALUES (${id},${evidence.listingId}::uuid,${utcInstant(evidence.knownAt)},${value}::jsonb) ON CONFLICT DO NOTHING`;
+ });return {id,executable:false};
 }
-export async function listSmeResearch(db:PrismaClient){const rows=await db.$queryRaw<{id:string;evidence:SmeResearchEvidence}[]>`SELECT DISTINCT ON ("listingId") "id","evidence" FROM "SmeResearchSnapshot" WHERE "knownAt"<=clock_timestamp() AND "recordedAt"<=clock_timestamp() ORDER BY "listingId","knownAt" DESC,"recordedAt" DESC,"id"`;return {items:rows.map(row=>({id:row.id,listingId:row.evidence.listingId,isin:row.evidence.isin})),executable:false}}
+async function metadataAllowed(db:PrismaClient,evidence:SmeResearchEvidence){return evidence.source.dataset==='SME_METADATA'&&!(await registeredSourceReasons(db,evidence.source,['DISPLAY','DERIVE'],new Date().toISOString())).length}
+export async function listSmeResearch(db:PrismaClient){
+ const rows=await db.$queryRaw<{id:string;evidence:SmeResearchEvidence}[]>`SELECT DISTINCT ON ("listingId") "id","evidence" FROM "SmeResearchSnapshot" WHERE "knownAt"<=clock_timestamp() AND "recordedAt"<=clock_timestamp() ORDER BY "listingId","knownAt" DESC,"recordedAt" DESC,"id"`;
+ const items:{id:string;listingId:string;isin:string}[]=[],unavailable:{id:string;reason:string}[]=[];
+ for(const row of rows){if(await metadataAllowed(db,row.evidence))items.push({id:row.id,listingId:row.evidence.listingId,isin:row.evidence.isin});else unavailable.push({id:row.id,reason:'SOURCE_PERMISSION_REQUIRED'})}
+ return {items,unavailable,state:unavailable.length?'BLOCKED_DATA':'KNOWN',executable:false};
+}
 export async function readSmeResearch(db:PrismaClient,listingId:string){
  if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(listingId))throw new Error('INVALID_LISTING_ID');
  const clocks=await db.$queryRaw<{cutoff:string}[]>`SELECT to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cutoff`,cutoff=clocks[0]!.cutoff,asOf=new Date(cutoff).toISOString(),at=utcInstant(asOf);
@@ -17,6 +30,7 @@ export async function readSmeResearch(db:PrismaClient,listingId:string){
  db.$queryRaw<{id:string;evidence:SmeResearchEvidence}[]>`SELECT "id","evidence" FROM "SmeResearchSnapshot" WHERE "listingId"=${listingId}::uuid AND "knownAt"<=${cutoff}::timestamptz AND "recordedAt"<=${cutoff}::timestamptz ORDER BY "knownAt" DESC,"recordedAt" DESC,"id" LIMIT 1`,
  db.$queryRaw<{id:string;scaleSession:Date;evidence:{source:ActionSnapshot}}[]>`SELECT "id","scaleSession","evidence" FROM "AdjustmentSnapshot" WHERE "listingId"=${listingId}::uuid AND "asOf"<=${at} AND "createdAt"<=${at} ORDER BY "asOf" DESC,"createdAt" DESC,"id" LIMIT 1`,
  db.$queryRaw<{id:string}[]>`SELECT "id" FROM "CalendarSnapshot" WHERE "createdAt"<=${at} ORDER BY "createdAt" DESC,"id" LIMIT 1`]);
+ if(rows[0]&&!await metadataAllowed(db,rows[0].evidence))return {...smeResearch(null,{asOf,liquidity:null,liquiditySourceAt:null,actionRevision:null,actionSourceAt:null}),metadataRevision:rows[0].id,calendarRevision:null,sourceReason:'SOURCE_PERMISSION_REQUIRED'};
  let liquidity:string|null=null,liquiditySourceAt:string|null=null,actionRevision:string|null=null,actionSourceAt:string|null=null;
  if(rows[0]&&rows[0].evidence.source.coverage.available>0&&sourcePermission(rows[0].evidence.source,'DISPLAY',asOf).status==='PASS'&&sourcePermission(rows[0].evidence.source,'DERIVE',asOf).status==='PASS'&&adjustments[0]&&calendars[0])try{const loaded=await loadSeries(db,adjustments[0].id,{scanId:'sme-research-only',asOf,session:adjustments[0].scaleSession.toISOString().slice(0,10),calendarId:calendars[0].id},['DERIVE','DISPLAY']);liquidity=loaded.adv.value?.median??null;liquiditySourceAt=loaded.series.bars.at(-1)?.finalizedAt??null;if(adjustments[0].evidence.source.verified){actionRevision=adjustments[0].id;actionSourceAt=adjustments[0].evidence.source.knownAt}}catch(error){if(!(error instanceof Error)||!['ADJUSTMENT_UNAVAILABLE','CURRENT_SESSION_MISSING','CALENDAR_OR_COVERAGE_INCOMPLETE','CANDLE_FINALIZED_BEFORE_CALENDAR','INVALID_FINALIZED_SERIES','RAW_SOURCE_NOT_YET_KNOWN','SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw error}
  return {...smeResearch(rows[0]?.evidence??null,{asOf,liquidity,liquiditySourceAt,actionRevision,actionSourceAt}),metadataRevision:rows[0]?.id??null,calendarRevision:calendars[0]?.id??null};

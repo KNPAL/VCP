@@ -1,9 +1,11 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {benchmarkReview,candlePermission,actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {ingestCandles,persistAdjustment,receiveCandleChange,replayStoredIndicators,persistInstrumentSnapshot,persistUniverse,persistReadiness,persistSource,registerProfile,persistRelativeStrengthReplay,replayStoredStructure} from '../packages/database/dist/index.js';
+import {ingestCandles,persistAdjustment,receiveCandleChange,replayStoredIndicators,persistReadiness,persistSource,registerProfile,persistRelativeStrengthReplay,replayStoredStructure} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
 import {queue,createWorker} from '../apps/worker/dist/runtime.js';

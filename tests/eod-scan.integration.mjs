@@ -1,3 +1,5 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
@@ -5,7 +7,7 @@ import {benchmarkReview,candlePermission} from '../fixtures/candle-permission.mj
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {createApp} from '../apps/api/dist/app.js';
-import {ingestCandles,persistAdjustment,persistInstrumentSnapshot,persistUniverse,persistReadiness,persistSource,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
+import {ingestCandles,persistAdjustment,persistReadiness,persistSource,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {exchangeDate} from '../packages/domain/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';
@@ -137,7 +139,8 @@ test('EOD scan pins revisions, resumes lost queue jobs and accounts for every in
   await assert.rejects(loadSeries(db,target.adjusted.revision,request,['DERIVE','DISPLAY']),/SOURCE_PERMISSION_REQUIRED/);
   await persistSource(db,{...grant,knownAt:new Date().toISOString()});
   const digestReview=await benchmarkReview(db,benchmark.listingId,benchmark.input.raw);
-  for(const wrong of [{seriesSha256:'0'.repeat(64)},{identifier:'NIFTY_500_TRI'},{listingId:target.listingId}]){
+  const samePublisher=await candlePermission(db,benchmark.provider,{},'BENCHMARK');
+  for(const wrong of [{seriesSha256:'0'.repeat(64)},{identifier:'NIFTY_500_TRI'},{listingId:target.listingId},{sourceSnapshotId:samePublisher.id},{knownAt:'2099-01-01T00:00:00Z'}]){
    const at=new Date().toISOString();
    await assert.rejects(persistReadiness(db,{gate:'G04',status:'PASS',probeAt:at,sourceAt:at,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic-review',reason:null,details:{identifier:'NIFTY_500_PRICE',calendarId:target.ingested.calendarHash,adjustmentId:benchmark.adjusted.revision,identityReview:{...digestReview,...wrong}}}),/INVALID_READINESS_PROOF/);
 

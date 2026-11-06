@@ -1,7 +1,8 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt} from 'node:crypto';
-import {PrismaClient,persistSource,persistInstrumentSnapshot,persistSurveillance,readSurveillance,registerProfile,persistMarketEvent,recordPortfolioRisk,recordEntryRisk,readEntryRisk} from '../packages/database/dist/index.js';
+import {PrismaClient,persistSource,persistSurveillance,readSurveillance,registerProfile,persistMarketEvent,recordPortfolioRisk,recordEntryRisk,readEntryRisk} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION,evaluateBreakout} from '../packages/strategy/dist/index.js';
 import {breakoutInput} from '../fixtures/signal-golden.mjs';
 const db=new PrismaClient();

@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import type {PrismaClient} from '@prisma/client';
 import {sma,ema21} from '@vcp/indicators';
 import {positionEpisodes} from '@vcp/portfolio';
@@ -24,7 +25,7 @@ export async function readInspector(db:PrismaClient,ownerId:string,id:string){
  const asOf=new Date().toISOString();if(Date.parse(execution.input.decidedAt)>Date.parse(asOf))return null;
  const permission=await assertCandlePermissions(db,execution.input.series.bars.map(bar=>bar.revision),['DISPLAY','DERIVE'],asOf);
  const [mappingRows,journal,stopRows,trailRows,events]=await Promise.all([
-  db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${new Date(execution.input.decidedAt)} ORDER BY "knownAt" DESC,"id" LIMIT 1`,
+  db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${new Date(execution.input.decidedAt)} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows)),
   readPortfolio(db,ownerId),
   db.$queryRaw<{evidence:InitialStop}[]>`SELECT "evidence" FROM "InitialPositionStop" WHERE "ownerId"=${ownerId}::uuid AND "evidence"->'stop'->>'listingId'=${execution.input.listingId}`,
   db.$queryRaw<{evidence:{id:string;stopId:string;input:{session:string;asOf:string;scaleVerified:boolean};result:{nextStop:string|null;effectiveAt:string|null;state:string}}}[]>`SELECT t."evidence" FROM "PositionTrail" t JOIN "InitialPositionStop" s ON s."id"=t."stopId" WHERE t."ownerId"=${ownerId}::uuid AND s."ownerId"=${ownerId}::uuid AND s."evidence"->'stop'->>'listingId'=${execution.input.listingId} ORDER BY t."session",t."decidedAt",t."id"`,

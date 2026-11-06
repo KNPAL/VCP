@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {registeredSourceReasons,lockSourceScope} from './source-authority.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
@@ -17,7 +18,7 @@ export async function persistSurveillance(db:PrismaClient,input:SurveillanceEvid
  const evidence=structuredClone(validate(input)),at=evidence.restrictions.knownAt;
  if(utcInstant(at)>new Date())throw new Error('SURVEILLANCE_NOT_YET_KNOWN');
  if(sourcePermission(evidence.source,'STORE',at).status!=='PASS')throw new Error('SURVEILLANCE_STORAGE_DENIED');
- const rows=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${evidence.mappingRevision} AND "knownAt"<=${utcInstant(at)} LIMIT 1`;
+ const rows=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${evidence.mappingRevision} AND "knownAt"<=${utcInstant(at)} LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows));
  const mapping=rows[0]?.evidence,isin=mapping?.rows.find(row=>row.listingId===evidence.listingId)?.isin;
  if(!isin||canonicalListings(mapping?[mapping]:[],[isin],at)[0]?.primary?.listingId!==evidence.listingId)throw new Error('SURVEILLANCE_MAPPING_MISMATCH');
  const json=canonical(evidence),id=createHash('sha256').update(json).digest('hex');
@@ -37,7 +38,7 @@ export async function readSurveillance(db:Reader,listingId:string,requestedAsOf?
  const evidence=validate(row.evidence),result=surveillance(evidence.restrictions,asOf),rights=['DERIVE','DISPLAY'].flatMap(op=>sourcePermission(evidence.source,op as 'DERIVE'|'DISPLAY',asOf).reasons);
  if(evidence.source.dataset!=='SURVEILLANCE')rights.push('SOURCE_DATASET_MISMATCH');
  rights.push(...await registeredSourceReasons(db,evidence.source,['DERIVE','DISPLAY'],new Date().toISOString()));
- const mappings=await db.$queryRaw<{id:string;evidence:InstrumentSnapshot}[]>`SELECT "id","evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+ const mappings=await db.$queryRaw<{id:string;evidence:InstrumentSnapshot}[]>`SELECT "id","evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows));
  const mapping=mappings[0],isin=mapping?.evidence.rows.find(r=>r.listingId===listingId)?.isin;
  const matched=mapping?.id===evidence.mappingRevision&&!!isin&&canonicalListings([mapping.evidence],[isin],asOf)[0]?.primary?.listingId===listingId;
  const reasons=[...new Set([...result.reasons,...rights,...(!matched?['SURVEILLANCE_MAPPING_CHANGED']:[])])];

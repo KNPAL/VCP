@@ -1,3 +1,6 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
+import {referenceSource} from '../fixtures/reference-source.mjs';
 import {actionPermission} from '../fixtures/candle-permission.mjs';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
@@ -17,7 +20,7 @@ import {breakoutInput,entryInput} from '../fixtures/signal-golden.mjs';
 import {appendPortfolio,readPortfolio} from '../packages/database/dist/index.js';
 import {ingestCandles,synchronizeStoredCandles,persistAdjustment} from '../packages/database/dist/index.js';
 import {persistReadiness,getReadiness,persistSource} from '../packages/database/dist/index.js';
-import {persistInstrumentSnapshot,persistUniverse,pinScanUniverse,persistSectors,getSector} from '../packages/database/dist/index.js';
+import {pinScanUniverse,persistSectors,getSector} from '../packages/database/dist/index.js';
 import {pendingCandleChanges,receiveCandleChange} from '../packages/database/dist/index.js';
 import {queue,createWorker,enqueueOnce} from '../apps/worker/dist/runtime.js';
 import {dispatchCandleChanges,candleChangeHandler} from '../apps/worker/dist/correction-delivery.js';
@@ -83,7 +86,7 @@ test('PostgreSQL constraints and durable authentication',async()=>{
   await persistUniverse(db,{universe:'NIFTY_500',knownAt:registryKnown,effectiveFrom:'2026-01-01',effectiveTo:null,sourceReference:'synthetic-universe',historicalConstituentsVerified:true,isins:[registryIsin]});
   const universeId=randomUUID(),pinned=await pinScanUniverse(db,universeId,registryKnown);assert.equal(pinned.listings[0].primary.listingId,listingId);
   assert.deepEqual(await pinScanUniverse(db,universeId,registryKnown),pinned);
-  const sectorSnapshot=await persistSectors(db,[{isin:registryIsin,sector:'TECH',validFrom:'2020-01-01',validTo:null,knownAt:registryKnown,sourceReference:'synthetic-sector'}],registryKnown);assert.ok(sectorSnapshot.id);
+  const sectorSnapshot=await persistSectors(db,[{isin:registryIsin,sector:'TECH',validFrom:'2020-01-01',validTo:null,knownAt:registryKnown,sourceReference:'synthetic-sector'}],registryKnown,await referenceSource(db,'SECTORS',registryKnown));assert.ok(sectorSnapshot.id);
   assert.equal((await getSector(db,registryIsin,registryKnown)).sector,'TECH');assert.equal((await getSector(db,'INE999999999',registryKnown)).status,'UNKNOWN');
   await assert.rejects(db.$executeRaw`DELETE FROM "InstrumentSnapshot" WHERE "id"=${savedMaster.id}`);
   await assert.rejects(db.$executeRaw`INSERT INTO "ListingMapping" ("id","snapshotId","listingId","provider","token","validFrom","validTo","evidence") VALUES (${'f'.repeat(64)},${savedMaster.id},${listingId}::uuid,'fixture','999','2026-01-01'::date,NULL,'{}'::jsonb)`);

@@ -305,3 +305,5 @@ Email is optional. Set `VCP_ALERT_EMAIL_OWNER` to the application's owner UUID i
 For G04, the licensed NIFTY 500 price-index reference, calendar and independent review must be available before enabling trade readiness. See [benchmark verification](docs/registry-readiness.md#g04-benchmark-verification) for the import command and evidence fields.
 
 For local regression checks, clean-stack verification and reproducible performance measurements, see [verification and CI](docs/verification.md). Hosted CI is a separate acceptance step; local passing results do not replace it.
+
+Reference-data imports require registered sources for instrument masters, universes, sectors and IPO/SME metadata. Existing snapshots without that binding show unavailable/UNKNOWN data until reviewed reimport. See [reference metadata permissions](docs/registry-readiness.md#reference-metadata-permissions), then rebuild and restart the services after updating.

@@ -25,3 +25,5 @@ With the local test database running and workspace built, use `node scripts/data
 On 2026-11-06, 20 protective-event samples measured P95 4,856 ms against a 5,000 ms target. This used real Redis/PostgreSQL and the production monitor function at five-second cadence, one synthetic held position, and varied tick arrival phases; part of the run overlapped the EOD workload. Timing includes tick normalization/cache publication, polling delay and observation of the committed protective event. It excludes broker transport and unrelated worker dispatch jobs. This limited fixture is not a claim about all portfolio sizes or deployed worker contention.
 
 Full EOD and API P95 acceptance remain pending until their measurements pass. KAN-134 remains In Progress.
+
+The final 2026-11-06 EOD/API measurement was interrupted after fixture preparation by PostgreSQL reporting `FATAL: the database system is shutting down`; it has no valid completion timing. Restart the local dependencies before rerunning. The subsequent cached-action-revocation test addition also needs a fresh run once PostgreSQL is available.

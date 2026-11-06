@@ -6,7 +6,7 @@ import {benchmarkReadiness,verifiedCalendar,readiness,type CalendarDay,type Acti
 import {validateSeries,relativeStrength,percentiles,adv20,snapshot,sma,marketRegime,type Series} from '@vcp/indicators';
 import {companyCandidate,configurationHash,ST_VCP_4_0,type DailyStructureInput,type ScanOutcome} from '@vcp/strategy';
 import {canonical,persistIndicator} from './indicators.js';
-import {pinScanUniverse} from './instruments.js';
+import {pinScanUniverse,assertUniversePermission,assertInstrumentPermission} from './instruments.js';
 import {activeProfile} from './profiles.js';
 import {processDailyStructure} from './daily-structure.js';
 import {persistScan,getScan} from './scans.js';
@@ -64,6 +64,8 @@ async function readPlanLineage(db:PrismaClient|Prisma.TransactionClient,plan:Pic
  return {providers:lineage.providers.sort(),actionSourceIds:lineage.actionSourceIds};
 }
 async function assertPlanPermissions(db:PrismaClient|Prisma.TransactionClient,plan:Plan,operations:readonly Permission[]=['DERIVE','STORE']){
+ if(plan.universe?.universe.snapshotId)await assertUniversePermission(db,plan.universe.universe.snapshotId,operations);
+ for(const id of new Set(plan.universe?.listings.map(item=>item.snapshotId).filter((id):id is string=>!!id)??[]))await assertInstrumentPermission(db,id,operations);
  // Only internally constructed, immutable plans contain this proof. Older plans
  // reconstruct it. Cache source identity, never permission outcomes or expiry.
  const lineage=plan.permissionLineage??await readPlanLineage(db,plan);

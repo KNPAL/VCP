@@ -1,8 +1,9 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
-import {PrismaClient,ingestCandles,persistAdjustment,receiveCandleChange,replayStoredIndicators,pendingIndicatorReplays,recordIndicatorReplayDispatch,persistInstrumentSnapshot,registerProfile} from '../packages/database/dist/index.js';
+import {PrismaClient,ingestCandles,persistAdjustment,receiveCandleChange,replayStoredIndicators,pendingIndicatorReplays,recordIndicatorReplayDispatch,registerProfile} from '../packages/database/dist/index.js';
 import {snapshot} from '../packages/indicators/dist/index.js';
 import {indicatorReplayHandler} from '../apps/worker/dist/indicator-replay.js';
 import {structureReplayHandler} from '../apps/worker/dist/structure-replay.js';

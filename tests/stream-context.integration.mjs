@@ -1,7 +1,8 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
-import {PrismaClient,registerProfile,persistMarketEvent,installBrokerSession,persistInstrumentSnapshot,appendPortfolio,brokerCircuitStore} from '../packages/database/dist/index.js';
+import {PrismaClient,registerProfile,persistMarketEvent,installBrokerSession,appendPortfolio,brokerCircuitStore} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {brokerAccountKey} from '../packages/market-data/dist/index.js';
 import {streamDependencies} from '../apps/worker/dist/stream-context.js';

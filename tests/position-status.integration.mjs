@@ -1,7 +1,8 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
-import {PrismaClient,appendPortfolio,registerProfile,persistInstrumentSnapshot,recordPositionStatus,readPositionStatus,evaluatePositionStop,readPortfolio} from '../packages/database/dist/index.js';
+import {PrismaClient,appendPortfolio,registerProfile,recordPositionStatus,readPositionStatus,evaluatePositionStop,readPortfolio} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 const db=new PrismaClient(),hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 test('status requires current inputs, preserves actual lifecycle and never equates an alert with execution',async()=>{

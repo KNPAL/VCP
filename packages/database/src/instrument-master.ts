@@ -12,7 +12,7 @@ export async function importInstrumentMaster(db:PrismaClient,input:MasterImport)
   const registered=await currentSource(tx,input.source,new Date().toISOString());
   if(!registered||registered.id!==hash(input.source))throw new Error('MASTER_SOURCE_NOT_PERMITTED');
   const prior=await tx.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "InstrumentMasterImport" WHERE "id"=${id}`;if(prior[0])return prior[0].evidence;
-  const snapshot=await persistInstrumentSnapshotTransaction(tx,{knownAt:input.knownAt,sourceReference:id,rows:normalized.rows});
+  const snapshot=await persistInstrumentSnapshotTransaction(tx,{knownAt:input.knownAt,sourceReference:id,source:input.source,rows:normalized.rows});
   const evidence={id,asOf,source:input.source,tickDivisor:input.tickDivisor,inputHash:id,snapshotId:snapshot.id,status:normalized.status,counts:normalized.counts,report:normalized.report};
   await tx.$executeRaw`INSERT INTO "InstrumentMasterImport" ("id","evidence") VALUES (${id},${canonical(evidence)}::jsonb) ON CONFLICT DO NOTHING`;
   const saved=await tx.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "InstrumentMasterImport" WHERE "id"=${id}`;return saved[0]!.evidence;

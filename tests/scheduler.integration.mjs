@@ -1,7 +1,9 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
-import {PrismaClient,claimSchedulerLease,releaseSchedulerLease,scheduleCalendarTick,schedulerStatus,persistReadiness,persistUniverse,persistInstrumentSnapshot,registerProfile,activateProfile,getScan,eodScanProgress} from '../packages/database/dist/index.js';
+import {PrismaClient,claimSchedulerLease,releaseSchedulerLease,scheduleCalendarTick,schedulerStatus,persistReadiness,registerProfile,activateProfile,getScan,eodScanProgress} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {exchangeDate} from '../packages/domain/dist/index.js';
 import {queue,createWorker} from '../apps/worker/dist/runtime.js';

@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {randomUUID} from 'node:crypto';
 import {exchangeDate} from '@vcp/domain';
 import type {PrismaClient} from '@prisma/client';
@@ -18,7 +19,7 @@ export async function prepareManualDownload(db:PrismaClient){
   if(!current.items.length||current.blockedInstruments.length||current.items.some(i=>i.state!=='KNOWN')||Object.values(current.sourcePermissions).some(p=>p.status!=='PASS'))return change('PARTIAL','DOWNLOAD_EVIDENCE_UNAVAILABLE');
   const credentials=await tx.$queryRaw<{reference:string}[]>`SELECT b."reference" FROM "BrokerCredential" b JOIN "BrokerCircuit" c ON c."accountKey"=b."accountKey" AND c."sessionRevision"=b."sessionRevision" WHERE b."accountKey"=${accepted.accountKey} AND NOT c."open" AND c."verifiedAt"<=${new Date(at)} AND c."expiresAt">${new Date(at)} AND b."expiresAt"=c."expiresAt"`;
   if(credentials.length!==1)return change('PAUSED_AUTH','BROKER_SESSION_UNAVAILABLE');
-  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${accepted.instrumentSnapshotId}`;
+  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${accepted.instrumentSnapshotId}`.then(rows=>authorizeInstrumentRows(tx,rows));
   const epochs=await tx.$queryRaw<{generation:number}[]>`SELECT COALESCE(max("generation"),-1)::integer AS generation FROM "ManualDownloadChild" WHERE "manualRunId"=${run.id}::uuid`;
   const generation=epochs[0]!.generation+1;let children=0;
   for(const item of current.items){

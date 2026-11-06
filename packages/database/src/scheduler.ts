@@ -1,7 +1,8 @@
+import {authorizedUniverseAt} from './instruments.js';
 import {randomUUID} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {exchangeDate} from '@vcp/domain';
-import {verifiedCalendar,readiness,universeAt,type CalendarDay,type GateProof,type UniverseSnapshot} from '@vcp/market-data';
+import {verifiedCalendar,readiness,type CalendarDay,type GateProof,type UniverseSnapshot} from '@vcp/market-data';
 import {canonical} from './indicators.js';
 import {prepareEodScan,type EodScanRequest} from './eod-scan.js';
 export interface SchedulerLease {scope:string;ownerId:string;fence:string}
@@ -45,7 +46,7 @@ export async function scheduleCalendarTick(db:PrismaClient,lease:SchedulerLease)
   const profiles=await tx.$queryRaw<{profileId:string}[]>`SELECT "profileId" FROM "StrategyActivation" WHERE "activatedAt"<=${at} AND "knownAt"<=${at} ORDER BY "activatedAt" DESC,"knownAt" DESC,"id" DESC LIMIT 1`;
   if(!profiles[0])return record('WAITING','SCAN_ACTIVE_PROFILE_UNAVAILABLE');
   const universes=await tx.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "knownAt"<=${at}`;
-  const universe=universeAt(universes.map(u=>u.evidence),asOf);if(universe.state!=='KNOWN'||!universe.members.length)return record('WAITING','SCAN_VERIFIED_UNIVERSE_UNAVAILABLE');
+  const universe=await authorizedUniverseAt(tx,universes.map(u=>u.evidence),asOf);if(universe.state!=='KNOWN'||!universe.members.length)return record('WAITING','SCAN_VERIFIED_UNIVERSE_UNAVAILABLE');
   const request:EodScanRequest={scanId:randomUUID(),session:decision.session,calendarId:calendar!.id,asOf};
   // Transaction rollback also removes this request if the fence expires before the final check.
   await tx.$executeRaw`INSERT INTO "ScheduledScanRequest" ("id","scope","session","evidence") VALUES (${request.scanId}::uuid,${lease.scope},${new Date(request.session)},${canonical(request)}::jsonb)`;

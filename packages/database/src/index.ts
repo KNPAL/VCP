@@ -19,7 +19,7 @@ export {persistSource,persistReadiness,getReadiness,readSourceRegistry,currentSo
 export {evaluateLicenseBindings,LICENSE_SOURCE_ROLES} from './licensing.js';
 export {assertCandlePermissions,assertProviderPermissions,assertPlanQuoteDisplay,assertPortfolioQuoteDisplay} from './data-permissions.js';
 export {readDownloadChoices} from './download-choices.js';
-export {persistInstrumentSnapshot,persistUniverse,pinScanUniverse,persistSectors,getSector} from './instruments.js';
+export {persistInstrumentSnapshot,persistUniverse,pinScanUniverse,persistSectors,getSector,authorizeInstrumentRows} from './instruments.js';
 export * from './historical-probe.js';
 export * from './broker-credentials.js';
 export * from './backfill-binding.js';

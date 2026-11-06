@@ -1,8 +1,10 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import {licensedSources} from '../fixtures/licensed-sources.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,randomInt} from 'node:crypto';
-import {PrismaClient,persistInstrumentSnapshot,persistUniverse,readDataHealth,readBrokerHealth,installBrokerSession,brokerCircuitStore,persistReadiness,instrumentCoverage} from '../packages/database/dist/index.js';
+import {PrismaClient,readDataHealth,readBrokerHealth,installBrokerSession,brokerCircuitStore,persistReadiness,instrumentCoverage} from '../packages/database/dist/index.js';
 test('universe health preserves unsupported segments, revisions and unknown coverage without changing evidence',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');const db=new PrismaClient();
  try{
@@ -15,7 +17,7 @@ test('universe health preserves unsupported segments, revisions and unknown cove
   for(const [session,finalizedAt] of [[pastSession,new Date(Date.now()-2000)],[futureSession,new Date(Date.now()+86400000)]]){const values={listingId:rows[0].listingId,session,open:'10',high:'11',low:'9',close:'10',volume:123n,receivedAt:new Date(Math.max(Date.now()-1000,finalizedAt.getTime())),finalizedAt};const revision=await db.candleRevision.create({data:{...values,scale:'RAW',revision:1,source:'synthetic-health'}});await db.rawDailyCandle.create({data:{...values,provider:'synthetic-health',revisionId:revision.id,contentHash:'a'.repeat(64)}})}
   assert.equal((await instrumentCoverage(db,rows[0].listingId,'synthetic-health')).latestFinalSession,pastSession.toISOString().slice(0,10));
 
-  await persistInstrumentSnapshot(db,{knownAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'future-synthetic',rows:[]});assert.equal((await readDataHealth(db)).instrumentRevision,source.id);assert.deepEqual(await db.$queryRaw`SELECT count(*)::text AS count FROM "ScanResult"`,before);
+  await assert.rejects(persistInstrumentSnapshot(db,{knownAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'future-synthetic',rows:[]}),/INSTRUMENT_STORAGE_PERMISSION_REQUIRED/);assert.equal((await readDataHealth(db)).instrumentRevision,source.id);assert.deepEqual(await db.$queryRaw`SELECT count(*)::text AS count FROM "ScanResult"`,before);
  }finally{await db.$disconnect()}
 });
 test('broker health uses the configured circuit only and never returns credential material',async()=>{

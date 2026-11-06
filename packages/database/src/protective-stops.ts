@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {recordExitDecisions} from './exit-decisions.js';
 import {cancelPartialsForStop} from './partial-resolution.js';
 import {createHash} from 'node:crypto';
@@ -20,7 +21,7 @@ export async function initializePositionStops(tx:Prisma.TransactionClient,ownerI
   const episode=openEpisode(events,isin,asOf)!;
   const existing=await tx.$queryRaw<{id:string}[]>`SELECT "id" FROM "InitialPositionStop" WHERE "ownerId"=${ownerId}::uuid AND "isin"=${isin} AND "episodeId"=${episode.identity}::uuid`;
   if(existing[0])continue;
-  const cutoff=utcInstant(episode.first.occurredAt),mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${cutoff} ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+  const cutoff=utcInstant(episode.first.occurredAt),mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${cutoff} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
   const listing=canonicalListings(mappings.map(r=>r.evidence),[isin],episode.first.occurredAt)[0]?.primary;
   const sources=listing?await tx.$queryRaw<{evidence:DailyStructureResult}[]>`SELECT "evidence" FROM "DailyStructureExecution" WHERE "listingId"=${listing.listingId}::uuid AND ("evidence"->'input'->>'decidedAt')::timestamptz<=${cutoff} AND "createdAt"<=${utcInstant(asOf)} ORDER BY "session" DESC LIMIT 1`:[];
   const source=sources[0]?.evidence,primary=source?.detector.frozen.primary;

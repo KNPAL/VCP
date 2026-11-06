@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
 import {replayStructure,ST_VCP_4_0,configurationHash,type ReplayStrength} from '@vcp/strategy';
@@ -15,7 +16,7 @@ export async function replayStoredStructure(db:PrismaClient,input:StructureRepla
  const receipts=await db.$queryRaw<{createdAt:Date;evidence:{listingId:string;adjustmentId:string;calendarHash:string;dataRevision:string;asOf:string;from:string;to:string;state:string}}[]>`SELECT "createdAt","evidence" FROM "IndicatorReplayReceipt" WHERE "id"=${input.indicatorReceiptId}`;
  const receipt=receipts[0];if(!receipt||receipt.evidence.state!=='INDICATORS_REPLAYED')throw new Error('INDICATOR_REPLAY_REQUIRED');
  const r=receipt.evidence;
- const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${input.instrumentSnapshotId}`;
+ const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${input.instrumentSnapshotId}`.then(rows=>authorizeInstrumentRows(db,rows));
  const mapping=mappings[0]?.evidence;
  const profile=await db.strategyProfile.findUnique({where:{id:input.profileId}});
  if(!mapping||!profile||configurationHash(profile.configuration)!==configurationHash(ST_VCP_4_0)||profile.createdAt>new Date()||new Date(mapping.knownAt)>new Date())throw new Error('REPLAY_CONTEXT_UNAVAILABLE');

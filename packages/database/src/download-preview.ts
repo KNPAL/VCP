@@ -1,8 +1,10 @@
+import {authorizeInstrumentRows} from './instruments.js';
+import {authorizedUniverseAt} from './instruments.js';
 import {currentSource} from './source-authority.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {sessionDate} from '@vcp/domain';
-import {canonicalListings,universeAt,previewDownloadRange,backfillHorizon,sourcePermission,HISTORICAL_ENDPOINT,candleHash,type InstrumentSnapshot,type UniverseSnapshot,type CalendarDay,type DailyCandle} from '@vcp/market-data';
+import {canonicalListings,previewDownloadRange,backfillHorizon,sourcePermission,HISTORICAL_ENDPOINT,candleHash,type InstrumentSnapshot,type UniverseSnapshot,type CalendarDay,type DailyCandle} from '@vcp/market-data';
 import {canonical} from './indicators.js';
 import {ownerBrokerBinding} from './broker-configuration.js';
 import {readBrokerHealth} from './data-health.js';
@@ -21,11 +23,11 @@ export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,owne
  const ownerBinding=await ownerBrokerBinding(db,ownerId,accountKey);accountKey=ownerBinding.accountKey;
  const [universes,instruments,authority,broker]=await Promise.all([
  db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "knownAt"<=${at}`,
- db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`,
+ db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows)),
  currentSource(db,{dataset:'DAILY_CANDLES',provider:'ANGEL_ONE',endpointOrFile:HISTORICAL_ENDPOINT},checkedAt),
  readBrokerHealth(db,accountKey)]);
  if(ownerBinding.configuredAt&&(!broker.sourceAt||Date.parse(broker.sourceAt)<=Date.parse(ownerBinding.configuredAt)))broker.historyReady=false;
- const universe=universeAt(universes.map(r=>r.evidence),checkedAt);
+ const universe=await authorizedUniverseAt(db,universes.map(r=>r.evidence),checkedAt);
  if(request.universeId!=='NIFTY_500'&&request.universeId!==universe.snapshotId)throw new Error('DOWNLOAD_UNIVERSE_NOT_FOUND');
  const mapping=instruments[0]?.evidence,source=authority?.evidence??null;
  const permissions=Object.fromEntries((['DISPLAY','DERIVE','DOWNLOAD','STORE'] as const).map(use=>[use,sourcePermission(source,use,checkedAt)]));

@@ -1,7 +1,8 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,randomBytes,createHash} from 'node:crypto';
-import {PrismaClient,persistSource,readSourceRegistry,currentSource,persistInstrumentSnapshot,createSyncRun,backfillContext,installBrokerSession,bindBackfill} from '../packages/database/dist/index.js';
+import {PrismaClient,persistSource,readSourceRegistry,currentSource,createSyncRun,backfillContext,installBrokerSession,bindBackfill} from '../packages/database/dist/index.js';
 import {HISTORICAL_ENDPOINT} from '../packages/market-data/dist/index.js';
 import {createApp} from '../apps/api/dist/app.js';
 import {masterFixture} from '../fixtures/instrument-master.mjs';

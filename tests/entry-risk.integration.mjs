@@ -1,3 +1,4 @@
+import {referenceSource} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
@@ -38,7 +39,7 @@ test('entry plan retries are immutable, owner scoped and never manufacture quote
   await persistReadiness(db,{gate:'G06',status:'UNKNOWN',reason:'SYNTHETIC_RESTRICTIONS_CHANGED',probeAt:new Date().toISOString(),sourceAt:null,expiresAt:new Date(Date.now()+60000).toISOString(),sourceReference:null,details:null});
   const changed=(await readEntryRisk(db,owner.id)).items.find(p=>p.evidence.id===plan.id);
   assert.equal(changed.current,false);assert.ok(changed.validityReasons.includes('ENTRY_SOURCE_CHANGED_OR_UNVERIFIED'));
-  await persistSectors(db,[],new Date().toISOString());
+  await persistSectors(db,[],new Date().toISOString(),await referenceSource(db,'SECTORS'));
   assert.ok((await readEntryRisk(db,owner.id)).items.find(p=>p.evidence.id===plan.id).validityReasons.includes('SECTOR_EVIDENCE_CHANGED'));
   await appendPortfolio(db,owner.id,randomUUID(),{kind:'DEPOSIT',amount:'0.000001',verified:true,occurredAt:new Date().toISOString(),sourceId:'synthetic-plan-test'});
   assert.equal((await readEntryRisk(db,owner.id)).items.find(p=>p.evidence.id===plan.id).current,false);

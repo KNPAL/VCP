@@ -78,6 +78,14 @@ The source registry, download preview and G07 binding checks now fail closed on 
 
 Adjustment imports require `source.sourceSnapshotId` from a reviewed CORPORATE_ACTIONS registry record, including snapshots that confirm no actions. The worker must have DERIVE and STORE authority for both the action feed and the raw candle providers. Indicator, relative-strength and structure replay, EOD planning and saved-scan display recheck the pinned action authority. Historical records missing this linkage require a newly reviewed adjustment snapshot. A provider-level lock now fences the final permission check and commit for raw candle ingestion and live-quote portfolio valuation writes.
 
+## Reference metadata permissions
+
+Instrument snapshots now carry a registered `source` with dataset `instrument-master`, universe snapshots use `UNIVERSE`, and sector snapshots use `SECTORS`. The instrument-master importer supplies its reviewed source automatically. Direct snapshot writes must supply it explicitly; `persistSectors` takes it as its fourth argument. A source reference string alone is insufficient. Imports lock the source scope and require current STORE authority, including retries.
+
+Instrument read paths preserve the selected snapshot identity but withhold mappings when DISPLAY/DERIVE authority is missing, expired or revoked; they do not fall back to older mappings. Universe selection, scheduling, download previews, scan processing/display and relative-strength replay check current universe authority. Sector reads and portfolio/entry sizing withhold unpermitted sector classifications. Legacy reference snapshots without source metadata require reviewed reimport and remain unavailable until then. These changes need rebuilt/restarted services; no new migration is required.
+
+IPO and SME metadata use `IPO_METADATA` and `SME_METADATA` respectively; see their operator guides for registration and reimport instructions.
+
 ## G04 benchmark verification
 
 Register metadata for the independent benchmark publisher with dataset `BENCHMARK`, and register the raw-candle and corporate-action sources separately. With an independently identified NIFTY 500 **price** index reference file, prepare a G04 proof for the stored adjusted series and exchange-calendar revision. The independent publisher must differ from every contributing raw-candle provider. Obtain permission to use the reference before computing its digest.

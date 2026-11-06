@@ -1,7 +1,8 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
-import {PrismaClient,appendPortfolio,readPortfolio,registerProfile,persistInstrumentSnapshot,evaluatePositionStop,readPositionStops} from '../packages/database/dist/index.js';
+import {PrismaClient,appendPortfolio,readPortfolio,registerProfile,evaluatePositionStop,readPositionStops} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {recordShadowAudit} from '../packages/database/dist/index.js';
 const db=new PrismaClient(),hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');

@@ -1,8 +1,9 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
-import {appendPortfolio,readPortfolio,registerProfile,persistInstrumentSnapshot,evaluatePartialProfit,dismissPartialProfit,evaluatePositionStop,readPositionStops,readSellAlerts,acknowledgePositionAlert,evaluateExitDecisions,hasHigherExit} from '../packages/database/dist/index.js';
+import {appendPortfolio,readPortfolio,registerProfile,evaluatePartialProfit,dismissPartialProfit,evaluatePositionStop,readPositionStops,readSellAlerts,acknowledgePositionAlert,evaluateExitDecisions,hasHigherExit} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 test('partial alerts deduplicate, resolve from actual fills or dismissal, and yield to full SELL',async()=>{

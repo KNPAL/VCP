@@ -1,6 +1,8 @@
+import {authorizeInstrumentRows} from './instruments.js';
+import {authorizedUniverseAt} from './instruments.js';
 import type {Prisma} from '@prisma/client';
 import {exchangeDate,utcInstant} from '@vcp/domain';
-import {verifiedCalendar,readiness,universeAt,canonicalListings,type InstrumentSnapshot,type CalendarDay,type GateProof,type UniverseSnapshot} from '@vcp/market-data';
+import {verifiedCalendar,readiness,canonicalListings,type InstrumentSnapshot,type CalendarDay,type GateProof,type UniverseSnapshot} from '@vcp/market-data';
 import {marketRegime} from '@vcp/indicators';
 import {canonical} from './indicators.js';
 import type {Plan} from './eod-scan.js';
@@ -28,9 +30,9 @@ export async function readCurrentRegime(tx:Prisma.TransactionClient,asOf:string)
  const proof=proofs[0],details=proof?.evidence.details as {identifier?:string;adjustmentId?:string}|undefined;
  if(!proof||readiness([proof.evidence],asOf).items.find(g=>g.gate==='G04')?.status!=='PASS'||details?.identifier!=='NIFTY_500_PRICE'||details.adjustmentId!==source.benchmark.adjustmentId)return unknown('REGIME_BENCHMARK_UNAVAILABLE');
  const universes=await tx.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "knownAt"<=${at}`;
- const universe=universeAt(universes.map(r=>r.evidence),asOf);
+ const universe=await authorizedUniverseAt(tx,universes.map(r=>r.evidence),asOf);
  if(universe.state!=='KNOWN'||universe.snapshotId!==plan.universe.universe.snapshotId)return unknown('REGIME_UNIVERSE_CHANGED');
- const mappings=await tx.$queryRaw<{id:string;evidence:InstrumentSnapshot}[]>`SELECT "id","evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+ const mappings=await tx.$queryRaw<{id:string;evidence:InstrumentSnapshot}[]>`SELECT "id","evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
  if(plan.universe.listings.some(r=>r.snapshotId!==mappings[0]?.id))return unknown('REGIME_MAPPING_CHANGED');
  const listings=canonicalListings(mappings.map(r=>r.evidence),source.intended,asOf);
  if(listings.some(r=>r.primary?.listingId!==plan.universe.listings.find(p=>p.isin===r.isin)?.primary?.listingId))return unknown('REGIME_MAPPING_CHANGED');

@@ -18,4 +18,6 @@ The reviewed input follows `SmeResearchEvidence` in `packages/market-data/src/sm
 
 Imports are content-addressed and immutable. A correction appends a new known-time revision; an unpermitted new revision does not silently reuse older displayed facts. No import changes the live strategy, readiness proofs, portfolio ledger or broker connection. No external data is downloaded by this workflow.
 
+The metadata source must use dataset `SME_METADATA` and must match the current source-registry record exactly. Register it with `node scripts/source-registry.mjs import <reviewed-source.json>` before importing research metadata. Storage and retries lock the source scope and recheck authority. List/detail reads consult the registry again; revocation hides affected identities and research values even while an old embedded grant remains unexpired. The list reports withheld revision IDs through `unavailable` and a `BLOCKED_DATA` state.
+
 Use the unit and isolated PostgreSQL suites `tests/sme-research.test.mjs` and `node scripts/database-command.mjs test sme-research`. Synthetic fixtures belong only in `vcp_test`.

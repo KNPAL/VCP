@@ -1,14 +1,16 @@
+import {authorizeInstrumentRows} from './instruments.js';
+import {authorizedUniverseAt} from './instruments.js';
 import type {PrismaClient} from '@prisma/client';
-import {canonicalListings,universeAt,verifiedCalendar,type InstrumentSnapshot,type UniverseSnapshot,type CalendarDay} from '@vcp/market-data';
+import {canonicalListings,verifiedCalendar,type InstrumentSnapshot,type UniverseSnapshot,type CalendarDay} from '@vcp/market-data';
 import {ownerBrokerBinding} from './broker-configuration.js';
 /** Local selection metadata only. Never fetches provider data or queues work. */
 export async function readDownloadChoices(db:PrismaClient,ownerId:string,accountKey?:string){
  const asOf=new Date().toISOString(),at=new Date(asOf),binding=await ownerBrokerBinding(db,ownerId,accountKey);
  const [universes,instruments]=await Promise.all([
   db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "knownAt"<=${at}`,
-  db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`
+  db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${at} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows))
  ]);
- const universe=universeAt(universes.map(r=>r.evidence),asOf),mapping=instruments[0]?.evidence;
+ const universe=await authorizedUniverseAt(db,universes.map(r=>r.evidence),asOf),mapping=instruments[0]?.evidence;
  const items=[];
  for(const member of canonicalListings(mapping?[mapping]:[],universe.members,asOf)){
   const row=member.primary;

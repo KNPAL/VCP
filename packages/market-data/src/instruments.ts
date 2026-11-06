@@ -1,6 +1,7 @@
 import {parseFixed,integerShares,sessionDate,utcInstant,exchangeDate} from '@vcp/domain';
+import type {SourceRecord} from './readiness.js';
 export interface InstrumentMapping {companyId:string;isin:string;listingId:string;exchange:'NSE'|'BSE';series:string;symbol:string;instrumentType:'EQUITY'|'ETF'|'INDEX'|'DERIVATIVE'|'UNKNOWN';tick:string;lot:number;listingDate:string;provider:string;token:string;validFrom:string;validTo:string|null;verified:boolean;enabled:boolean}
-export interface InstrumentSnapshot {id:string;knownAt:string;sourceReference:string;rows:readonly InstrumentMapping[]}
+export interface InstrumentSnapshot {id:string;knownAt:string;sourceReference:string;source?:SourceRecord;rows:readonly InstrumentMapping[]}
 const uuid=(value:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
 const effective=(from:string,to:string|null,date:string)=>from<=date&&(to===null||date<to);
 export function validateInstrumentSnapshot(snapshot:InstrumentSnapshot){
@@ -30,7 +31,7 @@ export function canonicalListings(snapshots:readonly InstrumentSnapshot[],intend
   return {isin,primary,otherListings:rows.filter(row=>row.listingId!==primary?.listingId),status:primary?'KNOWN' as const:'UNKNOWN' as const,reason:primary?null:options.length>1?'AMBIGUOUS_CANONICAL_LISTING':rows.length?'NO_VERIFIED_CASH_EQUITY_LISTING':'INSTRUMENT_MAPPING_MISSING',snapshotId:snapshot?.id??null,asOf};
  });
 }
-export interface UniverseSnapshot {id:string;universe:'NIFTY_500';knownAt:string;effectiveFrom:string;effectiveTo:string|null;sourceReference:string;historicalConstituentsVerified:boolean;isins:readonly string[]}
+export interface UniverseSnapshot {id:string;universe:'NIFTY_500';knownAt:string;effectiveFrom:string;effectiveTo:string|null;sourceReference:string;source?:SourceRecord;historicalConstituentsVerified:boolean;isins:readonly string[]}
 export function universeAt(snapshots:readonly UniverseSnapshot[],asOf:string){
  const date=exchangeDate(asOf),cutoff=utcInstant(asOf).valueOf();
  if(snapshots.some(snapshot=>snapshot.universe!=='NIFTY_500'))throw new Error('UNSUPPORTED_UNIVERSE');

@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
 import {readiness,type GateProof,type InstrumentSnapshot,type UniverseSnapshot} from '@vcp/market-data';
@@ -14,7 +15,7 @@ export async function refreshReplayDependencies(db:PrismaClient,receiptId:string
  for(const source of sources){
   const previous=source.evidence.input,evaluatedAt=new Date().toISOString(),now=new Date(evaluatedAt);
   async function record(reason:string|null){await db.$executeRaw`INSERT INTO "ReplayDependencyCheck" ("indicatorReceiptId","reason") VALUES (${previous.indicatorReceiptId},${reason}) ON CONFLICT ("indicatorReceiptId") DO UPDATE SET "reason"=EXCLUDED."reason","checkedAt"=CURRENT_TIMESTAMP`}
-  const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${previous.instrumentSnapshotId}`;
+  const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${previous.instrumentSnapshotId}`.then(rows=>authorizeInstrumentRows(db,rows));
   const universes=await db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "id"=${previous.universeSnapshotId}`;
   const mapping=mappings[0]?.evidence,universe=universes[0]?.evidence;
   if(!mapping||!universe){await record('RS_DEPENDENCY_CONTEXT_UNAVAILABLE');continue}

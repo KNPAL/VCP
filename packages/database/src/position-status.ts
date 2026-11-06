@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
 import {openEpisode,positionEpisodes,positionStatus,protectiveDecision,partialProfit,exitPrecedence,type PortfolioEvent,type PositionStatusInput} from '@vcp/portfolio';
@@ -18,7 +19,7 @@ export async function recordPositionStatus(db:PrismaClient,ownerId:string,isin:s
   const record=(episode?stops.find(r=>r.evidence.episodeId===episode.identity):stops[0])?.evidence;
   if(!record)return {state:'NO_ACTUAL_POSITION',executable:false};
   const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;
-  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
   const trail=await tx.$queryRaw<{id:string;session:Date;state:string;evidence:{calendarId:string;input:{sourceRevision:string}}}[]>`SELECT "id","session","state","evidence" FROM "PositionTrail" WHERE "stopId"=${record.id} ORDER BY "session" DESC,"decidedAt" DESC,"id" LIMIT 1`;
   const failure=await tx.$queryRaw<{id:string;session:Date;state:string}[]>`SELECT "id","session","state" FROM "PositionFailure" WHERE "stopId"=${record.id} ORDER BY "session" DESC,"recognizedAt" DESC,"id" LIMIT 1`;
   const active=episode?.first.id===record.fillId?await effectivePositionStop(tx,record,at):null,scale=active?await actionScale(tx,active.listingId,at):null;

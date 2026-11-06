@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
 import {openEpisode,partialProfit,type PortfolioEvent,type ProtectiveQuote} from '@vcp/portfolio';
@@ -20,7 +21,7 @@ export async function evaluatePartialProfit(db:PrismaClient,ownerId:string,isin:
   if(prior[0])return {state:'ALREADY_EMITTED',evidence:prior[0].evidence,executable:false};
   const full=await tx.$queryRaw<{id:string}[]>`SELECT "id" FROM "ProtectiveSignal" WHERE "stopId"=${record.id} UNION ALL SELECT "id" FROM "PositionFailure" WHERE "stopId"=${record.id} AND "state"='SELL_BREAKOUT_FAILURE' UNION ALL SELECT "id" FROM "PositionTrail" WHERE "stopId"=${record.id} AND "state"='SELL_EMA_CLOSE' LIMIT 1`;
   if(full.length)return {state:'FULL_SELL_PENDING',executable:false};
-  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
   const listing=canonicalListings(mappings.map(r=>r.evidence),[isin],asOf)[0]?.primary;
   if(!listing||listing.listingId!==record.stop.listingId)return {state:'UNABLE_TO_EVALUATE',executable:false};
   const scale=await actionScale(tx,listing.listingId,asOf);asOf=new Date().toISOString();

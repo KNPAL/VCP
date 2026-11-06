@@ -1,9 +1,11 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {referenceSource} from '../fixtures/reference-source.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
 import {parseFixed,formatFixed} from '../packages/domain/dist/index.js';
-import {appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,persistInstrumentSnapshot,persistSectors,persistSource} from '../packages/database/dist/index.js';
+import {appendPortfolio,readPortfolio,recordPortfolioRisk,readPortfolioRisk,persistSectors,persistSource} from '../packages/database/dist/index.js';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 const hash=v=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 test('risk evidence preserves actual fills, expires marks and serializes with journal changes',async()=>{
@@ -15,7 +17,7 @@ test('risk evidence preserves actual fills, expires marks and serializes with jo
   const mapping=await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-risk-only',rows:[{companyId:randomUUID(),isin,listingId,exchange:'NSE',series:'EQ',symbol:'RISK',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider,token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
   const calendar=[{date,kind:'SPECIAL',opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:new Date(date+'T23:59:59+05:30').toISOString(),finalizedAt:null,knownAt:before,source:'synthetic-risk-test',verified:true}],calendarId=hash(randomUUID());
   await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
-  await persistSectors(db,[{isin,sector:'RISK_TEST',validFrom:'2020-01-01',validTo:null,knownAt:before,sourceReference:'synthetic-sector'}],new Date().toISOString());
+  await persistSectors(db,[{isin,sector:'RISK_TEST',validFrom:'2020-01-01',validTo:null,knownAt:before,sourceReference:'synthetic-sector'}],new Date().toISOString(),await referenceSource(db,'SECTORS',before));
   const adjustmentId=hash(randomUUID()),actionSource={id:adjustmentId,listingId,knownAt:before,verified:true,sourceReference:'synthetic-risk-actions',coverageFrom:'2020-01-01',coverageThrough:date,actions:[]};
   await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${adjustmentId},${listingId}::uuid,${new Date(date)},${new Date(before)},'KNOWN',${JSON.stringify({source:actionSource})}::jsonb)`;
   const buy={kind:'FILL',isin,side:'BUY',quantity:10,price:'100',fees:'0.01',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-risk'};

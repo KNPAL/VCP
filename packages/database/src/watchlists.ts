@@ -1,3 +1,4 @@
+import {authorizeInstrumentRows} from './instruments.js';
 import {randomUUID} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
 import {canonicalListings,type InstrumentSnapshot} from '@vcp/market-data';
@@ -13,7 +14,7 @@ export function watchlistFilters(value:unknown){
 }
 async function instruments(db:DB){
  const at=new Date().toISOString();
- const rows=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${new Date(at)} ORDER BY "knownAt" DESC,"id" LIMIT 1`;
+ const rows=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${new Date(at)} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows));
  const source=rows[0]?.evidence;
  return {at,source,canonical:canonicalListings(source?[source]:[],source?.rows.map(r=>r.isin)??[],at)};
 }

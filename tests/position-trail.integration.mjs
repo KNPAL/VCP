@@ -1,9 +1,10 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,randomInt,createHash} from 'node:crypto';
-import {PrismaClient,ingestCandles,persistAdjustment,persistInstrumentSnapshot,registerProfile,appendPortfolio,readPortfolio,readPositionStops,evaluatePositionTrail,evaluatePositionStop,effectivePositionStop} from '../packages/database/dist/index.js';
+import {PrismaClient,ingestCandles,persistAdjustment,registerProfile,appendPortfolio,readPortfolio,readPositionStops,evaluatePositionTrail,evaluatePositionStop,effectivePositionStop} from '../packages/database/dist/index.js';
 import {protectiveDecision} from '../packages/portfolio/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {exchangeDate} from '../packages/domain/dist/index.js';

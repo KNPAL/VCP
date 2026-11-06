@@ -1,8 +1,9 @@
+import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {PrismaClient,appendPortfolio,materializeStreamTimeline,readStreamTimeline,persistInstrumentSnapshot,saveBrokerConfiguration,installBrokerSession,logoutBroker} from '../packages/database/dist/index.js';
+import {PrismaClient,appendPortfolio,materializeStreamTimeline,readStreamTimeline,saveBrokerConfiguration,installBrokerSession,logoutBroker} from '../packages/database/dist/index.js';
 import {brokerAccountKey} from '../packages/market-data/dist/index.js';
 import {createApp} from '../apps/api/dist/app.js';
 const {io}=createRequire(new URL('../apps/api/package.json',import.meta.url))('socket.io-client');
