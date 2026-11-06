@@ -307,3 +307,5 @@ For G04, the licensed NIFTY 500 price-index reference, calendar and independent 
 For local regression checks, clean-stack verification and reproducible performance measurements, see [verification and CI](docs/verification.md). Hosted CI is a separate acceptance step; local passing results do not replace it.
 
 Reference-data imports require registered sources for instrument masters, universes, sectors and IPO/SME metadata. Existing snapshots without that binding show unavailable/UNKNOWN data until reviewed reimport. See [reference metadata permissions](docs/registry-readiness.md#reference-metadata-permissions), then rebuild and restart the services after updating.
+
+Exchange-calendar imports also require a registered `EXCHANGE_CALENDAR` source ID on every calendar day. Legacy calendars and historical archives without source lineage remain unavailable until reviewed reimport. See [calendar and archived reference permissions](docs/registry-readiness.md#calendar-and-archived-reference-permissions) before loading data.

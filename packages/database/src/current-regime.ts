@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {authorizedUniverseAt} from './instruments.js';
 import type {Prisma} from '@prisma/client';
@@ -15,7 +16,7 @@ export async function readCurrentRegime(tx:Prisma.TransactionClient,asOf:string)
  const unknown=(reason:string)=>({regime:'UNKNOWN' as const,reasons:[reason],scanId:plans[0]?.id??null,revision:plan?.dataRevision??null,asOf,validUntil:asOf,evidence:source??null});
  if(!plan||!source)return unknown('REGIME_EVIDENCE_REQUIRED');
  if(source.session>today||source.asOf!==plan.request.asOf||source.calendarId!==plan.request.calendarId)return unknown('REGIME_INVALID_EVIDENCE');
- const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${at} ORDER BY "createdAt" DESC,"id" LIMIT 1`;
+ const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${at} ORDER BY "createdAt" DESC,"id" LIMIT 1`.then(rows=>authorizeCalendarRows(tx,rows));
  const calendar=calendars[0];
  // Any calendar revision requires a fresh EOD plan, including corrections to historical bars.
  if(calendar?.id!==source.calendarId)return unknown('REGIME_CALENDAR_CHANGED');

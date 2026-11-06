@@ -1,3 +1,4 @@
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import assert from 'node:assert/strict';
@@ -19,7 +20,7 @@ try{
  const calendar=dates.map(date=>({date,kind:'SPECIAL',opensAt:date+'T00:00:00Z',closesAt:date+'T00:01:00Z',finalizedAt:date+'T00:02:00Z',knownAt:'2020-01-01T00:00:00Z',source:'synthetic-benchmark-calendar',verified:true}));
  Object.assign(calendar.at(-1),{opensAt:new Date(Date.now()-60000).toISOString(),closesAt:new Date(Date.now()-30000).toISOString(),finalizedAt:observed});
  const calendarId=hash(calendar);
- await db.$executeRaw`INSERT INTO "CalendarSnapshot" (id,evidence) VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
+ await db.$executeRaw`INSERT INTO "CalendarSnapshot" (id,evidence) VALUES (${calendarId},${JSON.stringify(await permittedCalendar(db,calendar))}::jsonb)`;
  const profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0);
  const activeAt=profile.createdAt.toISOString();await activateProfile(db,profile.id,activeAt,activeAt);
  const provider='synthetic-performance',grant=await candlePermission(db,provider),actionId=await actionPermission(db),mappings=[],adjustments=[];

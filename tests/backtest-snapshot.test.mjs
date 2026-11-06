@@ -21,6 +21,7 @@ test('historical snapshot is detached, immutable, deterministic and survives ser
 });
 test('later corrections and corporate actions cannot change the earlier price scale',()=>{
  const input=fixture();input.raw.push({...input.raw[0],revisionId:'corrected',revision:2,receivedAt:late,open:'120',high:'120',low:'120',close:'120'});
+ input.actions[1].actions[0].rawBasis={exchange:'NSE',listingId,sourceReference:'synthetic-independent-exchange-record',knownAt:late,session:'2026-10-20',close:'120',volume:'100'};
  const snapshot=pinHistoricalSnapshot(input),before=historicalSlice(snapshot,early),after=historicalSlice(snapshot,late);
  assert.equal(before.selected[0].adjustment.bars[0].close,'100.000000');
  assert.equal(before.selected[0].adjustment.bars[0].rawRevisionId,'original');

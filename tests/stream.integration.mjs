@@ -1,3 +1,4 @@
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,7 +61,7 @@ test('socket quotes stay transient, deduplicate ticks and emit stale after cache
   const owner=await db.owner.findFirstOrThrow();await db.session.create({data:{id:hash(token),ownerId:owner.id,csrfHash:hash(csrf),expiresAt:new Date(Date.now()+3600000)}});
   const before=new Date(Date.now()-10000).toISOString(),date=new Date(Date.now()+19800000).toISOString().slice(0,10),session={date,opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:new Date(date+'T23:59:59+05:30').toISOString(),knownAt:before,verified:true};
   const mapping=await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-stream-browser',rows:[{companyId:randomUUID(),listingId,isin,exchange:'NSE',series:'EQ',symbol:'TEST',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
-  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${hash(randomUUID())},${JSON.stringify([{...session,kind:'SPECIAL',finalizedAt:null,source:'synthetic-stream-browser'}])}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${hash(randomUUID())},${JSON.stringify(await permittedCalendar(db,[{...session,kind:'SPECIAL',finalizedAt:null,source:'synthetic-stream-browser'}]))}::jsonb)`;
   const sessionKey=randomBytes(32);await saveBrokerConfiguration(db,owner.id,{apiKey:'synthetic-stream-key',clientCode},randomUUID(),sessionKey);await new Promise(r=>setTimeout(r,5));await installBrokerSession(db,{reference:randomUUID(),accountKey,sessionRevision:randomUUID(),keyId:'stream-test',expiresAt:session.closesAt},{accessToken:'synthetic-access',apiKey:'synthetic-stream-key',clientLocalIp:'127.0.0.1',clientPublicIp:'192.0.2.1',macAddress:'00:00:00:00:00:00'},{authenticated:true,staticIpVerified:true,verifiedAt:new Date().toISOString()},async()=>sessionKey);sessionKey.fill(0);
   fence=await acquireStreamLease(q,streamOwner);assert.ok(fence);await recordQuoteConnection(q,streamOwner,fence,'CONNECTED');
   app=await createApp({db,origin,secure:false,logSink:()=>{}});await app.listen(0,'127.0.0.1');const base='http://127.0.0.1:'+app.getHttpServer().address().port;

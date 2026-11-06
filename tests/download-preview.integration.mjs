@@ -1,3 +1,4 @@
+import {permittedCandles as ingestCandles} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import {licensedSources} from '../fixtures/licensed-sources.mjs';
@@ -9,7 +10,7 @@ import {writeFile,unlink} from 'node:fs/promises';
 import {createApp} from '../apps/api/dist/app.js';
 import {processBackfillWindow} from '../apps/worker/dist/backfill.js';
 import {randomUUID,randomInt,randomBytes,createHash} from 'node:crypto';
-import {PrismaClient,listManualDownloads,readDownloadChoices,saveBrokerConfiguration,ownerBrokerBinding,recordHistoricalProbe,persistSource,ingestCandles,readDownloadPreview,validateDownloadPreviewRequest,verifyDownloadPreview,signDownloadPreview,retryManualDownload,failSyncWindow,cancelManualDownload,reconcileManualDownloads,claimSyncWindow,commitSyncWindow,acceptManualDownload,prepareManualDownload,readManualDownload,installBrokerSession,persistReadiness} from '../packages/database/dist/index.js';
+import {PrismaClient,listManualDownloads,readDownloadChoices,saveBrokerConfiguration,ownerBrokerBinding,recordHistoricalProbe,persistSource,readDownloadPreview,validateDownloadPreviewRequest,verifyDownloadPreview,signDownloadPreview,retryManualDownload,failSyncWindow,cancelManualDownload,reconcileManualDownloads,claimSyncWindow,commitSyncWindow,acceptManualDownload,prepareManualDownload,readManualDownload,installBrokerSession,persistReadiness} from '../packages/database/dist/index.js';
 import {brokerAccountKey,HISTORICAL_ENDPOINT} from '../packages/market-data/dist/index.js';
 test('preview authorization, acceptance and worker preparation preserve ownership, revisions and checkpoints',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');const db=new PrismaClient();

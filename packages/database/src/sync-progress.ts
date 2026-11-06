@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import type {PrismaClient} from '@prisma/client';
 import {verifiedCalendar,type CalendarDay} from '@vcp/market-data';
 export async function syncJobs(db:PrismaClient,input:{runId?:string;after?:string;limit?:number}={}){
@@ -14,7 +15,7 @@ export async function instrumentCoverage(db:PrismaClient,listingId:string,provid
  const counts=await db.$queryRaw<{state:string;count:number}[]>`SELECT w."state",COUNT(*)::integer AS "count" FROM "HistoricalSyncWindow" w JOIN "HistoricalSyncRun" r ON r."id"=w."runId" WHERE r."listingId"=${listingId}::uuid AND r."provider"=${provider} GROUP BY w."state"`;
  let holes:string[]|null=null,reason:string|null='COVERAGE_UNKNOWN';
  if(row?.evidence.to&&row.evidence.calendarHash){
-  const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${row.evidence.calendarHash}`;
+  const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${row.evidence.calendarHash}`.then(rows=>authorizeCalendarRows(db,rows));
   const targets=await db.$queryRaw<{toSession:Date}[]>`SELECT "toSession" FROM "HistoricalSyncRun" WHERE "listingId"=${listingId}::uuid AND "provider"=${provider} AND "asOf"<=${row.checkedAt} ORDER BY "toSession" DESC LIMIT 1`;
   const end=[row.evidence.to,latest[0]?.session.toISOString().slice(0,10)??'',targets[0]?.toSession.toISOString().slice(0,10)??''].sort().at(-1)!;
   const expected=verifiedCalendar(calendars[0]?.evidence??null,row.fromSession.toISOString().slice(0,10),end,row.checkedAt.toISOString());

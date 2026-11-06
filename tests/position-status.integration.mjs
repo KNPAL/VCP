@@ -1,3 +1,4 @@
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ test('status requires current inputs, preserves actual lifecycle and never equat
   const mappingInput={knownAt:new Date().toISOString(),sourceReference:'synthetic-status',rows:[{companyId:randomUUID(),isin,listingId,exchange:'NSE',series:'EQ',symbol:'STATUS',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'fixture',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]};
   let mapping=await persistInstrumentSnapshot(db,mappingInput);
   const calendarId=hash(randomUUID()),calendar=[{date,kind:'SPECIAL',opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:new Date(date+'T23:59:59+05:30').toISOString(),finalizedAt:null,knownAt:before,source:'synthetic-status',verified:true}];
-  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(await permittedCalendar(db,calendar))}::jsonb)`;
   const sourceId=hash(randomUUID()),source={id:sourceId,input:{listingId,configHash:profile.id,decidedAt:before,scaleRevision:hash([])},detector:{frozen:{primary:{state:'READY',lastLow:'95.02',pivot:'101',asOf:before}}}};
   await db.$executeRaw`INSERT INTO "DailyStructureExecution" ("id","listingId","session","configHash","evidence") VALUES (${sourceId},${listingId}::uuid,${new Date(date)},${profile.id},${JSON.stringify(source)}::jsonb)`;
   const adjustmentId=hash(randomUUID()),actionSource={id:hash(randomUUID()),listingId,knownAt:before,verified:true,sourceReference:'synthetic-status',coverageFrom:'2020-01-01',coverageThrough:date,actions:[]};

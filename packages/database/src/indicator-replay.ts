@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {createHash} from 'node:crypto';
 import {Prisma,type PrismaClient} from '@prisma/client';
 import {replay,type Series} from '@vcp/indicators';
@@ -29,15 +30,15 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  const snapshots=await db.$queryRaw<{listingId:string;asOf:Date;state:string;evidence:{rawRevisionIds:string[];result:{bars:AdjustedBar[]}}}[]>`SELECT "listingId","asOf","state","evidence" FROM "AdjustmentSnapshot" WHERE "id"=${input.adjustmentId}`;
  const snapshot=snapshots[0];
  if(!snapshot||snapshot.listingId!==request.listingId||snapshot.state!=='KNOWN'||snapshot.asOf>new Date()||!snapshot.evidence.rawRevisionIds.includes(request.dataRevision))throw new Error('REPLAY_ADJUSTMENT_UNAVAILABLE');
- const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${input.calendarHash}`;
+ const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${input.calendarHash}`.then(rows=>authorizeCalendarRows(db,rows));
  const bars=snapshot.evidence.result.bars;
  if(!bars.length)throw new Error('REPLAY_SERIES_EMPTY');
  await assertActionPermissions(db,[input.adjustmentId],['DERIVE','STORE']);
  const permission=await assertCandlePermissions(db,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);
- if(prior[0])return prior[0].evidence;
  const asOf=snapshot.asOf.toISOString();
  const calendar=verifiedCalendar(calendars[0]?.evidence??null,bars[0]!.session,bars.at(-1)!.session,asOf);
  if(calendar.state!=='KNOWN'||canonical(calendar.sessions.map(s=>s.date))!==canonical(bars.map(b=>b.session)))throw new Error('REPLAY_CALENDAR_INCOMPLETE');
+ if(prior[0])return prior[0].evidence;
  if(bars.some(b=>!b.finalizedAt||utcInstant(b.finalizedAt)>utcInstant(asOf)))throw new Error('REPLAY_CANDLE_NOT_FINAL');
  const dataRevision=createHash('sha256').update(input.adjustmentId+'|'+input.calendarHash).digest('hex');
  const series:Series={priceScale:'ADJUSTED',bars:bars.map(b=>({...b,revision:b.rawRevisionId})),sessions:calendar.sessions.map(s=>s.date),asOf,dataRevision};

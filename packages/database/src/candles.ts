@@ -1,4 +1,5 @@
 import {lockProviderAuthority} from './source-authority.js';
+import {assertCalendarPermissions,lockCalendarAuthority} from './calendar-permissions.js';
 import {Prisma,PrismaClient} from '@prisma/client';
 import {randomUUID,createHash} from 'node:crypto';
 import {inspectCandleBatch,candleHash,verifiedCalendar} from '@vcp/market-data';
@@ -11,11 +12,14 @@ export async function ingestCandles(db:PrismaClient,input:ImportInput,onCommit?:
  const providers=[...new Set([input.provider,...input.bars.map(bar=>bar.provider)])].sort();
  const storagePermission=async()=>{for(const provider of providers)await assertProviderPermissions(db,'DAILY_CANDLES',provider,['STORE'])};
  await storagePermission();
+ await assertCalendarPermissions(db,input.calendar,['STORE','DERIVE']);
  const inspected=inspectCandleBatch(input),checkedAt=new Date(input.asOf);
  for(let attempt=0;attempt<4;attempt++)try{return await db.$transaction(async tx=>{
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${input.listingId},0))`;
   // Read current authority outside the serializable market-data snapshot after a lock wait.
   await storagePermission();
+  await lockCalendarAuthority(tx,input.calendar);
+  await assertCalendarPermissions(db,input.calendar,['STORE','DERIVE']);
   const coverage=await tx.$queryRaw<{fromSession:Date;watermark:Date|null;checkedAt:Date}[]>`SELECT "fromSession","watermark","checkedAt" FROM "CandleCoverage" WHERE "listingId"=${input.listingId}::uuid AND "provider"=${input.provider}`;
   if(coverage[0]&&checkedAt<coverage[0].checkedAt)throw new Error('STALE_CONFLICT: coverage observation is older than stored evidence');
   const calendarJson=canonical(input.calendar),calendarHash=createHash('sha256').update(calendarJson).digest('hex');

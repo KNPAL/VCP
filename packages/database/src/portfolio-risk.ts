@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {readSectorSnapshot} from './instruments.js';
 import {lockProviderAuthority} from './source-authority.js';
@@ -21,7 +22,7 @@ async function calculate(tx:Prisma.TransactionClient,ownerId:string,quotes:Portf
  const journal=await tx.$queryRaw<{evidence:PortfolioEvent}[]>`SELECT "evidence" FROM "PortfolioJournal" WHERE "ownerId"=${ownerId}::uuid ORDER BY "sequence"`;
  const events=journal.map(r=>r.evidence),journalHash=hash(events);
  const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
- const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;
+ const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`.then(rows=>authorizeCalendarRows(tx,rows));
  const sectors=[await readSectorSnapshot(tx)];
  const comparisons=await tx.$queryRaw<{evidence:Reconciliation}[]>`SELECT "evidence" FROM "PortfolioReconciliation" WHERE "ownerId"=${ownerId}::uuid ORDER BY "decidedAt" DESC,"id" DESC LIMIT 1`;
  const stops=await tx.$queryRaw<{evidence:InitialStop}[]>`SELECT "evidence" FROM "InitialPositionStop" WHERE "ownerId"=${ownerId}::uuid`;

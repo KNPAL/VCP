@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {parseFixed,formatFixed,utcInstant,sessionDate,exchangeDate} from '@vcp/domain';
-export interface CalendarDay {date:string;kind:'TRADING'|'SPECIAL'|'HOLIDAY';opensAt:string|null;closesAt:string|null;finalizedAt:string|null;knownAt:string;source:string;verified:boolean}
+export interface CalendarDay {date:string;kind:'TRADING'|'SPECIAL'|'HOLIDAY';opensAt:string|null;closesAt:string|null;finalizedAt:string|null;knownAt:string;source:string;sourceSnapshotId?:string;verified:boolean}
 export interface DailyCandle {listingId:string;session:string;provider:string;open:string;high:string;low:string;close:string;volume:string;receivedAt:string;finalizedAt:string|null;zeroVolumeVerified:boolean}
 const at=(value:string)=>utcInstant(value).valueOf();
 const uuid=(value:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);

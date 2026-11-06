@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {createHash} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
@@ -21,7 +22,7 @@ export async function replayStoredStructure(db:PrismaClient,input:StructureRepla
  const profile=await db.strategyProfile.findUnique({where:{id:input.profileId}});
  if(!mapping||!profile||configurationHash(profile.configuration)!==configurationHash(ST_VCP_4_0)||profile.createdAt>new Date()||new Date(mapping.knownAt)>new Date())throw new Error('REPLAY_CONTEXT_UNAVAILABLE');
  const snapshots=await db.$queryRaw<{evidence:{result:{bars:(Series['bars'][number]&{rawRevisionId:string})[]}}}[]>`SELECT "evidence" FROM "AdjustmentSnapshot" WHERE "id"=${r.adjustmentId}`;
- const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${r.calendarHash}`;
+ const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${r.calendarHash}`.then(rows=>authorizeCalendarRows(db,rows));
  const calendar=verifiedCalendar(calendars[0]?.evidence??null,r.from,r.to,r.asOf);
  const adjusted=snapshots[0]?.evidence.result.bars;
  if(!adjusted||calendar.state!=='KNOWN'||canonical(calendar.sessions.map(d=>d.date))!==canonical(adjusted.map(b=>b.session)))throw new Error('REPLAY_CALENDAR_INCOMPLETE');

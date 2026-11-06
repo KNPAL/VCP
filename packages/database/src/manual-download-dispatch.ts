@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {randomUUID} from 'node:crypto';
 import {exchangeDate} from '@vcp/domain';
@@ -30,13 +31,13 @@ export async function prepareManualDownload(db:PrismaClient){
     const completed=new Set<string>();for(const attempt of attempts){const report=attempt.evidence;if(!Array.isArray(report.missing)||!Array.isArray(report.calendarReasons)||report.calendarReasons.length)continue;const missing=new Set(report.missing.map(m=>m.session)),done=attempt.expectedSessions.filter(d=>!missing.has(d));if(done.length===report.actualResponseCount)for(const date of done)completed.add(date)}
     const targets=new Set(accepted.items.find(i=>i.listingId===item.listingId)?.rangesToFetch.flatMap(w=>w.sessions)??[]);
     const currentMissing=new Set(item.rangesToFetch.flatMap(w=>w.sessions));
-    const calendarRows=await tx.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`;
+    const calendarRows=await tx.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`.then(rows=>authorizeCalendarRows(tx,rows));
     const excluded=item.excludedDates.find(d=>d.reason==='BEFORE_LISTING'),from=excluded?new Date(Date.parse(excluded.to+'T00:00:00Z')+86400000).toISOString().slice(0,10):accepted.request.fromDate;
     const sessions=verifiedCalendar(calendarRows[0]?.evidence??null,from,accepted.request.toDate,at).sessions.map(d=>d.date);
     windows=missingWindows(sessions,sessions.filter(d=>!targets.has(d)||completed.has(d)||(accepted.request.mode==='MISSING_ONLY'&&!currentMissing.has(d))));
    }
    if(!windows.length)continue;
-   const calendars=await tx.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`;
+   const calendars=await tx.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`.then(rows=>authorizeCalendarRows(tx,rows));
    const calendar=calendars[0]?.evidence,mapping=mappings[0]?.evidence,row=mapping?.rows.find(r=>r.listingId===item.listingId&&r.provider==='ANGEL_ONE'&&r.validFrom<=exchangeDate(at)&&(r.validTo===null||r.validTo>exchangeDate(at)));
    if(!calendar||!mapping||!row)throw new Error('MANUAL_DOWNLOAD_CONTEXT_UNAVAILABLE');
    const from=windows[0]!.from,to=windows.at(-1)!.to;

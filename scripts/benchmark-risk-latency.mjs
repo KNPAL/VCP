@@ -1,3 +1,4 @@
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
@@ -22,7 +23,7 @@ try{
  const before=new Date(Date.now()-10000).toISOString(),date=new Date(Date.now()+19800000).toISOString().slice(0,10),midnight=Date.parse(date+'T00:00:00Z')-19800000;
  const session={date,opensAt:new Date(midnight).toISOString(),closesAt:new Date(midnight+86399999).toISOString(),knownAt:before,verified:true};
  const calendar=[{...session,kind:'SPECIAL',source:'synthetic-latency',finalizedAt:new Date(midnight+86399999).toISOString()}];
- await db.$executeRaw`INSERT INTO "CalendarSnapshot" (id,evidence) VALUES (${hash(calendar)},${JSON.stringify(calendar)}::jsonb)`;
+ await db.$executeRaw`INSERT INTO "CalendarSnapshot" (id,evidence) VALUES (${hash(calendar)},${JSON.stringify(await permittedCalendar(db,calendar))}::jsonb)`;
  const mapping=await persistInstrumentSnapshot(db,{knownAt:before,sourceReference:'synthetic-latency',rows:[{companyId:randomUUID(),isin,listingId,exchange:'NSE',series:'EQ',symbol:'LATENCY',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider,token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
  const sourceId=hash(randomUUID()),structure={id:sourceId,input:{listingId,configHash:profile.id,decidedAt:before,scaleRevision:hash([])},detector:{frozen:{primary:{state:'READY',lastLow:'95.02',asOf:before}}}};
  await db.$executeRaw`INSERT INTO "DailyStructureExecution" (id,"listingId",session,"configHash",evidence) VALUES (${sourceId},${listingId}::uuid,${new Date(date)},${profile.id},${JSON.stringify(structure)}::jsonb)`;

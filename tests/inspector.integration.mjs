@@ -1,3 +1,4 @@
+import {assertDailyExecutionDisplay} from '../packages/database/dist/position-permissions.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
@@ -14,12 +15,20 @@ test('inspector keeps immutable detector evidence, production curves and owner-s
   const provider='synthetic-inspector-'+randomUUID(),permission=await candlePermission(db,provider);
   for(const bar of execution.input.series.bars)bar.revision=randomUUID();
   await db.candleRevision.createMany({data:execution.input.series.bars.map(bar=>({id:bar.revision,listingId:execution.input.listingId,session:new Date(bar.session),scale:'RAW',revision:1,open:bar.open,high:bar.high,low:bar.low,close:bar.close,volume:BigInt(bar.volume),source:provider,receivedAt:new Date(execution.input.decidedAt),finalizedAt:new Date(bar.finalizedAt)}))});
+  const actionGrant=await candlePermission(db,'synthetic-inspector-actions-'+randomUUID(),{},'CORPORATE_ACTIONS');
+  execution.input.adjustmentRevision=createHash('sha256').update(execution.id+actionGrant.id).digest('hex');
+  await db.adjustmentSnapshot.create({data:{id:execution.input.adjustmentRevision,listingId:execution.input.listingId,scaleSession:new Date(execution.input.series.bars.at(-1).session),asOf:new Date(execution.input.decidedAt),state:'KNOWN',evidence:{source:{sourceSnapshotId:actionGrant.id},rawRevisionIds:execution.input.series.bars.map(bar=>bar.revision)}}});
   await db.$executeRaw`INSERT INTO "DailyStructureExecution" ("id","listingId","session","configHash","evidence") VALUES (${execution.id},${execution.input.listingId}::uuid,${new Date(execution.detector.frozen.session)},${execution.input.configHash},${JSON.stringify(execution)}::jsonb)`;
+  await assertDailyExecutionDisplay(db,[execution.id]);
   const listings=await inspectorListings(db);assert.ok(listings.items.some(row=>row.id===execution.id));
   const view=await readInspector(db,owner.id,execution.id);assert.equal(view.executable,false);assert.equal(view.priceScale,'ADJUSTED');assert.equal(view.fillPriceScale,'RAW');assert.deepEqual(view.structure,execution.detector.structure);assert.deepEqual(view.frozen,execution.detector.frozen);assert.equal(view.bars.length,260);assert.equal(view.bars.at(-1).close,execution.input.series.bars.at(-1).close);
   const other=await readInspector(db,randomUUID(),execution.id);assert.deepEqual(other.fills,[]);assert.deepEqual(other.stops,[]);assert.deepEqual(other.trails,[]);assert.deepEqual(other.bars,view.bars);
   assert.equal(await readInspector(db,owner.id,'0'.repeat(64)),null);await assert.rejects(readInspector(db,owner.id,'invalid'));
   assert.deepEqual((await readPortfolio(db,owner.id)).events,before.events);
+  const {id:actionId,...actionSource}=actionGrant;assert.ok(actionId);
+  await persistSource(db,{...actionSource,knownAt:new Date().toISOString(),uses:{...actionSource.uses,DISPLAY:false}});
+  await assert.rejects(readInspector(db,owner.id,execution.id),/SOURCE_PERMISSION_REQUIRED/);
+  await assert.rejects(assertDailyExecutionDisplay(db,[execution.id]),/SOURCE_PERMISSION_REQUIRED/);
   const {id:permissionId,...sourcePermission}=permission;assert.ok(permissionId);await persistSource(db,{...sourcePermission,knownAt:new Date().toISOString(),uses:{...permission.uses,DISPLAY:false}});
   await assert.rejects(readInspector(db,owner.id,execution.id),/SOURCE_PERMISSION_REQUIRED/);
   const token=randomBytes(32).toString('hex'),hash=value=>createHash('sha256').update(value).digest('hex');await db.session.create({data:{id:hash(token),ownerId:owner.id,csrfHash:hash('unused'),expiresAt:new Date(Date.now()+60000)}});

@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {readSectorSnapshot} from './instruments.js';
 import {createHash} from 'node:crypto';
@@ -43,7 +44,7 @@ export async function recordEntryRisk(db:PrismaClient,ownerId:string,key:string,
   if(!snapshots[0])throw new Error('STALE_CONFLICT');
   await assertPortfolioQuotePermissions(db,request.snapshotId,['DERIVE','STORE']);
   const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
-  const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;
+  const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`.then(rows=>authorizeCalendarRows(tx,rows));
   const sectors=[await readSectorSnapshot(tx)];
   const structures=await tx.$queryRaw<{evidence:{input:{scaleRevision:string}}}[]>`SELECT "evidence" FROM "DailyStructureExecution" WHERE "listingId"=${event.listingId}::uuid AND "evidence"->'breakout'->'event'->>'id'=${event.id} LIMIT 1`;
   const mapping=mappings[0]?.evidence??null,isin=mapping?.rows.find(r=>r.listingId===event.listingId)?.isin??null;

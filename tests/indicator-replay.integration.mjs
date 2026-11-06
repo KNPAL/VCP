@@ -1,9 +1,10 @@
+import {permittedCandles as ingestCandles} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,createHash} from 'node:crypto';
-import {PrismaClient,ingestCandles,persistAdjustment,receiveCandleChange,replayStoredIndicators,pendingIndicatorReplays,recordIndicatorReplayDispatch,registerProfile} from '../packages/database/dist/index.js';
+import {PrismaClient,persistAdjustment,receiveCandleChange,replayStoredIndicators,pendingIndicatorReplays,recordIndicatorReplayDispatch,registerProfile} from '../packages/database/dist/index.js';
 import {snapshot} from '../packages/indicators/dist/index.js';
 import {indicatorReplayHandler} from '../apps/worker/dist/indicator-replay.js';
 import {structureReplayHandler} from '../apps/worker/dist/structure-replay.js';
@@ -72,5 +73,9 @@ test('stored correction replay is atomic, repeatable and equal to full recomputa
   const {id:permissionId,...sourcePermission}=permission;assert.ok(permissionId);await persistSource(db,{...sourcePermission,knownAt:new Date().toISOString(),uses:{...permission.uses,DERIVE:false}});
   await assert.rejects(handler(input),/SOURCE_PERMISSION_REQUIRED/,'Cached receipts must not bypass current permission');
   await assert.rejects(structureHandler(structureInput),/SOURCE_PERMISSION_REQUIRED/,'Structure replay must also recheck cached source authority');
+  await persistSource(db,{...sourcePermission,knownAt:new Date().toISOString()});
+  const [calendarGrant]=await db.$queryRaw`SELECT evidence FROM "SourceSnapshot" WHERE id=${calendar[0].sourceSnapshotId}`;
+  await persistSource(db,{...calendarGrant.evidence,knownAt:new Date().toISOString(),uses:{...calendarGrant.evidence.uses,DERIVE:false}});
+  await assert.rejects(handler(input),/REPLAY_CALENDAR_INCOMPLETE/,'Cached receipts must recheck their original calendar authority');
  }finally{await db.$disconnect()}
 });

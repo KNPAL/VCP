@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {authorizedUniverseAt} from './instruments.js';
 import {currentSource} from './source-authority.js';
@@ -43,7 +44,7 @@ export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,owne
   if(universe.state!=='KNOWN'||permissions['DISPLAY']!.status!=='PASS'||permissions['DERIVE']!.status!=='PASS'){blocked.push({listingId:row.listingId,isin:member.isin,reason:'UNIVERSE_OR_SOURCE_UNVERIFIED'});continue}
   const coverage=await db.$queryRaw<{evidence:{calendarHash?:string}}[]>`SELECT "evidence" FROM "CandleCoverage" WHERE "listingId"=${row.listingId}::uuid AND "provider"='ANGEL_ONE' AND "checkedAt"<=${at}`;
   const calendarId=coverage[0]?.evidence.calendarHash??null;
-  const calendars=await db.$queryRaw<{evidence:CalendarDay[]|null}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${calendarId} AND "createdAt"<=${at}`;
+  const calendars=await db.$queryRaw<{evidence:CalendarDay[]|null}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${calendarId} AND "createdAt"<=${at}`.then(rows=>authorizeCalendarRows(db,rows));
   const stored=await db.$queryRaw<{session:Date;open:string;high:string;low:string;close:string;volume:string;finalizedAt:Date;receivedAt:Date;revisionId:string;contentHash:string}[]>`SELECT "session","open"::text,"high"::text,"low"::text,"close"::text,"volume"::text,"finalizedAt","receivedAt","revisionId","contentHash" FROM "RawDailyCandle" WHERE "listingId"=${row.listingId}::uuid AND "provider"='ANGEL_ONE' AND "session">=${new Date(request.fromDate)} AND "session"<=${new Date(request.toDate)} AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "session"`;
   const bars:DailyCandle[]=stored.map(b=>{const bar={listingId:row.listingId,provider:'ANGEL_ONE',session:b.session.toISOString().slice(0,10),open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume,finalizedAt:b.finalizedAt.toISOString(),receivedAt:b.receivedAt.toISOString(),zeroVolumeVerified:false};return {...bar,zeroVolumeVerified:b.volume==='0'&&candleHash({...bar,zeroVolumeVerified:true})===b.contentHash}});
   // A later observed provider candle can bound an older request; never infer a later market date.

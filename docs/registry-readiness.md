@@ -64,7 +64,7 @@ Dashboard and portfolio risk responses also verify owner stop/status history and
 
 Raw candle ingestion now requires current DAILY_CANDLES STORE permission for the requested provider and every provider represented in the payload. This also covers quarantined payloads and unchanged retries. Checks run before work, after the listing lock and before commit, using current authority outside the serializable market-data snapshot. A detected revocation rolls back candles, quarantine, coverage, outbox and the sync checkpoint together. Workers record the permission failure and release their lease through the existing retry policy.
 
-Adjustment persistence requires current DERIVE and STORE rights for its actual raw revisions, including cached retries and UNKNOWN action results that still retain source evidence. DISPLAY permission is independent and is not required for storage. These checks cover candle authority; corporate-action source authority still needs separate lineage enforcement.
+Adjustment persistence requires current DERIVE and STORE rights for its actual raw revisions, including cached retries and UNKNOWN action results that still retain source evidence. DISPLAY permission is independent and is not required for storage. Corporate-action authority is checked separately against the pinned source snapshot as described below.
 
 Portfolio risk snapshot writes require LIVE_QUOTES DERIVE and STORE rights for every supplied quote provider, including candidate quotes retained outside current holdings. They check before work, after the owner lock and before commit. Missing provider lineage or candle-only grants cannot authorize these writes. No-quote snapshots remain available. This covers the quote portion of risk evidence; other source types remain subject to the unfinished rollout below.
 
@@ -72,7 +72,7 @@ Entry-plan writes and idempotent retries separately verify live observations and
 
 Run `node scripts/database-command.mjs test data-permissions database indicator-replay rs-replay eod-scan position-trail` after building the workspace. The main database and EOD fixtures use isolated schemas so old records from other suites cannot satisfy or invalidate their source checks. Pre-commit rechecks detect observed revocations but do not yet serialize every source-registry update with dataset commits.
 
-KAN-44 remains In Progress: corporate-action/reference-data lineage, other storage consumers and write-time revocation races still need review. This is not a completed licensing rollout.
+KAN-44 remains In Progress pending the remaining storage/commit race audit and hosted CI evidence. The sections below describe the implemented source bindings; they do not grant production data rights.
 
 The source registry, download preview and G07 binding checks now fail closed on conflicting latest records for the same endpoint and timestamp. Instrument-master imports and their retries serialize against registry updates for their source scope. Register the reviewed source metadata before importing the master.
 
@@ -95,3 +95,15 @@ Set the proof's `details.identifier` to `NIFTY_500_PRICE`. Include `details.adju
 Run `node scripts/source-registry.mjs proof <reviewed-g04.json>`. A passing proof requires at least 252 aligned, finalized sessions, verified adjustments, permitted sources and matching independent closes. Record an UNKNOWN or FAIL proof with a reason when evidence is unavailable. The application rechecks stored proof evidence on readiness reads and rejects superseded or denied source rights. These steps require actual independently supplied data for production.
 
 Surveillance imports must also match the current registered source metadata. Register the reviewed feed under dataset `SURVEILLANCE` before ingestion. Storage checks and registry updates serialize for the endpoint. Price-band reads and entry eligibility recheck DERIVE and DISPLAY permission; a superseded grant withholds both bands until new evidence is reviewed.
+
+## Calendar and archived reference permissions
+
+Each stored exchange-calendar day must carry `sourceSnapshotId`, pointing to a registered `EXCHANGE_CALENDAR` source. A calendar's `verified` flag alone does not authorize use. Register reviewed source metadata before importing calendar evidence; do not insert synthetic grants into a production registry. Operational calendar reads check current DISPLAY/DERIVE authority and withhold denied or unbound evidence without falling back to an older calendar. Candle ingestion requires STORE/DERIVE calendar authority and holds the source-scope lock through its transaction. Saved EOD plans recheck their original calendar on processing and display.
+
+Historical archives bind instrument and universe records to their registered `source`, and calendar/action records to `sourceSnapshotId` with datasets `EXCHANGE_CALENDAR` / `CORPORATE_ACTIONS`. Archive writes and reads check these contributors alongside raw-candle authority. Direct historical-slice and replay reads apply these checks too. Missing lineage raises `SOURCE_LINEAGE_MISSING`; denied or superseded authority raises `SOURCE_PERMISSION_REQUIRED`. Review and reimport legacy evidence; changing a historical cutoff does not restore current permission.
+
+Inspector charts and the daily-structure evidence API require current corporate-action DISPLAY/DERIVE permission for the original adjustment revision as well as candle permissions. Revocation withholds the adjusted payload. Rebuild API and worker services before testing these changes; there is no new schema migration for these JSON evidence fields.
+
+Archive and chronological replay transactions now hold shared provider locks for every contributing raw/reference source until commit; registry revocations wait for that commit. Stop, position-history and daily-execution displays also validate corporate-action permissions for their pinned adjustments. Cached indicator receipts revalidate their original calendar before returning.
+
+Remaining closeout audit: derived-write boundaries in adjustment persistence, indicator/RS/structure replay, EOD processing and entry-plan persistence still need explicit verification that all contributing source permissions are held through commit, including calendar/reference contributors. A pre-commit permission read by itself is not proof of serialization. Hosted CI evidence for the final workspace is also outstanding; changes remain local at the owner's request.

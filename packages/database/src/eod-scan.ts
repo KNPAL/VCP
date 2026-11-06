@@ -1,3 +1,4 @@
+import {authorizeCalendarRows,assertCalendarPermissions} from './calendar-permissions.js';
 import {verifyBenchmarkIdentity} from './benchmark-identity.js';
 import {createHash} from 'node:crypto';
 import type {Prisma,PrismaClient} from '@prisma/client';
@@ -28,7 +29,7 @@ export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:str
  const bars=row.evidence.result.bars;
  if(!bars.length||bars.at(-1)!.session!==request.session)throw new MissingInput('CURRENT_SESSION_MISSING');
  if(row.evidence.source.actions.some(action=>exchangeDate(action.effectiveAt)>bars[0]!.session&&exchangeDate(action.effectiveAt)<=request.session&&!action.rawBasis))throw new MissingInput('CORPORATE_ACTION_RAW_BASIS_UNVERIFIED');
- const calendars=await db.$queryRaw<{evidence:CalendarDay[];createdAt:Date}[]>`SELECT "evidence","createdAt" FROM "CalendarSnapshot" WHERE "id"=${request.calendarId}`;
+ const calendars=await db.$queryRaw<{evidence:CalendarDay[];createdAt:Date}[]>`SELECT "evidence","createdAt" FROM "CalendarSnapshot" WHERE "id"=${request.calendarId}`.then(rows=>authorizeCalendarRows(db,rows));
  const calendar=verifiedCalendar(calendars[0]?.createdAt&&calendars[0].createdAt<=cutoff?calendars[0].evidence:null,bars[0]!.session,request.session,request.asOf);
  if(calendar.state!=='KNOWN'||canonical(calendar.sessions.map(s=>s.date))!==canonical(bars.map(b=>b.session)))throw new MissingInput('CALENDAR_OR_COVERAGE_INCOMPLETE');
  if(bars.some((b,i)=>!b.finalizedAt||utcInstant(b.finalizedAt)<utcInstant(calendar.sessions[i]!.finalizedAt!)))throw new MissingInput('CANDLE_FINALIZED_BEFORE_CALENDAR');
@@ -64,6 +65,11 @@ async function readPlanLineage(db:PrismaClient|Prisma.TransactionClient,plan:Pic
  return {providers:lineage.providers.sort(),actionSourceIds:lineage.actionSourceIds};
 }
 async function assertPlanPermissions(db:PrismaClient|Prisma.TransactionClient,plan:Plan,operations:readonly Permission[]=['DERIVE','STORE']){
+ if(plan.request?.calendarId){
+  const [calendar]=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT evidence FROM "CalendarSnapshot" WHERE id=${plan.request.calendarId}`;
+  if(!calendar)throw new Error('SOURCE_LINEAGE_MISSING');
+  await assertCalendarPermissions(db,calendar.evidence,operations);
+ }
  if(plan.universe?.universe.snapshotId)await assertUniversePermission(db,plan.universe.universe.snapshotId,operations);
  for(const id of new Set(plan.universe?.listings.map(item=>item.snapshotId).filter((id):id is string=>!!id)??[]))await assertInstrumentPermission(db,id,operations);
  // Only internally constructed, immutable plans contain this proof. Older plans
@@ -88,7 +94,7 @@ export async function prepareEodScan(db:PrismaClient,request:EodScanRequest){
  if(!profile||configurationHash(profile.configuration)!==configurationHash(ST_VCP_4_0))throw new Error('SCAN_ACTIVE_PROFILE_UNAVAILABLE');
  const universe=await pinScanUniverse(db,request.scanId,request.asOf);
  if(universe.universe.state!=='KNOWN'||!universe.universe.members.length)throw new Error('SCAN_VERIFIED_UNIVERSE_UNAVAILABLE');
- const calendars=await db.$queryRaw<{evidence:CalendarDay[];createdAt:Date}[]>`SELECT "evidence","createdAt" FROM "CalendarSnapshot" WHERE "id"=${request.calendarId}`;
+ const calendars=await db.$queryRaw<{evidence:CalendarDay[];createdAt:Date}[]>`SELECT "evidence","createdAt" FROM "CalendarSnapshot" WHERE "id"=${request.calendarId}`.then(rows=>authorizeCalendarRows(db,rows));
  const day=verifiedCalendar(calendars[0]?.createdAt&&calendars[0].createdAt<=at?calendars[0].evidence:null,request.session,request.session,request.asOf);
  if(day.state!=='KNOWN'||day.sessions.length!==1)throw new Error('SCAN_SESSION_NOT_FINAL');
  const proofs=await db.$queryRaw<{id:string;evidence:GateProof}[]>`SELECT "id","evidence" FROM "ReadinessProof" WHERE "gate"='G04' AND "probeAt"<=${at} ORDER BY "probeAt" DESC,"id" LIMIT 1`;

@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import type {PrismaClient} from '@prisma/client';
 import {verifiedCalendar,missingWindows,type CalendarDay} from '@vcp/market-data';
 type Item={listingId:string;symbol:string;calendarId:string;excludedDates:{reason:string;to:string}[];rangesToFetch:{sessions:string[]}[]};
@@ -9,7 +10,7 @@ export async function manualDownloadProgress(db:Pick<PrismaClient,'$queryRaw'>,r
  const successful=new Map<string,Set<string>>();for(const attempt of attempts){const report=attempt.evidence;if(!Array.isArray(report.missing)||!Array.isArray(report.calendarReasons)||report.calendarReasons.length)continue;const missing=new Set(report.missing.map(d=>d.session)),done=attempt.expectedSessions.filter(d=>!missing.has(d));if(done.length!==report.actualResponseCount)continue;const sessions=successful.get(attempt.listingId)??new Set<string>();for(const d of done)sessions.add(d);successful.set(attempt.listingId,sessions)}
  const instruments=[];
  for(const item of items){
-  const calendar=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`;
+  const calendar=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`.then(rows=>authorizeCalendarRows(db,rows));
   const excluded=item.excludedDates.find(d=>d.reason==='BEFORE_LISTING'),from=excluded?new Date(Date.parse(excluded.to+'T00:00:00Z')+86400000).toISOString().slice(0,10):request.fromDate;
   const expected=verifiedCalendar(calendar[0]?.evidence??null,from,request.toDate,checkedAt);
   const bars=await db.$queryRaw<{session:Date;finalizedAt:Date}[]>`SELECT "session","finalizedAt" FROM "RawDailyCandle" WHERE "listingId"=${item.listingId}::uuid AND "provider"='ANGEL_ONE' AND "session">=${new Date(from)} AND "session"<=${new Date(request.toDate)} AND "receivedAt"<=${new Date(checkedAt)} AND "finalizedAt"<=${new Date(checkedAt)}`;

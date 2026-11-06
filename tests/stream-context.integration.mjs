@@ -1,3 +1,4 @@
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +19,7 @@ test('stream context uses actual holdings, verified calendar and current encrypt
   const isin='INE'+String(randomInt(1000000000)).padStart(9,'0'),listingId=randomUUID();
   const mapping=await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-stream',rows:[{companyId:randomUUID(),listingId,isin,exchange:'NSE',series:'EQ',symbol:'TEST',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider:'ANGEL_ONE',token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
   const calendar=[{date,kind:'SPECIAL',opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:expiresAt,finalizedAt:null,knownAt:before,source:'synthetic-stream',verified:true}],calendarId=createHash('sha256').update(randomUUID()).digest('hex');
-  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(await permittedCalendar(db,calendar))}::jsonb)`;
   fill={kind:'FILL',isin,side:'BUY',quantity:1,price:'100',fees:'0',brokerReference:randomUUID(),occurredAt:new Date().toISOString(),sourceId:'synthetic-stream'};
   await appendPortfolio(db,owner.id,randomUUID(),fill);
   const deps=streamDependencies(db,accountKey,loadKey),first=await deps.context();
@@ -26,7 +27,7 @@ test('stream context uses actual holdings, verified calendar and current encrypt
   const candidateIsin='INE'+String(randomInt(1000000000)).padStart(9,'0'),candidateListing=randomUUID(),priorDate=new Date(Date.parse(date+'T00:00:00Z')-86400000).toISOString().slice(0,10);
   await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-entry-candidate',rows:[...mapping.rows,{...mapping.rows[0],listingId:candidateListing,companyId:randomUUID(),isin:candidateIsin,token:'124'}]});
   const prior={...calendar[0],date:priorDate,opensAt:priorDate+'T04:00:00Z',closesAt:priorDate+'T10:00:00Z',finalizedAt:priorDate+'T11:00:00Z'};
-  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${createHash('sha256').update(randomUUID()).digest('hex')},${JSON.stringify([prior,...calendar])}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${createHash('sha256').update(randomUUID()).digest('hex')},${JSON.stringify(await permittedCalendar(db,[prior,...calendar]))}::jsonb)`;
   const profile=await registerProfile(db,PROFILE_VERSION,ST_VCP_4_0);
   const eventId=createHash('sha256').update(randomUUID()).digest('hex'),eventAt=prior.finalizedAt;
   await persistMarketEvent(db,{id:eventId,logicalId:eventId,type:'BREAKOUT_CONFIRMED',listingId:candidateListing,patternId:eventId,session:priorDate,pivot:'100',lastLow:'95',close:'101',rvol:{numerator:'150',denominator:'100'},reasons:[],occurredAt:prior.closesAt,observedAt:eventAt,decidedAt:eventAt,effectiveAt:eventAt,strategyVersion:'ST_VCP_4_0',configHash:profile.id,dataRevision:eventId,sourceRevisions:[eventId],previousSnapshot:{listingId:candidateListing,patternId:eventId,session:priorDate,state:'READY',pivot:'100',lastLow:'95',asOf:prior.opensAt,configHash:profile.id,dataRevision:eventId}});

@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {randomUUID} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
 import {verifiedCalendar,dateAfter,type CalendarDay} from '@vcp/market-data';
@@ -66,7 +67,7 @@ export async function reconcileManualDownloads(db:PrismaClient){
    else{
     let complete=run.evidence.items.length>0;const now=new Date().toISOString();
     for(const item of run.evidence.items){
-     const calendars=await tx.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`;
+     const calendars=await tx.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`.then(rows=>authorizeCalendarRows(tx,rows));
      const excluded=item.excludedDates.find(d=>d.reason==='BEFORE_LISTING'),from=excluded?dateAfter(excluded.to,1):run.evidence.request.fromDate;
      const expected=verifiedCalendar(calendars[0]?.evidence??null,from,run.evidence.request.toDate,now);
      const stored=await tx.$queryRaw<{session:Date;finalizedAt:Date}[]>`SELECT "session","finalizedAt" FROM "RawDailyCandle" WHERE "listingId"=${item.listingId}::uuid AND "provider"='ANGEL_ONE' AND "session">=${new Date(from)} AND "session"<=${new Date(run.evidence.request.toDate)} AND "receivedAt"<=${new Date(now)} AND "finalizedAt"<=${new Date(now)}`;

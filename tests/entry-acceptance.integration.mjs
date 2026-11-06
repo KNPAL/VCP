@@ -1,3 +1,4 @@
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import {referenceSource} from '../fixtures/reference-source.mjs';
@@ -34,7 +35,7 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   const history=Array.from({length:252},(_,i)=>day(i-252));
   const indexCalendar=history.slice(0,-1).map(session=>({date:session,kind:'SPECIAL',opensAt:session+'T03:45:00Z',closesAt:session+'T10:00:00Z',finalizedAt:session+'T10:30:00Z',knownAt:'2020-01-01T00:00:00Z',source:'fixture-index-calendar',verified:true})).concat(calendar);
   const calendarId=hash(indexCalendar);
-  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(indexCalendar)}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(await permittedCalendar(db,indexCalendar))}::jsonb)`;
   const bars=history.map(session=>({rawRevisionId:randomUUID(),session,close:'101',finalizedAt:indexCalendar.find(d=>d.date===session).finalizedAt,adjustmentVerified:true}));
   await db.candleRevision.createMany({data:bars.map(b=>({id:b.rawRevisionId,listingId:indexListing,session:new Date(b.session),scale:'RAW',revision:1,open:'100',high:'110',low:'90',close:b.close,volume:100n,source:benchmarkProvider,receivedAt:new Date(knownAt),finalizedAt:new Date(b.finalizedAt)}))});
   const adjustmentId=hash(randomUUID()),actionSource={sourceSnapshotId:await actionPermission(db),id:adjustmentId,listingId:indexListing,knownAt,verified:true,sourceReference:'synthetic-actions',coverageFrom:history[0],coverageThrough:day(-1),actions:[]};
@@ -54,7 +55,7 @@ test('positive entry persists exact quantity, invalidates changed live evidence 
   await persistSource(db,source);
   await persistSurveillance(db,{listingId,mappingRevision:mapping.id,source,restrictions:{verified:true,knownAt,sourceAt:knownAt,validUntil:expiresAt,asm:false,gsm:false,esm:false,cashTradable:true,lowerBand:'90',upperBand:'110'}});
   const eventId=hash(randomUUID()),event={id:eventId,logicalId:eventId,listingId,type:'BREAKOUT_CONFIRMED',patternId:eventId,session:day(-1),pivot:'100',lastLow:'94',close:'101',rvol:{numerator:'150',denominator:'100'},reasons:[],occurredAt:calendar[0].closesAt,observedAt:calendar[0].closesAt,decidedAt:knownAt,effectiveAt:knownAt,strategyVersion:'ST_VCP_4_0',configHash:profile.id,dataRevision:eventId,sourceRevisions:[eventId],previousSnapshot:{listingId,patternId:eventId,session:day(-2),state:'READY',pivot:'100',lastLow:'94',asOf:calendar[0].opensAt,configHash:profile.id,dataRevision:eventId}};
-  const signalSource=await signalLineage(db,event);await persistMarketEvent(db,event);
+  const signalSource=await signalLineage(db,event,stockAdjustment);await persistMarketEvent(db,event);
   await appendPortfolio(db,owner.id,randomUUID(),{kind:'INITIAL_CAPITAL',amount:'100000',verified:true,occurredAt:knownAt,sourceId:'synthetic-capital'});
   await recordReconciliation(db,owner.id,randomUUID(),{asOf:new Date().toISOString(),sourceReference:'synthetic-statement',cash:'100000',holdings:[],fillReferences:[],allOutsideActivityIncluded:true});
   const clientCode='T'+randomUUID().replaceAll('-','').slice(0,12).toUpperCase(),accountKey=brokerAccountKey(clientCode),sessionRevision=randomUUID();

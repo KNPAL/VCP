@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {authorizedUniverseAt} from './instruments.js';
 import type {PrismaClient} from '@prisma/client';
@@ -15,7 +16,7 @@ export async function readDownloadChoices(db:PrismaClient,ownerId:string,account
  for(const member of canonicalListings(mapping?[mapping]:[],universe.members,asOf)){
   const row=member.primary;
   if(!row||row.provider!=='ANGEL_ONE'){items.push({isin:member.isin,listingId:row?.listingId??null,symbol:row?.symbol??member.isin,exchange:row?.exchange??null,enabled:false,reason:member.reason??'PROVIDER_UNSUPPORTED',finalizedThrough:null});continue}
-  const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT s."evidence" FROM "CandleCoverage" c JOIN "CalendarSnapshot" s ON s."id"=c."evidence"->>'calendarHash' WHERE c."listingId"=${row.listingId}::uuid AND c."provider"='ANGEL_ONE' AND c."checkedAt"<=${at} AND s."createdAt"<=${at}`;
+  const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT s."evidence" FROM "CandleCoverage" c JOIN "CalendarSnapshot" s ON s."id"=c."evidence"->>'calendarHash' WHERE c."listingId"=${row.listingId}::uuid AND c."provider"='ANGEL_ONE' AND c."checkedAt"<=${at} AND s."createdAt"<=${at}`.then(rows=>authorizeCalendarRows(db,rows));
   const bars=await db.$queryRaw<{session:Date}[]>`SELECT "session" FROM "RawDailyCandle" WHERE "listingId"=${row.listingId}::uuid AND "provider"='ANGEL_ONE' AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "session" DESC LIMIT 1`;
   const probes=binding.accountKey?await db.$queryRaw<{session:string}[]>`SELECT "evidence"->'wide'->>'actualTo' AS session FROM "HistoricalProbe" WHERE "accountKey"=${binding.accountKey} AND "asOf"<=${at} AND "createdAt"<=${at} AND "evidence"->>'status'='PASSED' AND "evidence"->'wide'->>'status'='COMPLETE' AND "evidence"->'wide'->>'provider'='ANGEL_ONE' AND "evidence"->'wide'->>'listingId'=${row.listingId} AND "evidence"->'wide'->>'mappingSnapshotId'=${mapping!.id} ORDER BY "evidence"->'wide'->>'actualTo' DESC LIMIT 1`:[];
   const candidate=[bars[0]?.session.toISOString().slice(0,10),probes[0]?.session].filter((d):d is string=>!!d).sort().at(-1);

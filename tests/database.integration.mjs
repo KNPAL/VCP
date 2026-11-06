@@ -1,3 +1,4 @@
+import {permittedCandles as ingestCandles} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import {referenceSource} from '../fixtures/reference-source.mjs';
@@ -18,7 +19,7 @@ import {processDailyStructure} from '../packages/database/dist/index.js';
 import {evaluateBreakout,evaluateEntry} from '../packages/strategy/dist/index.js';
 import {breakoutInput,entryInput} from '../fixtures/signal-golden.mjs';
 import {appendPortfolio,readPortfolio} from '../packages/database/dist/index.js';
-import {ingestCandles,synchronizeStoredCandles,persistAdjustment} from '../packages/database/dist/index.js';
+import {synchronizeStoredCandles,persistAdjustment} from '../packages/database/dist/index.js';
 import {persistReadiness,getReadiness,persistSource} from '../packages/database/dist/index.js';
 import {pinScanUniverse,persistSectors,getSector} from '../packages/database/dist/index.js';
 import {pendingCandleChanges,receiveCandleChange} from '../packages/database/dist/index.js';

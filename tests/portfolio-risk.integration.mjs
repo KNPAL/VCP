@@ -1,3 +1,4 @@
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {referenceSource} from '../fixtures/reference-source.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
@@ -16,7 +17,7 @@ test('risk evidence preserves actual fills, expires marks and serializes with jo
   const {id:grantId,...grant}=await candlePermission(db,provider);assert.ok(grantId);await persistSource(db,{...grant,dataset:'LIVE_QUOTES'});
   const mapping=await persistInstrumentSnapshot(db,{knownAt:new Date().toISOString(),sourceReference:'synthetic-risk-only',rows:[{companyId:randomUUID(),isin,listingId,exchange:'NSE',series:'EQ',symbol:'RISK',instrumentType:'EQUITY',tick:'0.05',lot:1,listingDate:'2020-01-01',provider,token:'123',validFrom:'2020-01-01',validTo:null,verified:true,enabled:true}]});
   const calendar=[{date,kind:'SPECIAL',opensAt:new Date(date+'T00:00:00+05:30').toISOString(),closesAt:new Date(date+'T23:59:59+05:30').toISOString(),finalizedAt:null,knownAt:before,source:'synthetic-risk-test',verified:true}],calendarId=hash(randomUUID());
-  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(calendar)}::jsonb)`;
+  await db.$executeRaw`INSERT INTO "CalendarSnapshot" ("id","evidence") VALUES (${calendarId},${JSON.stringify(await permittedCalendar(db,calendar))}::jsonb)`;
   await persistSectors(db,[{isin,sector:'RISK_TEST',validFrom:'2020-01-01',validTo:null,knownAt:before,sourceReference:'synthetic-sector'}],new Date().toISOString(),await referenceSource(db,'SECTORS',before));
   const adjustmentId=hash(randomUUID()),actionSource={id:adjustmentId,listingId,knownAt:before,verified:true,sourceReference:'synthetic-risk-actions',coverageFrom:'2020-01-01',coverageThrough:date,actions:[]};
   await db.$executeRaw`INSERT INTO "AdjustmentSnapshot" ("id","listingId","scaleSession","asOf","state","evidence") VALUES (${adjustmentId},${listingId}::uuid,${new Date(date)},${new Date(before)},'KNOWN',${JSON.stringify({source:actionSource})}::jsonb)`;

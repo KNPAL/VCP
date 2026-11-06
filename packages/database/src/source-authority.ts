@@ -29,3 +29,10 @@ export async function registeredSourceReasons(db:Pick<PrismaClient,'$queryRaw'>,
  if(!current||canonical(current.evidence)!==canonical(source))return ['SOURCE_MISSING_OR_SUPERSEDED'];
  return uses.flatMap(use=>sourcePermission(current.evidence,use,asOf).reasons);
 }
+export async function assertRegisteredSourceIds(db:Pick<PrismaClient,'$queryRaw'>,dataset:string,sourceIds:readonly (string|undefined)[],uses:readonly Permission[]){
+ const ids=[...new Set(sourceIds)];if(!ids.length)return;
+ if(ids.some(id=>typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)))throw new Error('SOURCE_LINEAGE_MISSING');
+ const rows=await db.$queryRaw<{id:string;evidence:SourceRecord}[]>`SELECT id,evidence FROM "SourceSnapshot" WHERE id=ANY(${ids as string[]}::text[]) AND dataset=${dataset}`;
+ if(rows.length!==ids.length)throw new Error('SOURCE_PERMISSION_REQUIRED');
+ for(const row of rows)if((await registeredSourceReasons(db,row.evidence,uses,new Date().toISOString())).length)throw new Error('SOURCE_PERMISSION_REQUIRED');
+}

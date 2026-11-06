@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {cancelPartialsForStop} from './partial-resolution.js';
 import {hasHigherExit,recordExitDecisions} from './exit-decisions.js';
@@ -24,7 +25,7 @@ export async function evaluatePositionTrail(db:PrismaClient,ownerId:string,isin:
   const stops=await tx.$queryRaw<{evidence:InitialStop}[]>`SELECT "evidence" FROM "InitialPositionStop" WHERE "ownerId"=${ownerId}::uuid AND "episodeId"=${episode.identity}::uuid AND "isin"=${isin}`;
   const record=stops[0]!.evidence;
   if(!record.stop||record.fillId!==episode.first.id)return {state:'UNKNOWN',reason:'INITIAL_STOP_UNAVAILABLE',executable:false};
-  const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${new Date(asOf)} ORDER BY "createdAt" DESC,"id" LIMIT 1`;
+  const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${new Date(asOf)} ORDER BY "createdAt" DESC,"id" LIMIT 1`.then(rows=>authorizeCalendarRows(tx,rows));
   const mappings=await tx.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${new Date(asOf)} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(tx,rows));
   const listing=canonicalListings(mappings.map(r=>r.evidence),[isin],asOf)[0]?.primary;
   if(!listing||listing.listingId!==record.stop.listingId)return {state:'UNKNOWN',reason:'LISTING_UNAVAILABLE',executable:false};

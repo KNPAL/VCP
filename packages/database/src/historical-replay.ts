@@ -1,7 +1,7 @@
 import {configurationHash} from '@vcp/strategy';
 import {replayDailyChronology,type ReplayAssumption} from '@vcp/backtest';
 import type {PrismaClient} from '@prisma/client';
-import {assertHistoricalPermissions,type StoredHistoricalSnapshot} from './backtest-snapshots.js';
+import {assertHistoricalPermissions,lockHistoricalAuthority,type StoredHistoricalSnapshot} from './backtest-snapshots.js';
 export async function persistHistoricalReplay(db:PrismaClient,ownerId:string,snapshotId:string,assumptions:readonly ReplayAssumption[]=[]){
  const rows=await db.$queryRaw<{evidence:StoredHistoricalSnapshot}[]>`SELECT "evidence" FROM "HistoricalReplaySnapshot" WHERE "id"=${snapshotId}::uuid AND "ownerId"=${ownerId}::uuid`;
  if(!rows[0])throw new Error('SNAPSHOT_NOT_FOUND');
@@ -12,6 +12,7 @@ export async function persistHistoricalReplay(db:PrismaClient,ownerId:string,sna
  const evidence={id,ownerId,snapshotId,assumptions:inputs,eventCount:events.length,executable:false,performanceVerified:false};
  return db.$transaction(async tx=>{
   await tx.$queryRaw`SELECT "id" FROM "Owner" WHERE "id"=${ownerId}::uuid FOR UPDATE`;
+  await lockHistoricalAuthority(tx,rows[0]!.evidence.snapshot.inputs);
   await assertHistoricalPermissions(tx,rows[0]!.evidence.snapshot.inputs,['STORE','DERIVE']);
   const prior=await tx.$queryRaw<{evidence:typeof evidence}[]>`SELECT "evidence" FROM "HistoricalReplayRun" WHERE "id"=${id} AND "ownerId"=${ownerId}::uuid`;
   if(prior[0])return prior[0].evidence;
@@ -22,6 +23,8 @@ export async function persistHistoricalReplay(db:PrismaClient,ownerId:string,sna
  },{timeout:30000});
 }
 export async function readHistoricalReplay(db:PrismaClient,ownerId:string,runId:string){
+ const snapshots=await db.$queryRaw<{evidence:StoredHistoricalSnapshot}[]>`SELECT s.evidence FROM "HistoricalReplaySnapshot" s JOIN "HistoricalReplayRun" r ON r."snapshotId"=s.id WHERE r.id=${runId} AND r."ownerId"=${ownerId}::uuid AND s."ownerId"=${ownerId}::uuid`;
+ if(snapshots[0])await assertHistoricalPermissions(db,snapshots[0].evidence.snapshot.inputs,['DISPLAY','DERIVE']);
  const rows=await db.$queryRaw<{evidence:unknown}[]>`SELECT "evidence" FROM "HistoricalReplayEvent" WHERE "runId"=${runId} AND "ownerId"=${ownerId}::uuid ORDER BY "session"`;
  return rows.map(row=>row.evidence);
 }

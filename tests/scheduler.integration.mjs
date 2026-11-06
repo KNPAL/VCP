@@ -1,4 +1,5 @@
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
+import {permittedCalendar} from '../fixtures/reference-source.mjs';
 import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,6 +20,7 @@ test('scheduler fences stale owners, persists one session request and recovers q
   assert.equal((await claimSchedulerLease(db,ownerA,scope)).fence,lease.fence);
   const now=Date.now(),at=new Date(now).toISOString(),session=exchangeDate(at);
   const calendar=[{date:session,kind:'SPECIAL',opensAt:new Date(now-60000).toISOString(),closesAt:new Date(now-30000).toISOString(),finalizedAt:new Date(now-10000).toISOString(),knownAt:new Date(now-120000).toISOString(),source:'synthetic-scheduler',verified:true}];
+  await permittedCalendar(db,calendar);
   const calendarId=createHash('sha256').update(JSON.stringify(calendar)).digest('hex');await db.calendarSnapshot.create({data:{id:calendarId,evidence:calendar}});
   const proof=async(gate,status)=>{const probeAt=new Date().toISOString();return persistReadiness(db,{gate,status,probeAt,sourceAt:probeAt,expiresAt:new Date(Date.now()+3600000).toISOString(),sourceReference:'synthetic-scheduler',reason:status==='PASS'?null:'DATA_INCOMPLETE',details:{synthetic:true}})};
   await proof('G02','FAIL');assert.equal((await scheduleCalendarTick(db,lease)).reason,'G02_NOT_READY');

@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizeInstrumentRows} from './instruments.js';
 import {verifyBenchmarkIdentity} from './benchmark-identity.js';
 import {assertUniversePermission} from './instruments.js';
@@ -25,7 +26,7 @@ export async function persistRelativeStrengthReplay(db:PrismaClient,input:Streng
  const universes=await db.$queryRaw<{evidence:UniverseSnapshot}[]>`SELECT "evidence" FROM "UniverseSnapshot" WHERE "id"=${input.universeSnapshotId}`;
  const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "id"=${input.instrumentSnapshotId}`.then(rows=>authorizeInstrumentRows(db,rows));
  const proofs=await db.$queryRaw<{evidence:GateProof}[]>`SELECT "evidence" FROM "ReadinessProof" WHERE "id"=${input.benchmarkProofId}`;
- const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${r.calendarHash}`;
+ const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${r.calendarHash}`.then(rows=>authorizeCalendarRows(db,rows));
  const profile=await db.strategyProfile.findUnique({where:{id:input.profileId}});
  await assertUniversePermission(db,input.universeSnapshotId,['DERIVE','STORE']);
  const universe=universes[0]?.evidence,mapping=mappings[0]?.evidence,proof=proofs[0]?.evidence;

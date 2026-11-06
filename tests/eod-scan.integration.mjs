@@ -1,3 +1,4 @@
+import {permittedCandles as ingestCandles} from '../fixtures/reference-source.mjs';
 import {permittedInstruments as persistInstrumentSnapshot} from '../fixtures/reference-source.mjs';
 import {permittedUniverse as persistUniverse} from '../fixtures/reference-source.mjs';
 import {actionPermission} from '../fixtures/candle-permission.mjs';
@@ -7,7 +8,7 @@ import {benchmarkReview,candlePermission} from '../fixtures/candle-permission.mj
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {createApp} from '../apps/api/dist/app.js';
-import {ingestCandles,persistAdjustment,persistReadiness,persistSource,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
+import {persistAdjustment,persistReadiness,persistSource,registerProfile,activateProfile,prepareEodScan,processEodScanItem,eodScanProgress,getScan} from '../packages/database/dist/index.js';
 import {ST_VCP_4_0,PROFILE_VERSION} from '../packages/strategy/dist/index.js';
 import {exchangeDate} from '../packages/domain/dist/index.js';
 import {goldenSeries} from '../fixtures/vcp-golden.mjs';

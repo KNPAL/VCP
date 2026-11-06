@@ -1,11 +1,13 @@
 import type {PrismaClient} from '@prisma/client';
-import {assertCandlePermissions,assertProviderPermissions} from './data-permissions.js';
+import {assertActionPermissions,assertCandlePermissions,assertProviderPermissions} from './data-permissions.js';
 type Reader=Pick<PrismaClient,'$queryRaw'>;
 export async function assertDailyExecutionDisplay(db:Reader,sourceIds:readonly string[]){
  const ids=[...new Set(sourceIds)];if(!ids.length)return;
- const rows=await db.$queryRaw<{evidence:{input?:{series?:{bars?:{revision:string}[]}}}}[]>`SELECT "evidence" FROM "DailyStructureExecution" WHERE "id"=ANY(${ids}::text[])`;
+ const rows=await db.$queryRaw<{evidence:{input?:{adjustmentRevision?:string;series?:{bars?:{revision:string}[]}}}}[]>`SELECT "evidence" FROM "DailyStructureExecution" WHERE "id"=ANY(${ids}::text[])`;
  if(rows.length!==ids.length||rows.some(row=>!Array.isArray(row.evidence.input?.series?.bars)||!row.evidence.input.series.bars.length))throw new Error('SOURCE_LINEAGE_MISSING');
  await assertCandlePermissions(db,rows.flatMap(row=>row.evidence.input!.series!.bars!.map(bar=>bar.revision)),['DISPLAY','DERIVE']);
+ if(rows.some(row=>!row.evidence.input?.adjustmentRevision))throw new Error('SOURCE_LINEAGE_MISSING');
+ await assertActionPermissions(db,rows.map(row=>row.evidence.input!.adjustmentRevision!),['DISPLAY','DERIVE']);
 }
 /** Check the immutable initial and trailing stop inputs, including historical episodes. */
 export async function assertPositionCandleDisplay(db:Reader,ownerId:string,isin?:string){
@@ -29,4 +31,5 @@ export async function assertPositionCandleDisplay(db:Reader,ownerId:string,isin?
  const sources=await db.$queryRaw<{evidence:{result?:{bars?:{rawRevisionId:string}[]}}}[]>`SELECT "evidence" FROM "AdjustmentSnapshot" WHERE "id"=ANY(${ids}::text[])`;
  if(sources.length!==ids.length||sources.some(row=>!Array.isArray(row.evidence.result?.bars)||!row.evidence.result.bars.length))throw new Error('SOURCE_LINEAGE_MISSING');
  await assertCandlePermissions(db,sources.flatMap(row=>row.evidence.result!.bars!.map(bar=>bar.rawRevisionId)),['DISPLAY','DERIVE']);
+ await assertActionPermissions(db,ids,['DISPLAY','DERIVE']);
 }

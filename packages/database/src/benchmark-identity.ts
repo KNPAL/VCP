@@ -4,6 +4,7 @@ import type {PrismaClient} from '@prisma/client';
 import {formatFixed,parseFixed,utcInstant} from '@vcp/domain';
 import {benchmarkReadiness,verifiedCalendar,sourcePermission,type CalendarDay,type SourceRecord} from '@vcp/market-data';
 import {currentSource} from './source-authority.js';
+import {assertCalendarPermissions} from './calendar-permissions.js';
 
 type Reader=Pick<PrismaClient,'$queryRaw'>;
 type Bar={session:string;close:string;revision:string};
@@ -53,6 +54,7 @@ export async function evaluateStoredBenchmark(db:Reader,details:unknown,asOf:str
  if(calendar.state!=='KNOWN'||bars.some((b,i)=>!b.finalizedAt||Date.parse(b.finalizedAt)<Date.parse(calendar.sessions[i]?.finalizedAt??'')))return unavailable('BENCHMARK_FINALIZATION_UNVERIFIED');
  if(bars.some(bar=>typeof bar.revision!=='string'||!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(bar.revision)))return unavailable('BENCHMARK_LINEAGE_MISSING');
  try{
+  await assertCalendarPermissions(db,row.calendar,['DERIVE','STORE']);
   await assertActionPermissions(db,[adjustmentId],['DERIVE','STORE']);
   await assertCandlePermissions(db,bars.map(b=>b.revision),['DERIVE','STORE']);
  }catch(error){if(error instanceof Error&&['SOURCE_LINEAGE_MISSING','SOURCE_SCOPE_AMBIGUOUS','SOURCE_PERMISSION_REQUIRED'].includes(error.message))return unavailable(error.message);throw error}

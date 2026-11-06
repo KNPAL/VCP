@@ -1,9 +1,10 @@
+import {permittedHistoricalSnapshot as persistHistoricalSnapshot} from '../fixtures/reference-source.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {createApp} from '../apps/api/dist/app.js';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
-import {PrismaClient,persistSource,persistHistoricalSnapshot,persistHistoricalReplay,initializePaperLedger,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '../packages/database/dist/index.js';
+import {PrismaClient,persistSource,persistHistoricalReplay,initializePaperLedger,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '../packages/database/dist/index.js';
 import {historicalReplayFixture} from '../fixtures/historical-replay.mjs';
 test('backtest result reads are owner scoped, revision pinned and preserve missing performance',async()=>{
  assert.equal(new URL(process.env.DATABASE_URL).pathname,'/vcp_test');const db=new PrismaClient();let app;

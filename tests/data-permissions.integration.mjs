@@ -1,16 +1,49 @@
+import {lockHistoricalAuthority} from '../packages/database/dist/backtest-snapshots.js';
+import {permittedCandles as ingestCandles} from '../fixtures/reference-source.mjs';
 import {assertActionPermissions} from '../packages/database/dist/data-permissions.js';
 import {actionPermission} from '../fixtures/candle-permission.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {PrismaClient,assertCandlePermissions,persistSource,ingestCandles,createSyncRun,persistAdjustment,recordPortfolioRisk,readPortfolio,persistSectors,getSector,persistUniverse} from '../packages/database/dist/index.js';
+import {PrismaClient,assertCandlePermissions,persistSource,createSyncRun,persistAdjustment,recordPortfolioRisk,readPortfolio,persistSectors,getSector,persistUniverse} from '../packages/database/dist/index.js';
 import {authorizedUniverseAt,assertUniversePermission} from '../packages/database/dist/instruments.js';
 import {persistInstrumentSnapshot,authorizeInstrumentRows} from '../packages/database/dist/index.js';
 import {masterFixture} from '../fixtures/instrument-master.mjs';
+import {persistHistoricalSnapshot,readHistoricalSlice} from '../packages/database/dist/index.js';
+import {ingestCandles as ingestUnboundCandles,authorizeCalendarRows} from '../packages/database/dist/index.js';
 import {referenceSource} from '../fixtures/reference-source.mjs';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {processBackfillWindow} from '../apps/worker/dist/backfill.js';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
+
+test('calendar grants gate operational ingestion and mask revoked calendars without older fallback',async()=>{
+ const fixture=await isolatedDatabase('calendar_permissions'),db=fixture.db;
+ try{
+  const provider='calendar-fixture',listingId=randomUUID(),date='2025-01-02',asOf='2025-01-02T11:00:00Z';await candlePermission(db,provider);
+  const calendar=[{date,kind:'TRADING',opensAt:date+'T03:45:00Z',closesAt:date+'T10:00:00Z',finalizedAt:date+'T10:30:00Z',knownAt:'2025-01-01T00:00:00Z',source:'synthetic',verified:true}];
+  const input={listingId,provider,calendar,from:date,to:date,asOf,bars:[]};
+  await assert.rejects(ingestUnboundCandles(db,input),/SOURCE_LINEAGE_MISSING/);
+  const source=await referenceSource(db,'EXCHANGE_CALENDAR',calendar[0].knownAt),grant=await persistSource(db,source);calendar[0].sourceSnapshotId=grant.id;
+  await ingestUnboundCandles(db,input);assert.equal((await authorizeCalendarRows(db,[{id:'selected',evidence:calendar}]))[0].evidence.length,1);
+  await persistSource(db,{...source,knownAt:new Date().toISOString(),uses:{...source.uses,STORE:false,DERIVE:false,DISPLAY:false}});
+  const hidden=(await authorizeCalendarRows(db,[{id:'selected',evidence:calendar}]))[0];assert.equal(hidden.id,'selected');assert.deepEqual(hidden.evidence,[]);
+  await assert.rejects(ingestUnboundCandles(db,input),/SOURCE_PERMISSION_REQUIRED/);
+ }finally{await fixture.close()}
+});
+
+test('historical calendar authority is required for archive storage, retries and direct reads',async()=>{
+ const fixture=await isolatedDatabase('archive_permissions'),db=fixture.db;
+ try{
+  const owner=await db.owner.findFirstOrThrow(),knownAt=new Date(Date.now()-1000).toISOString(),date=knownAt.slice(0,10),request=randomUUID();
+  const input={from:date,through:date,knownAt,strategySha:'a'.repeat(40),strategyConfiguration:{version:4},seed:42,fees:{buyBps:'1',sellBps:'1',slippageBps:'1',minimumFee:'0',sourceReference:'synthetic'},historicalDelistingsVerified:false,universes:[],instruments:[],actions:[],raw:[],calendar:[{date,kind:'HOLIDAY',opensAt:null,closesAt:null,finalizedAt:null,knownAt,source:'synthetic',verified:true}]};
+  await assert.rejects(persistHistoricalSnapshot(db,owner.id,request,input),/SOURCE_LINEAGE_MISSING/);
+  const source=await referenceSource(db,'EXCHANGE_CALENDAR',knownAt),registered=await persistSource(db,source);input.calendar[0].sourceSnapshotId=registered.id;
+  const saved=await persistHistoricalSnapshot(db,owner.id,request,input);await readHistoricalSlice(db,owner.id,saved.id,knownAt);
+  await persistSource(db,{...source,knownAt:new Date().toISOString(),uses:{...source.uses,STORE:false,DISPLAY:false}});
+  await assert.rejects(readHistoricalSlice(db,owner.id,saved.id,knownAt),/SOURCE_PERMISSION_REQUIRED/);
+  await assert.rejects(persistHistoricalSnapshot(db,owner.id,request,input),/SOURCE_PERMISSION_REQUIRED/);
+ }finally{await fixture.close()}
+});
 
 test('instrument masters cannot bypass registration and revocation masks the selected revision',async()=>{
  const fixture=await isolatedDatabase('master_permissions'),db=fixture.db;
@@ -168,4 +201,21 @@ test('direct candle storage checks current grants and rolls back changes on revo
   assert.deepEqual(checkpoint,{state:'PARTIAL',reason:'SOURCE_PERMISSION_REQUIRED',leaseToken:null});
   assert.equal(await db.candleRevision.count({where:{listingId:workerListing}}),0);
  }finally{await db.$disconnect()}
+});
+
+
+test('archive authority locks hold raw and reference revocations until commit',async()=>{
+ const fixture=await isolatedDatabase('archive_authority_lock'),db=fixture.db;
+ try{
+  const raw=await candlePermission(db,'archive-lock-'+randomUUID()),calendar=await candlePermission(db,'calendar-lock-'+randomUUID(),{},'EXCHANGE_CALENDAR');
+  const input={raw:[{provider:raw.provider}],instruments:[],universes:[],calendar:[{sourceSnapshotId:calendar.id}],actions:[]};
+  let release,acquired;const ready=new Promise(resolve=>{acquired=resolve}),hold=new Promise(resolve=>{release=resolve});
+  const transaction=db.$transaction(async tx=>{await lockHistoricalAuthority(tx,input);acquired();await hold},{timeout:10000});
+  await ready;
+  const writes=[raw,calendar].map(({id,...source})=>{assert.ok(id);return persistSource(db,{...source,knownAt:new Date().toISOString(),uses:{...source.uses,STORE:false}})});
+  try{
+   const outcome=await Promise.race([Promise.any(writes).then(()=> 'committed'),new Promise(resolve=>setTimeout(()=>resolve('waiting'),150))]);
+   assert.equal(outcome,'waiting','Registry writers must wait for archive transaction completion');
+  }finally{release();await transaction;await Promise.all(writes)}
+ }finally{await fixture.close()}
 });

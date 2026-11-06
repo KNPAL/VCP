@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from '@vcp/database';
 import {authorizeInstrumentRows} from '@vcp/database';
 import type {Queue} from 'bullmq';
 import {readMarketSignals,ownerStreamBinding,readPortfolio,recordPositionMonitor,evaluatePositionStop,recordPortfolioRisk,evaluatePositionTrail,evaluatePartialProfit,evaluateExitDecisions,recordPositionStatus,type PortfolioQuotes,type PrismaClient} from '@vcp/database';
@@ -8,7 +9,7 @@ import {readLiveQuote} from './live-quotes.js';
 export async function monitorHeldPositions(db:PrismaClient,q:Queue,streamOwner:string|undefined){
  const trails:{ownerId:string;isin:string;quote:PortfolioQuotes[string]|null}[]=[];
  const owners=await db.owner.findMany({select:{id:true}});
- const calendar=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`;
+ const calendar=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=clock_timestamp() ORDER BY "createdAt" DESC,"id" LIMIT 1`.then(rows=>authorizeCalendarRows(db,rows));
  const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=clock_timestamp() ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows));
  const mapping=mappings[0]?.evidence??null;
  for(const owner of owners){

@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from './calendar-permissions.js';
 import {authorizedUniverseAt} from './instruments.js';
 import {randomUUID} from 'node:crypto';
 import type {PrismaClient} from '@prisma/client';
@@ -28,7 +29,7 @@ export async function scheduleCalendarTick(db:PrismaClient,lease:SchedulerLease)
   const owners=await tx.$queryRaw<{scope:string}[]>`SELECT "scope" FROM "SchedulerLease" WHERE "scope"=${lease.scope} AND "ownerId"=${lease.ownerId}::uuid AND "fence"=${BigInt(lease.fence)} AND "expiresAt">clock_timestamp() FOR UPDATE`;
   if(!owners[0])throw new Error('SCHEDULER_LEASE_LOST');
   const time=await tx.$queryRaw<{now:Date}[]>`SELECT clock_timestamp() AS now`,at=time[0]!.now,asOf=at.toISOString();
-  const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${at} ORDER BY "createdAt" DESC,"id" LIMIT 1`;
+  const calendars=await tx.$queryRaw<{id:string;evidence:CalendarDay[]}[]>`SELECT "id","evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${at} ORDER BY "createdAt" DESC,"id" LIMIT 1`.then(rows=>authorizeCalendarRows(tx,rows));
   const calendar=calendars[0],decision=calendarScheduleDecision(calendar?.evidence??null,asOf);
   const record=async(state:string,reason:string|null,scanId:string|null=null)=>{
    // A paused/expired owner cannot publish status or create a request after losing its lease.

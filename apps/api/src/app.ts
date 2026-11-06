@@ -16,7 +16,7 @@ import { AuthService, databaseFromEnvironment } from './auth.js';
 import type { AuthRequest, AuthResponse } from './auth.js';
 import type { PrismaClient } from '@vcp/database';
 import {getScan as getStoredScan,latestScan as latestStoredScan,assertEodScanDisplay,appendPortfolio,readPortfolio,readPortfolioRisk,readDashboard,getReadiness,syncJobs,instrumentCoverage,readWatchlists,changeWatchlist,watchlistInstruments,eodScanProgress,getDailyStructure,schedulerStatus} from '@vcp/database';
-import {readInspector,inspectorListings,assertCandlePermissions} from '@vcp/database';
+import {readInspector,inspectorListings,assertActionPermissions,assertCandlePermissions} from '@vcp/database';
 import {compareBacktestSelection,type BacktestComparisonSelection,listBacktestRuns,readBacktestResult,readBacktestInstrument} from '@vcp/database';
 import {readOperations,readDataHealth,readBrokerConnection,saveBrokerConfiguration,ownerBrokerBinding,logoutBroker} from '@vcp/database';
 import {readDownloadChoices,readDownloadPreview,signDownloadPreview,acceptManualDownload,readManualDownload,listManualDownloads,cancelManualDownload,retryManualDownload} from '@vcp/database';
@@ -522,7 +522,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
     @Get('daily-structure/:id') async dailyStructure(@Param('id') id:string){
       if(!/^[0-9a-f]{64}$/.test(id))throw new BadRequestException('Invalid execution ID');
       const result=await getDailyStructure(db,id);if(!result)throw new NotFoundException('Daily execution not found');
-      try{await assertCandlePermissions(db,result.input.series.bars.map(bar=>bar.revision),['DISPLAY','DERIVE'])}
+      try{await assertCandlePermissions(db,result.input.series.bars.map(bar=>bar.revision),['DISPLAY','DERIVE']);await assertActionPermissions(db,[result.input.adjustmentRevision],['DISPLAY','DERIVE'])}
       catch(error){if(error instanceof Error&&['SOURCE_PERMISSION_REQUIRED','SOURCE_SCOPE_AMBIGUOUS','SOURCE_LINEAGE_MISSING'].includes(error.message))throw new HttpException('Market-data display permission or lineage is unavailable',403);throw error}
       return result;
     }

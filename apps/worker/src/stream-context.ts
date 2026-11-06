@@ -1,3 +1,4 @@
+import {authorizeCalendarRows} from '@vcp/database';
 import {authorizeInstrumentRows} from '@vcp/database';
 import {exchangeDate,parseFixed,formatFixed} from '@vcp/domain';
 import {brokerAccountKey,verifiedCalendar,type CalendarDay,type InstrumentSnapshot,type StreamCandidate} from '@vcp/market-data';
@@ -19,7 +20,7 @@ export function streamDependencies(db:PrismaClient,accountKey:string,loadKey:Bro
   context:async()=>{
    const at=new Date().toISOString(),date=exchangeDate(at);
    const auth=await credentials();
-   const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${new Date(at)} ORDER BY "createdAt" DESC,"id" LIMIT 1`;
+   const calendars=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "createdAt"<=${new Date(at)} ORDER BY "createdAt" DESC,"id" LIMIT 1`.then(rows=>authorizeCalendarRows(db,rows));
    const mappings=await db.$queryRaw<{evidence:InstrumentSnapshot}[]>`SELECT "evidence" FROM "InstrumentSnapshot" WHERE "knownAt"<=${new Date(at)} ORDER BY "knownAt" DESC,"id" LIMIT 1`.then(rows=>authorizeInstrumentRows(db,rows));
    const calendar=calendars[0]?.evidence??null,mapping=mappings[0]?.evidence??null;
    const verified=verifiedCalendar(calendar,date,date,at),day=calendar?.find(d=>d.date===date);

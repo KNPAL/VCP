@@ -27,3 +27,6 @@ On 2026-11-06, 20 protective-event samples measured P95 4,856 ms against a 5,000
 Full EOD and API P95 acceptance remain pending until their measurements pass. KAN-134 remains In Progress.
 
 The final 2026-11-06 EOD/API measurement was interrupted after fixture preparation by PostgreSQL reporting `FATAL: the database system is shutting down`; it has no valid completion timing. Restart the local dependencies before rerunning. The subsequent cached-action-revocation test addition also needs a fresh run once PostgreSQL is available.
+
+
+2026-11-06 KAN-44 calendar/archive/display verification: 239 unit tests passed. The full local integration run passed 60/61; its unbound scheduler calendar fixture was corrected and the six affected regression suites then passed sequentially. An additional 18 archive/source-permission tests passed, including provider-lock serialization with registry revocation. Database/API/worker builds and lint passed. Logs: `.runtime/kan44-final-unit-retry.log`, `.runtime/kan44-complete-integration.log`, `.runtime/kan44-final-regressions.log`, `.runtime/kan44-archive-final.log`, `.runtime/kan44-final-lint.log`. Run shared-database integration suites sequentially; parallel invocations can invalidate journal-immutability assertions. These results are local evidence, not hosted CI or production licensing approval.

@@ -1,8 +1,9 @@
+import {permittedHistoricalSnapshot as persistHistoricalSnapshot} from '../fixtures/reference-source.mjs';
 import test,{before} from 'node:test';
 import {candlePermission} from '../fixtures/candle-permission.mjs';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-import {PrismaClient,persistHistoricalSnapshot,readHistoricalSlice,persistHistoricalReplay,readHistoricalReplay,persistHistoricalEntry,persistHistoricalExit,initializePaperLedger,loadPaperLedger,applyHistoricalDecisionToPaper,applyPaperCorporateActions,persistPaperProtection,persistPaperDailyExit,persistPaperOpeningExit} from '../packages/database/dist/index.js';
+import {PrismaClient,readHistoricalSlice,persistHistoricalReplay,readHistoricalReplay,persistHistoricalEntry,persistHistoricalExit,initializePaperLedger,loadPaperLedger,applyHistoricalDecisionToPaper,applyPaperCorporateActions,persistPaperProtection,persistPaperDailyExit,persistPaperOpeningExit} from '../packages/database/dist/index.js';
 import {readPaperLedger} from '../packages/backtest/dist/index.js';
 import {runPaperSession,readPaperPerformance,compareStoredWalkForward} from '../packages/database/dist/index.js';
 import {historicalReplayFixture} from '../fixtures/historical-replay.mjs';
