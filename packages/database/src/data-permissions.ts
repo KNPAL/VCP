@@ -45,6 +45,20 @@ export async function assertPortfolioQuotePermissions(db:Pick<PrismaClient,'$que
 }
 
 /** Authorize every contributing adjustment against its pinned corporate-action grant. */
+export async function assertActionSourcePermissions(db:Pick<PrismaClient,'$queryRaw'>,sourceIds:readonly string[],uses:readonly Permission[]){
+ const ids=[...new Set(sourceIds)];if(!ids.length)return;
+ if(ids.some(id=>typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id)))throw new Error('SOURCE_PERMISSION_REQUIRED');
+ const at=new Date().toISOString();
+ const rows=await db.$queryRaw<{allowed:boolean;source:SourceRecord}[]>`
+  SELECT s.evidence AS source,(current.ids=ARRAY[s.id]) AS allowed FROM "SourceSnapshot" s
+  LEFT JOIN LATERAL (
+   SELECT array_agg(n.id) AS ids FROM "SourceSnapshot" n
+   WHERE n.dataset=s.dataset AND n.evidence->>'provider'=s.evidence->>'provider'
+    AND n.evidence->>'endpointOrFile'=s.evidence->>'endpointOrFile' AND n."knownAt"<=${new Date(at)}
+   GROUP BY n."knownAt" ORDER BY n."knownAt" DESC LIMIT 1
+  ) current ON true WHERE s.id=ANY(${ids}::text[]) AND s.dataset='CORPORATE_ACTIONS'`;
+ if(rows.length!==ids.length||rows.some(row=>!row.allowed||uses.some(use=>sourcePermission(row.source,use,at).status!=='PASS')))throw new Error('SOURCE_PERMISSION_REQUIRED');
+}
 export async function assertActionPermissions(db:Pick<PrismaClient,'$queryRaw'>,adjustmentIds:readonly string[],uses:readonly Permission[]){
  const ids=[...new Set(adjustmentIds)];
  if(!ids.length)return;

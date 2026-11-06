@@ -10,13 +10,14 @@ import {pinScanUniverse} from './instruments.js';
 import {activeProfile} from './profiles.js';
 import {processDailyStructure} from './daily-structure.js';
 import {persistScan,getScan} from './scans.js';
-import {assertActionPermissions,assertCandlePermissions} from './data-permissions.js';
+import {assertActionPermissions,assertActionSourcePermissions,assertCandlePermissions,assertProviderPermissions} from './data-permissions.js';
 const hash=(v:unknown)=>createHash('sha256').update(canonical(v)).digest('hex');
 const uuid=(v:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v);
 export interface EodScanRequest {scanId:string;session:string;asOf:string;calendarId:string}
 interface Item {id:string;isin:string;instrumentId:string;adjustmentId:string|null;tick:string|null;reason:string|null;rs:string|null;rsRevision:string}
 export interface RegimeEvidence {session:string;asOf:string;calendarId:string;benchmark:{adjustmentId:string|null;proofId:string|null;close:string|null;sma50:string|null;sma200:string|null};members:{isin:string;adjustmentId:string|null;close:string|null;sma50:string|null}[];intended:string[];result:ReturnType<typeof marketRegime>}
-export interface Plan {request:EodScanRequest;configHash:string;dataRevision:string;universe:Awaited<ReturnType<typeof pinScanUniverse>>;benchmarkAdjustmentId:string|null;benchmarkProofId:string|null;regime?:RegimeEvidence;items:Item[]}
+interface PermissionLineage {providers:string[];actionSourceIds:string[]}
+export interface Plan {request:EodScanRequest;configHash:string;dataRevision:string;universe:Awaited<ReturnType<typeof pinScanUniverse>>;benchmarkAdjustmentId:string|null;benchmarkProofId:string|null;regime?:RegimeEvidence;items:Item[];permissionLineage?:PermissionLineage}
 interface AdjustmentRow {id:string;listingId:string;asOf:Date;createdAt:Date;scaleSession:Date;state:string;evidence:{source:ActionSnapshot;result:{bars:(Series['bars'][number]&{rawRevisionId:string})[]}}}
 class MissingInput extends Error {}
 /** Reconstruct only the pinned revision, and reject future or incomplete evidence. */
@@ -42,13 +43,32 @@ export async function loadSeries(db:PrismaClient|Prisma.TransactionClient,id:str
  const actions=row.evidence.source.actions.filter(a=>exchangeDate(a.effectiveAt)<=request.session).sort((a,b)=>a.id.localeCompare(b.id));
  return {listingId:row.listingId,series,scaleRevision:hash(actions),adv:adv20(rawSeries)};
 }
-async function assertPlanPermissions(db:PrismaClient|Prisma.TransactionClient,plan:Plan,operations:readonly Permission[]=['DERIVE','STORE']){
+async function readPlanLineage(db:PrismaClient|Prisma.TransactionClient,plan:Pick<Plan,'benchmarkAdjustmentId'|'items'>):Promise<PermissionLineage>{
  const ids=[...new Set([plan.benchmarkAdjustmentId,...plan.items.map(item=>item.adjustmentId)].filter((id):id is string=>id!==null))];
- if(!ids.length)return;
- const rows=await db.$queryRaw<AdjustmentRow[]>`SELECT * FROM "AdjustmentSnapshot" WHERE "id"=ANY(${ids}::text[])`;
- if(rows.length!==ids.length||rows.some(row=>!Array.isArray(row.evidence.result?.bars)||!row.evidence.result.bars.length))throw new Error('SOURCE_LINEAGE_MISSING');
- await assertActionPermissions(db,ids,operations);
- await assertCandlePermissions(db,rows.flatMap(row=>row.evidence.result.bars.map(bar=>bar.rawRevisionId)),operations);
+ if(!ids.length)return {providers:[],actionSourceIds:[]};
+ // Validate the entire pinned lineage in PostgreSQL, returning only providers.
+ // Transferring all OHLCV JSON twice per item makes a 500-stock scan quadratic
+ // in wire volume. The database prevents changes/deletion of both input tables.
+ const rows=await db.$queryRaw<{adjustments:bigint;valid:boolean|null;providers:string[];actionSourceIds:string[]}[]>`SELECT
+  count(DISTINCT a.id) AS adjustments,bool_and(c.id IS NOT NULL) AS valid,
+  array_remove(array_agg(DISTINCT c.source),NULL) AS providers,
+  array_agg(DISTINCT a.evidence->'source'->>'sourceSnapshotId') AS "actionSourceIds"
+  FROM "AdjustmentSnapshot" a
+  LEFT JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(a.evidence->'result'->'bars')='array'
+   THEN a.evidence->'result'->'bars' ELSE '[]'::jsonb END) b ON true
+  LEFT JOIN "CandleRevision" c ON c.id=CASE WHEN b->>'rawRevisionId' ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+   THEN (b->>'rawRevisionId')::uuid ELSE NULL END
+  WHERE a.id=ANY(${ids}::text[])`;
+ const lineage=rows[0];
+ if(!lineage||Number(lineage.adjustments)!==ids.length||lineage.valid!==true||!lineage.providers.length)throw new Error('SOURCE_LINEAGE_MISSING');
+ return {providers:lineage.providers.sort(),actionSourceIds:lineage.actionSourceIds};
+}
+async function assertPlanPermissions(db:PrismaClient|Prisma.TransactionClient,plan:Plan,operations:readonly Permission[]=['DERIVE','STORE']){
+ // Only internally constructed, immutable plans contain this proof. Older plans
+ // reconstruct it. Cache source identity, never permission outcomes or expiry.
+ const lineage=plan.permissionLineage??await readPlanLineage(db,plan);
+ await assertActionSourcePermissions(db,lineage.actionSourceIds,operations);
+ for(const provider of lineage.providers.sort())await assertProviderPermissions(db,'DAILY_CANDLES',provider,operations);
 }
 /** Public displays must verify the original contributors, never today's replacement universe. */
 export async function assertEodScanDisplay(db:PrismaClient,id:string){
@@ -101,7 +121,8 @@ export async function prepareEodScan(db:PrismaClient,request:EodScanRequest){
  // Store the full intended denominator, including missing members, with pinned source revisions.
  // This is historical EOD evidence; live entry consumers must separately verify freshness.
  const regime:RegimeEvidence={session:request.session,asOf:request.asOf,calendarId:request.calendarId,benchmark:benchmarkInputs,members:breadth,intended:universe.universe.members,result:marketRegime(benchmarkInputs.close,benchmarkInputs.sma50,benchmarkInputs.sma200,universe.universe.members,breadth)};
- const base={request,configHash:profile.id,universe,benchmarkAdjustmentId,benchmarkProofId:proof?.id??null,regime,items},plan:Plan={...base,dataRevision:hash(base)};
+ const permissionLineage=await readPlanLineage(db,{benchmarkAdjustmentId,items});
+ const base={request,configHash:profile.id,universe,benchmarkAdjustmentId,benchmarkProofId:proof?.id??null,regime,items,permissionLineage},plan:Plan={...base,dataRevision:hash(base)};
  await db.$transaction(async tx=>{
   await assertPlanPermissions(tx,plan);
   await tx.$executeRaw`INSERT INTO "EodScanPlan" ("id","evidence") VALUES (${request.scanId}::uuid,${canonical(plan)}::jsonb) ON CONFLICT DO NOTHING`;

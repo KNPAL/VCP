@@ -4,7 +4,7 @@ Scope: KAN-4 through KAN-139 (136 tickets). UI is designed independently as requ
 
 ## Jira status
 
-Verified against Jira on 2026-11-05. Of the original 136 tickets, 126 are Coded. Additional tickets KAN-140 through KAN-148 are Coded.
+Verified against Jira on 2026-11-06. Of the original 136 tickets, 126 are Coded. Additional tickets KAN-140 through KAN-148 are Coded.
 
 Ten remain. KAN-4, KAN-6, KAN-44, KAN-45 and KAN-134 are In Progress. KAN-16, KAN-130, KAN-132, KAN-133 and KAN-135 are To Do. Recent closeouts include the application screens, alert adapters, recovery drill and their parent epics. The dated notes below describe earlier board states.
 
@@ -19,6 +19,8 @@ Ten remain. KAN-4, KAN-6, KAN-44, KAN-45 and KAN-134 are In Progress. KAN-16, KA
 - Authenticated responsive application shell, connected Positions cash/fill/journal interface, saved research watchlists and ranked VCP screener. Dashboard, broker setup, data history, inspector, BUY/SELL, portfolio detail, operations, alerts and backtest results have authenticated routes.
 
 ## Current pipeline work
+
+2026-11-06: All 57 integration tests passed in a fresh migrated schema. A separate clean-source Compose boot passed TLS login/session/dashboard smoke checks. Hosted CI remains with the user; changes stay local. KAN-134 compute-only performance improved from 234,511 ms to 72,921 ms for 500 synthetic stocks through exact rational arithmetic optimization. The full deployment benchmark exposed a 500-row instrument-import timeout; batch writes retain identity-conflict rollback and pass two import regression tests. Full-scan lineage checks are being optimized and verified; EOD/API/tick-latency acceptance remains unfinished. See verification.md for reproducible commands and scope.
 
 2026-10-27: KAN-141 moved to In Progress. Migration 61 persists owner/configuration-bound login attempts and immutable state events without PIN/TOTP. One active attempt, five starts per fifteen minutes and a sixty-second attempt expiry are enforced across restarts. Session installation locks and validates the current configuration atomically; changed or expired attempts cannot commit credentials. Public status exposes AUTHENTICATING and safe timeout/failure codes. Login lifecycle, configuration/API and download regressions passed; database/API/worker builds and lint passed. Migration 61 is test-only; deployment remains at 55. Public login/logout and provider/browser integration remain unfinished.
 

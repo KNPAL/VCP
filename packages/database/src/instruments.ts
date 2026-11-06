@@ -11,14 +11,25 @@ export async function persistInstrumentSnapshotTransaction(tx:Prisma.Transaction
  const normalized={...input,rows:[...input.rows].sort((a,b)=>a.listingId.localeCompare(b.listingId)||a.provider.localeCompare(b.provider)||a.validFrom.localeCompare(b.validFrom))};
  const snapshot={...normalized,id:hash(normalized)};validateInstrumentSnapshot(snapshot);
   const json=canonical(snapshot);await tx.$executeRaw`INSERT INTO "InstrumentSnapshot" ("id","knownAt","sourceReference","evidence") VALUES (${snapshot.id},${utcInstant(snapshot.knownAt)},${snapshot.sourceReference},${json}::jsonb) ON CONFLICT ("id") DO NOTHING`;
-  for(const row of snapshot.rows){
-   await tx.$executeRaw`INSERT INTO "Company" ("id","isin") VALUES (${row.companyId}::uuid,${row.isin}) ON CONFLICT DO NOTHING`;
-   const companies=await tx.$queryRaw<{isin:string}[]>`SELECT "isin" FROM "Company" WHERE "id"=${row.companyId}::uuid`;if(companies[0]?.isin!==row.isin)throw new Error('COMPANY_IDENTITY_CONFLICT');
-   await tx.$executeRaw`INSERT INTO "Listing" ("id","companyId","exchange") VALUES (${row.listingId}::uuid,${row.companyId}::uuid,${row.exchange}) ON CONFLICT DO NOTHING`;
-   const listings=await tx.$queryRaw<{companyId:string;exchange:string}[]>`SELECT "companyId","exchange" FROM "Listing" WHERE "id"=${row.listingId}::uuid`;if(listings[0]?.companyId!==row.companyId||listings[0]?.exchange!==row.exchange)throw new Error('LISTING_IDENTITY_CONFLICT');
-   const mappingId=hash([snapshot.id,row]),mappingJson=canonical(row);
-   await tx.$executeRaw`INSERT INTO "ListingMapping" ("id","snapshotId","listingId","provider","token","validFrom","validTo","evidence") VALUES (${mappingId},${snapshot.id},${row.listingId}::uuid,${row.provider},${row.token},${new Date(row.validFrom)},${row.validTo?new Date(row.validTo):null},${mappingJson}::jsonb) ON CONFLICT ("id") DO NOTHING`;
-  }return snapshot;
+  // Batch transport keeps full-universe imports inside the transaction deadline.
+  // Check every requested identity after insertion, including conflicting duplicates.
+  const records=canonical(snapshot.rows);
+  await tx.$executeRaw`INSERT INTO "Company" (id,isin)
+   SELECT (r->>'companyId')::uuid,r->>'isin' FROM jsonb_array_elements(${records}::jsonb) r ON CONFLICT DO NOTHING`;
+  const companies=await tx.$queryRaw<{id:string;isin:string}[]>`SELECT id,isin FROM "Company" WHERE id=ANY(${snapshot.rows.map(r=>r.companyId)}::uuid[])`;
+  const byCompany=new Map(companies.map(c=>[c.id,c.isin]));
+  if(snapshot.rows.some(r=>byCompany.get(r.companyId)!==r.isin))throw new Error('COMPANY_IDENTITY_CONFLICT');
+  await tx.$executeRaw`INSERT INTO "Listing" (id,"companyId",exchange)
+   SELECT (r->>'listingId')::uuid,(r->>'companyId')::uuid,r->>'exchange' FROM jsonb_array_elements(${records}::jsonb) r ON CONFLICT DO NOTHING`;
+  const listings=await tx.$queryRaw<{id:string;companyId:string;exchange:string}[]>`SELECT id,"companyId",exchange FROM "Listing" WHERE id=ANY(${snapshot.rows.map(r=>r.listingId)}::uuid[])`;
+  const byListing=new Map(listings.map(l=>[l.id,l]));
+  if(snapshot.rows.some(r=>byListing.get(r.listingId)?.companyId!==r.companyId||byListing.get(r.listingId)?.exchange!==r.exchange))throw new Error('LISTING_IDENTITY_CONFLICT');
+  const mappings=canonical(snapshot.rows.map(row=>({id:hash([snapshot.id,row]),row})));
+  await tx.$executeRaw`INSERT INTO "ListingMapping" (id,"snapshotId","listingId",provider,token,"validFrom","validTo",evidence)
+   SELECT m->>'id',${snapshot.id},(m->'row'->>'listingId')::uuid,m->'row'->>'provider',m->'row'->>'token',
+    (m->'row'->>'validFrom')::date,(m->'row'->>'validTo')::date,m->'row'
+   FROM jsonb_array_elements(${mappings}::jsonb) m ON CONFLICT (id) DO NOTHING`;
+  return snapshot;
 }
 export async function persistUniverse(db:PrismaClient,input:Omit<UniverseSnapshot,'id'>){
  const normalized={...input,isins:[...input.isins].sort()},snapshot={...normalized,id:hash(normalized)};universeAt([snapshot],snapshot.knownAt);
