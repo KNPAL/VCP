@@ -6,9 +6,10 @@ export const brokerLoginErrors=['BAD_CREDENTIALS','BAD_TOTP','APP_CONFIG_INVALID
 export type BrokerLoginError=typeof brokerLoginErrors[number];
 async function event(tx:Prisma.TransactionClient,attemptId:string,state:string,errorCode:string|null){await tx.$executeRaw`INSERT INTO "BrokerLoginEvent" ("id","attemptId","state","errorCode") VALUES (${randomUUID()}::uuid,${attemptId}::uuid,${state},${errorCode})`}
 /** No PIN, TOTP or provider payload enters this durable boundary. */
-export async function beginBrokerLogin(db:PrismaClient,ownerId:string){
+export async function beginBrokerLogin(db:PrismaClient,ownerId:string,expectedNetworkRevision?:string|null){
  return db.$transaction(async tx=>{
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},140))`;
+  if(expectedNetworkRevision!==undefined){const networks=await tx.$queryRaw<{revision:string}[]>`SELECT revision FROM "BrokerNetworkConfiguration" WHERE "ownerId"=${ownerId}::uuid`;if((networks[0]?.revision??null)!==expectedNetworkRevision)throw new Error('APP_CONFIG_INVALID')}
   const configs=await tx.$queryRaw<{revision:string;accountKey:string}[]>`SELECT "revision","accountKey" FROM "BrokerConfiguration" WHERE "ownerId"=${ownerId}::uuid`;
   const config=configs[0];if(!config)throw new Error('BROKER_NOT_CONFIGURED');
   const active=await tx.$queryRaw<{id:string}[]>`SELECT "id" FROM "BrokerLoginAttempt" WHERE "ownerId"=${ownerId}::uuid AND "configurationRevision"=${config.revision}::uuid AND "state"='AUTHENTICATING' AND "expiresAt">clock_timestamp()`;
@@ -33,8 +34,8 @@ export async function failBrokerLogin(db:PrismaClient,ownerId:string,attemptId:s
  });
 }
 /** Local revocation is independent of provider availability and fences in-flight login responses. */
-export async function logoutBroker(db:PrismaClient,ownerId:string){
- return db.$transaction(async tx=>{
+export async function logoutBroker(db:PrismaClient,ownerId:string){return db.$transaction(tx=>revokeBrokerSession(tx,ownerId))}
+export async function revokeBrokerSession(tx:Prisma.TransactionClient,ownerId:string){
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ownerId},140))`;
   const configs=await tx.$queryRaw<{accountKey:string}[]>`SELECT "accountKey" FROM "BrokerConfiguration" WHERE "ownerId"=${ownerId}::uuid`;
   const attempts=await tx.$queryRaw<{id:string}[]>`UPDATE "BrokerLoginAttempt" SET "state"='SUPERSEDED',"errorCode"='SESSION_EXPIRED',"finishedAt"=clock_timestamp() WHERE "ownerId"=${ownerId}::uuid AND "state" IN ('AUTHENTICATING','CONNECTED') RETURNING "id"`;
@@ -43,7 +44,6 @@ export async function logoutBroker(db:PrismaClient,ownerId:string){
   const paused=await tx.$queryRaw<{id:string}[]>`UPDATE "ManualDownloadRun" SET "state"='PAUSED_AUTH' WHERE "ownerId"=${ownerId}::uuid AND "state" IN ('QUEUED','RUNNING','PAUSED_QUOTA') RETURNING "id"`;
   for(const run of paused)await tx.$executeRaw`INSERT INTO "ManualDownloadEvent" ("id","runId","state","evidence") VALUES (${randomUUID()}::uuid,${run.id}::uuid,'PAUSED_AUTH','{"reason":"BROKER_LOGGED_OUT"}'::jsonb)`;
   return {revoked:true};
- });
 }
 /** Provider-verified credentials are installed only if this attempt still owns the current configuration. */
 export async function completeBrokerLogin(db:PrismaClient,ownerId:string,attemptId:string,binding:CredentialBinding,secrets:BrokerSecrets,proof:{authenticated:boolean;staticIpVerified:boolean;verifiedAt:string},loadKey:BrokerKeyResolver){

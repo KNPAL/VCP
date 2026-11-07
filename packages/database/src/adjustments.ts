@@ -1,4 +1,5 @@
-import {currentSource,lockSourceScope} from './source-authority.js';
+import {currentSource} from './source-authority.js';
+import {lockDerivedAuthority} from './derived-authority.js';
 import type {PrismaClient} from '@prisma/client';
 import {parseFixed} from '@vcp/domain';
 import {sourcePermission,adjustCandles,type SourceRecord,type AdjustmentInput} from '@vcp/market-data';
@@ -15,11 +16,12 @@ export async function persistAdjustment(db:PrismaClient,input:AdjustmentInput){
   if(!sourceId||!(/^[0-9a-f]{64}$/).test(sourceId))throw new Error('ACTION_SOURCE_PERMISSION_REQUIRED');
   const [authority]=await tx.$queryRaw<{evidence:SourceRecord}[]>`SELECT evidence FROM "SourceSnapshot" WHERE id=${sourceId} AND dataset='CORPORATE_ACTIONS'`;
   if(!authority)throw new Error('ACTION_SOURCE_PERMISSION_REQUIRED');
-  await lockSourceScope(tx,authority.evidence);
   const authorize=async()=>{
    const at=new Date().toISOString(),current=await currentSource(tx,authority.evidence,at);
    if(current?.id!==sourceId||(['STORE','DERIVE'] as const).some(use=>sourcePermission(authority.evidence,use,at).status!=='PASS'))throw new Error('ACTION_SOURCE_PERMISSION_REQUIRED');
   };
+  await authorize();
+  await lockDerivedAuthority(tx,{rawRevisionIds:revisionIds,sources:[authority.evidence]});
   await authorize();
   const originals=await tx.candleRevision.findMany({where:{id:{in:input.raw.map(bar=>bar.revisionId)}}});
   for(const bar of input.raw){

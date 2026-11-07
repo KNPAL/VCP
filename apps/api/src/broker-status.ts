@@ -1,7 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import {utcInstant} from '@vcp/domain';
 import {isIP} from 'node:net';
-import {readBrokerConnection,resolveBrokerConfiguration,resolveBrokerSession,directoryBrokerKeys,getReadiness,type PrismaClient,type BrokerKeyResolver} from '@vcp/database';
+import {readBrokerNetwork,readBrokerConnection,resolveBrokerConfiguration,resolveBrokerSession,directoryBrokerKeys,getReadiness,type PrismaClient,type BrokerKeyResolver} from '@vcp/database';
 export interface BrokerStatusDependencies {
  configurationKey:()=>Promise<Buffer>;
  network:()=>Promise<unknown>;
@@ -24,7 +24,7 @@ export function networkStatus(value:unknown,now=Date.now()){
 }
 /** Reads local configuration/session evidence only. Never contacts the broker or returns secrets. */
 export async function readRuntimeBrokerStatus(db:PrismaClient,ownerId:string,legacyAccount?:string,deps=configuredStatusDependencies()){
- const base=await readBrokerConnection(db,ownerId,legacyAccount),networkValue=await deps.network().catch(()=>null);let network=networkStatus(networkValue);
+ const base=await readBrokerConnection(db,ownerId,legacyAccount),networkValue=(await readBrokerNetwork(db,ownerId))?.network??await deps.network().catch(()=>null);let network=networkStatus(networkValue);
  let configurationError=false,credentialError=false,matchingSession=false,feed=false;
  let key:Buffer|undefined,config:Awaited<ReturnType<typeof resolveBrokerConfiguration>>|undefined,session:Awaited<ReturnType<typeof resolveBrokerSession>>|undefined;
  try{

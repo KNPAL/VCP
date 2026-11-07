@@ -25,40 +25,64 @@ Node should report `v24.x`. Start Docker before proceeding.
 
 ## First run: local app with Docker databases
 
-Run from the repository root, in this order:
+Run these commands in PowerShell from `D:\Codex\VCP` (or your checkout directory):
 
-```sh
+```powershell
+cd D:\Codex\VCP
 node scripts/init-local.mjs
 pnpm install --frozen-lockfile
-docker compose -f infra/compose.yml -f infra/compose.dev.yml up -d --wait
 pnpm --filter @vcp/database generate
 pnpm build
-node scripts/database-command.mjs migrate
-node scripts/database-command.mjs seed
+node scripts/start-local.mjs
 ```
 
-The initializer creates random passwords in `.runtime/database-password` and `.runtime/owner-password`, preserving existing files. `.runtime` is ignored by Git: protect it and never upload its contents. The seed creates login **`owner`** using the owner-password file. Re-running the seed does not reset an existing password.
+The last command starts PostgreSQL/Redis, applies database migrations, seeds the owner if needed, and runs the API, worker and web together. Wait for the web server to report ready. Keep this terminal open. For later starts, only `node scripts/start-local.mjs` is needed unless code or dependencies changed.
 
-No `.env` is required for this path. Local scripts read the password file and set database/Redis connection settings. Docker named volumes preserve database and queue data.
+If you previously started the full VCP Docker application, stop its application services first to avoid running two workers against the same database:
 
-Start these in **three separate terminals**, each at the repository root:
-
-```sh
-# Terminal 1: API
-node scripts/local-server.mjs api
+```powershell
+docker compose -p study-trade-vcp -f infra/compose.yml -f infra/compose.dev.yml -f infra/compose.app.yml stop api web worker proxy
 ```
 
-```sh
-# Terminal 2: background worker
-node scripts/local-server.mjs worker
-```
+This retains PostgreSQL, Redis and stored data. Do not stop your unrelated Swing-Trading-Application. If port 3000 is occupied, set `$env:VCP_WEB_PORT='3002'` before starting VCP, and use `http://localhost:3002/login`. Port 3001 must also be free.
 
-```sh
-# Terminal 3: web
-node scripts/local-server.mjs web
-```
+Open **[http://localhost:3000/login](http://localhost:3000/login)**. Sign in as **`owner`** using `.runtime/owner-password` in this checkout. Read that file locally in your editor. An existing owner's password is preserved by seeding.
 
-Open **[http://localhost:3000/login](http://localhost:3000/login)**. Sign in as `owner`, using the contents of `.runtime/owner-password`. Read the file locally in your editor; do not paste it into issues, screenshots or logs. Use `localhost` in the browser to match the configured origin.
+**No `.env` edits are needed for this local startup.** The initializer preserves existing passwords and generates missing encryption keys in `.runtime/broker-configuration.key` and `.runtime/broker-keys`. The launcher supplies their paths to both API and worker. Keep `.runtime` private and backed up alongside your database: losing or replacing the encryption keys makes existing broker credentials/sessions unreadable. Never upload these files or paste their contents into logs.
+
+### Configure Angel One
+
+After login, open **Configuration** in the sidebar, or [http://localhost:3000/configuration](http://localhost:3000/configuration). Substitute your selected web port if different.
+
+1. Check that the first three **Startup checks** show **Ready**. Live streaming is optional and initially disabled.
+2. Under **Broker network settings**, enter:
+   - **Server public IPv4:** the actual outbound public IP of the machine/network running the API. Confirm it with your ISP/network administrator and register the same address in your SmartAPI app settings. A private address such as `192.168.x.x` is not this value. A static public IP comes from your ISP/cloud/network provider; entering an IP here does not make it static.
+   - **Server local IP** and **Server MAC address:** the adapter used by that server. The suggested values may need correction if you use VPNs, virtual adapters or multiple network cards. On Windows, inspect `ipconfig /all`; do not copy another machine's values.
+   - **Verification reference:** your actual ISP/cloud/network confirmation and SmartAPI registration reference.
+   - **Verified at / Verification expires:** when you checked this evidence and when it must be rechecked. Verification must be in the past, with expiry in the future. Dates display in your local timezone and are stored in UTC. Do not invent verification or expiry evidence simply to clear a warning.
+3. Confirm the checkbox and click **Save network settings**. Values persist in PostgreSQL; no network JSON file or `.env` edit is required. Changing these values disconnects the existing broker session and pauses its downloads.
+4. In the same screen, enter the **SmartAPI API key** and **Angel One client code**, then **Save broker details**. Credentials are encrypted on the server.
+5. Enter the current **Angel One PIN** and **six-digit authenticator code**, then **Connect to Angel One**. PIN and authenticator code are cleared after submission and are not stored as configuration.
+6. Confirm the broker session becomes **CONNECTED**. This does not automatically approve market-data permissions, historical-download readiness or live-stream readiness. Those controls retain their separate requirements.
+
+**Fix for “The request was not permitted. Use HTTPS…”:** stop older VCP processes, rebuild, and start with the launcher above. It explicitly enables broker HTTP operations only for development on loopback interfaces. Open the exact `http://localhost:<port>` address printed by the launcher, then sign out/in to refresh the session. Do not mix `localhost`, `127.0.0.1`, different ports or stale tabs. Direct API starts do not enable this exception by default. Production and remote deployments still require HTTPS.
+
+### Server-only configuration
+
+These settings belong in the **process/container environment**, not in the browser Configuration form. The local launcher sets encryption and transport values automatically; it does not automatically load a `.env` file.
+
+| Setting | Local behavior / hosted requirement |
+| --- | --- |
+| `VCP_BROKER_CONFIGURATION_KEY_FILE` | Local: `.runtime/broker-configuration.key` (raw 32-byte key). Hosted: mount a protected existing key and set its absolute path. |
+| `BROKER_KEY_DIRECTORY` | Local: `.runtime/broker-keys`. Hosted: mount the protected directory containing base64 session keys. |
+| `VCP_BROKER_SESSION_KEY_ID` | Local: `local-v1`, selecting `local-v1.key`. Hosted: select the mounted session key ID. |
+| `VCP_BROKER_NETWORK_FILE` | Optional legacy server JSON fallback; owner settings saved in Configuration take precedence. |
+| `VCP_ALLOW_LOCAL_BROKER_HTTP` | Set by local launcher; effective only in development with loopback socket/host and local origin. Never substitutes for hosted HTTPS. |
+| `APP_ORIGIN`, `COOKIE_SECURE` | Launcher sets the selected localhost origin and local cookies. Hosted: exact HTTPS origin and secure cookies. |
+| `VCP_TRUSTED_PROXY_IPS` | Hosted only: explicit trusted reverse-proxy addresses when TLS terminates at a proxy. Do not trust arbitrary forwarded headers. |
+| `VCP_ENABLE_LIVE_STREAM` | Optional explicit `true` in API/worker startup environment; readiness gates still apply. |
+
+For local optional streaming, set `$env:VCP_ENABLE_LIVE_STREAM='true'` **before** `node scripts/start-local.mjs`. Restart after changing process environment. The Configuration screen reports readiness but deliberately does not expose server encryption keys or infrastructure credentials.
 
 The API health check is [http://127.0.0.1:3001/api/v1/system/health](http://127.0.0.1:3001/api/v1/system/health). `UP` confirms HTTP process liveness, not broker/data/trading readiness. The web app proxies `/api/v1` to the API.
 
@@ -74,13 +98,13 @@ After signing in, open **Universe & Data** and choose **Historical download**. S
 
 ## Stop, restart and update
 
-Press **Ctrl+C** in each application terminal. Stop databases without deleting data:
+Press **Ctrl+C** in the launcher terminal (or each terminal if you started processes separately). Stop databases without deleting data:
 
 ```sh
 docker compose -f infra/compose.yml -f infra/compose.dev.yml stop
 ```
 
-For a normal restart, use the same `up -d --wait` command and restart the three terminals. After code updates, stop the app processes, then run:
+For a normal restart, run `node scripts/start-local.mjs`. After code updates, stop the app processes, then run:
 
 ```sh
 pnpm install --frozen-lockfile

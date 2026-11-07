@@ -9,7 +9,15 @@ if(!Number.isSafeInteger(port)||port<1||port>65535)throw new Error('Invalid web 
 const upstream=new URL(process.env.API_INTERNAL_URL??'http://127.0.0.1:3001');
 if(!['http:','https:'].includes(upstream.protocol)||upstream.username||upstream.password||upstream.pathname!=='/')throw new Error('Invalid API origin');
 const app=next({dev:false,dir,hostname,port});await app.prepare();
-const handler=app.getRequestHandler(),server=createServer((req,res)=>void handler(req,res));
+// Resolve the API at startup; Next's compiled rewrites retain the build-time port.
+const handler=app.getRequestHandler(),server=createServer((req,res)=>{
+ if(!req.url?.startsWith('/api/v1/')){void handler(req,res);return}
+ const proxy=(upstream.protocol==='https:'?httpsRequest:httpRequest)(new URL(req.url,upstream),{method:req.method,headers:{...req.headers,host:upstream.host}},response=>{
+  res.writeHead(response.statusCode??502,response.headers);response.pipe(res);
+ });
+ proxy.on('error',()=>{if(!res.headersSent){res.writeHead(502,{'content-type':'application/json'});res.end(JSON.stringify({error:{message:'API_UNAVAILABLE'}}))}else res.destroy()});
+ req.on('aborted',()=>proxy.destroy());res.on('close',()=>{if(!res.writableFinished)proxy.destroy()});req.pipe(proxy);
+});
 const tunnels=new Set();
 server.on('upgrade',(req,socket,head)=>{
  if(!req.url?.startsWith('/api/v1/socket.io/?')||req.headers.upgrade?.toLowerCase()!=='websocket'){socket.destroy();return}

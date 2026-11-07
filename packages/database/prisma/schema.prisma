@@ -965,3 +965,17 @@ model AlertInboxReview {
  reviewedAt DateTime @default(now()) @db.Timestamptz(6)
  @@id([inboxId,kind])
 }
+
+model BrokerNetworkConfiguration {
+ ownerId String @id @db.Uuid
+ revision String @unique @db.Uuid
+ evidence Json
+ updatedAt DateTime @default(now()) @db.Timestamptz(6)
+}
+model BrokerNetworkEvent {
+ id String @id @db.Uuid
+ ownerId String @db.Uuid
+ previousRevision String? @db.Uuid
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+}

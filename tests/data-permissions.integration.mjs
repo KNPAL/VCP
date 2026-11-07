@@ -1,3 +1,4 @@
+import {lockDerivedAuthority} from '../packages/database/dist/derived-authority.js';
 import {lockHistoricalAuthority} from '../packages/database/dist/backtest-snapshots.js';
 import {permittedCandles as ingestCandles} from '../fixtures/reference-source.mjs';
 import {assertActionPermissions} from '../packages/database/dist/data-permissions.js';
@@ -217,5 +218,24 @@ test('archive authority locks hold raw and reference revocations until commit',a
    const outcome=await Promise.race([Promise.any(writes).then(()=> 'committed'),new Promise(resolve=>setTimeout(()=>resolve('waiting'),150))]);
    assert.equal(outcome,'waiting','Registry writers must wait for archive transaction completion');
   }finally{release();await transaction;await Promise.all(writes)}
+ }finally{await fixture.close()}
+});
+
+
+test('derived writes serialize raw, action and calendar revocations through commit',async()=>{
+ const fixture=await isolatedDatabase('derived_authority'),db=fixture.db;
+ try{
+  const raw=await candlePermission(db,'derived-raw-'+randomUUID()),action=await candlePermission(db,'derived-actions-'+randomUUID(),{},'CORPORATE_ACTIONS'),calendar=await candlePermission(db,'derived-calendar-'+randomUUID(),{},'EXCHANGE_CALENDAR');
+  const listingId=randomUUID(),revisionId=randomUUID(),date='2025-01-02';
+  await db.candleRevision.create({data:{id:revisionId,listingId,session:new Date(date),scale:'RAW',revision:1,open:'10',high:'12',low:'9',close:'11',volume:100n,source:raw.provider,receivedAt:new Date(),finalizedAt:new Date(date+'T10:30:00Z')}});
+  const {id:actionId,...actionSource}=action;assert.ok(actionId);
+  const input={rawRevisionIds:[revisionId],sources:[actionSource],calendar:[{sourceSnapshotId:calendar.id}]};
+  let release,acquired;const ready=new Promise(resolve=>{acquired=resolve}),hold=new Promise(resolve=>{release=resolve});
+  const transaction=db.$transaction(async tx=>{await lockDerivedAuthority(tx,input);acquired();await hold},{timeout:10000});
+  await Promise.race([ready,transaction]);
+  const writes=[raw,action,calendar].map(({id,...source})=>{assert.ok(id);return persistSource(db,{...source,knownAt:new Date().toISOString(),uses:{...source.uses,STORE:false}})});
+  try{assert.equal(await Promise.race([Promise.any(writes).then(()=>'committed'),new Promise(resolve=>setTimeout(()=>resolve('waiting'),150))]),'waiting')}
+  finally{release();await transaction;await Promise.all(writes)}
+  await assert.rejects(db.$transaction(tx=>lockDerivedAuthority(tx,input)),/SOURCE_PERMISSION_REQUIRED/);
  }finally{await fixture.close()}
 });

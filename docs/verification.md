@@ -24,9 +24,18 @@ With the local test database running and workspace built, use `node scripts/data
 
 On 2026-11-06, 20 protective-event samples measured P95 4,856 ms against a 5,000 ms target. This used real Redis/PostgreSQL and the production monitor function at five-second cadence, one synthetic held position, and varied tick arrival phases; part of the run overlapped the EOD workload. Timing includes tick normalization/cache publication, polling delay and observation of the committed protective event. It excludes broker transport and unrelated worker dispatch jobs. This limited fixture is not a claim about all portfolio sizes or deployed worker contention.
 
-Full EOD and API P95 acceptance remain pending until their measurements pass. KAN-134 remains In Progress.
+The previously pending EOD/API measurements passed on 2026-11-07: 500-stock EOD 389,030 ms (6m 29s), authenticated first-50-row API P95 740 ms. The fresh 20-sample risk run passed at 5,000 ms rounded (unrounded comparison <=5,000 ms), with little margin. All four benchmark targets have passing results; see [KAN-134 acceptance](kan-134-acceptance.md) for evidence and workload limits.
 
-The final 2026-11-06 EOD/API measurement was interrupted after fixture preparation by PostgreSQL reporting `FATAL: the database system is shutting down`; it has no valid completion timing. Restart the local dependencies before rerunning. The subsequent cached-action-revocation test addition also needs a fresh run once PostgreSQL is available.
+Historical failed attempt: the final 2026-11-06 EOD/API measurement was interrupted after fixture preparation by PostgreSQL reporting `FATAL: the database system is shutting down`; it has no valid completion timing. Restart the local dependencies before rerunning. The subsequent cached-action-revocation test addition also needs a fresh run once PostgreSQL is available.
 
 
 2026-11-06 KAN-44 calendar/archive/display verification: 239 unit tests passed. The full local integration run passed 60/61; its unbound scheduler calendar fixture was corrected and the six affected regression suites then passed sequentially. An additional 18 archive/source-permission tests passed, including provider-lock serialization with registry revocation. Database/API/worker builds and lint passed. Logs: `.runtime/kan44-final-unit-retry.log`, `.runtime/kan44-complete-integration.log`, `.runtime/kan44-final-regressions.log`, `.runtime/kan44-archive-final.log`, `.runtime/kan44-final-lint.log`. Run shared-database integration suites sequentially; parallel invocations can invalidate journal-immutability assertions. These results are local evidence, not hosted CI or production licensing approval.
+
+2026-11-07 KAN-134 closeout: 10/10 focused boundary/readiness tests passed alongside the completed EOD/API and risk measurements. No production deployment, remote push or hosted CI completion is claimed.
+
+
+### Local broker configuration fix — 2026-11-07
+
+Added owner-scoped Configuration settings (migration 65), local encryption-key initialization, a loopback-only development broker transport exception, and one-command startup. Production still requires HTTPS; session, CSRF and origin checks remain active. The web launcher now routes HTTP API requests to the runtime upstream instead of retaining Next's compiled API port.
+
+Validation: web build, repository lint and typecheck passed; 240 unit tests passed; configuration/login/status integration tests passed (4); isolated browser suite passed (9), including network settings, broker connection, mobile layout and downloads. The running local application returned successful owner login and Configuration responses, with transport/configuration-key/session-key checks ready. No real broker credentials or network verification were fabricated; actual Angel One login remains for the owner after entering verified settings. README documents startup and settings.

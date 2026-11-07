@@ -1,4 +1,6 @@
 import {authorizeCalendarRows} from './calendar-permissions.js';
+import {assertCalendarPermissions} from './calendar-permissions.js';
+import {lockDerivedAuthority} from './derived-authority.js';
 import {createHash} from 'node:crypto';
 import {Prisma,type PrismaClient} from '@prisma/client';
 import {replay,type Series} from '@vcp/indicators';
@@ -38,6 +40,7 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  const asOf=snapshot.asOf.toISOString();
  const calendar=verifiedCalendar(calendars[0]?.evidence??null,bars[0]!.session,bars.at(-1)!.session,asOf);
  if(calendar.state!=='KNOWN'||canonical(calendar.sessions.map(s=>s.date))!==canonical(bars.map(b=>b.session)))throw new Error('REPLAY_CALENDAR_INCOMPLETE');
+ await assertCalendarPermissions(db,calendars[0]!.evidence,['DERIVE','STORE']);
  if(prior[0])return prior[0].evidence;
  if(bars.some(b=>!b.finalizedAt||utcInstant(b.finalizedAt)>utcInstant(asOf)))throw new Error('REPLAY_CANDLE_NOT_FINAL');
  const dataRevision=createHash('sha256').update(input.adjustmentId+'|'+input.calendarHash).digest('hex');
@@ -47,6 +50,8 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
  const outputs=replay(series,0);
  const receipt={id,...input,listingId:request.listingId,dataRevision,state:'INDICATORS_REPLAYED',mode:'RETROSPECTIVE_CORRECTION',asOf,permission,from:bars[0]!.session,to:bars.at(-1)!.session,count:outputs.length,remainingStages:['MARKET_SIGNALS','VCP','SCANS']};
  return db.$transaction(async tx=>{
+  await lockDerivedAuthority(tx,{rawRevisionIds:bars.map(bar=>bar.rawRevisionId),adjustmentIds:[input.adjustmentId],calendar:calendars[0]!.evidence});
+  await assertCalendarPermissions(tx,calendars[0]!.evidence,['DERIVE','STORE']);
   await assertActionPermissions(tx,[input.adjustmentId],['DERIVE','STORE']);
  const current=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(current.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
   for(const output of outputs){
@@ -58,6 +63,7 @@ export async function replayStoredIndicators(db:PrismaClient,input:IndicatorRepl
   }
   await assertActionPermissions(tx,[input.adjustmentId],['DERIVE','STORE']);
  const finalPermission=await assertCandlePermissions(tx,bars.map(bar=>bar.rawRevisionId),['DERIVE','STORE']);if(canonical(finalPermission.sourceSnapshotIds)!==canonical(permission.sourceSnapshotIds))throw new Error('SOURCE_AUTHORITY_CHANGED');
+  await assertCalendarPermissions(tx,calendars[0]!.evidence,['DERIVE','STORE']);
   await tx.$executeRaw`INSERT INTO "IndicatorReplayReceipt" ("id","eventId","adjustmentId","calendarHash","evidence") VALUES (${id},${input.eventId}::uuid,${input.adjustmentId},${input.calendarHash},${canonical(receipt)}::jsonb) ON CONFLICT DO NOTHING`;
   const saved=await tx.$queryRaw<{evidence:Prisma.JsonValue}[]>`SELECT "evidence" FROM "IndicatorReplayReceipt" WHERE "id"=${id}`;
   return saved[0]!.evidence;

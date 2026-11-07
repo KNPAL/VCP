@@ -107,3 +107,10 @@ Inspector charts and the daily-structure evidence API require current corporate-
 Archive and chronological replay transactions now hold shared provider locks for every contributing raw/reference source until commit; registry revocations wait for that commit. Stop, position-history and daily-execution displays also validate corporate-action permissions for their pinned adjustments. Cached indicator receipts revalidate their original calendar before returning.
 
 Remaining closeout audit: derived-write boundaries in adjustment persistence, indicator/RS/structure replay, EOD processing and entry-plan persistence still need explicit verification that all contributing source permissions are held through commit, including calendar/reference contributors. A pre-commit permission read by itself is not proof of serialization. Hosted CI evidence for the final workspace is also outstanding; changes remain local at the owner's request.
+
+
+## Derived-write locking update (2026-11-07)
+
+Adjustment persistence now holds provider authority locks for both its actual raw candle providers and corporate-action source through commit. Indicator replay writes hold the same locks for raw candles, adjustments and calendar sources. Locks are acquired in a stable dataset/provider order; permissions are rechecked after acquisition, including calendar STORE/DERIVE rights, and calendar expiry is rechecked before the receipt is written. Registry changes cannot slip between those permission checks and commit. Existing stored data and idempotent retries still require current authority.
+
+This closes the adjustment and indicator-write lock gaps identified in the earlier audit. Relative-strength/structure replay, EOD and entry-plan commit boundaries remain in the closeout review; hosted CI evidence is still required. These changes have not been deployed.

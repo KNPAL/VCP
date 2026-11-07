@@ -1,3 +1,6 @@
+import {configurationStatus} from './configuration.js';
+import {requireBrokerTransport,type BrokerRequest} from './broker-transport.js';
+import {saveBrokerNetwork} from '@vcp/database';
 import {readInbox,reviewInbox,setAlertPreference,browserDelivery,finishBrowserDelivery} from '@vcp/database';
 import {workerQueueMetrics} from './worker-queue-metrics.js';
 import {operationHostMetrics} from './operation-host-metrics.js';
@@ -132,6 +135,8 @@ export const openapi = {
     '/api/v1/system/scans/{id}': {get:{operationId:'scanEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Immutable intended universe, per-listing reasons, coverage counts and ranked candidates'},'404':{description:'Scan not found'}}}},
     '/api/v1/system/scheduler': {get:{operationId:'schedulerStatus',security:[{session:[]}],responses:{'200':{description:'Last fenced calendar observation, typed waiting reason and recent scheduled preparation states'},'401':{description:'Authentication required'}}}},
     '/api/v1/system/scan-jobs/{id}': {get:{operationId:'eodScanProgress',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',format:'uuid'}}],responses:{'200':{description:'Pinned EOD scan revision, completed checkpoints, queue failure state and final result'},'400':{description:'Invalid ID'},'401':{description:'Authentication required'},'404':{description:'Scan plan not found'}}}},
+    '/api/v1/configuration': {get:{operationId:'applicationConfiguration',security:[{session:[]}],responses:{'200':{description:'Owner network settings and non-secret runtime setup checks'},'401':{description:'Authentication required'}}}},
+    '/api/v1/configuration/network': {put:{operationId:'saveBrokerNetwork',security:[{session:[]}],parameters:[{name:'If-Match',in:'header',required:true,schema:{type:'string'}}],requestBody:{required:true,content:{'application/json':{schema:{type:'object',additionalProperties:false,required:['clientLocalIp','clientPublicIp','macAddress','ipProof'],properties:{clientLocalIp:{type:'string'},clientPublicIp:{type:'string',format:'ipv4'},macAddress:{type:'string'},ipProof:{type:'object',additionalProperties:false,required:['address','verifiedAt','expiresAt','sourceReference'],properties:{address:{type:'string'},verifiedAt:{type:'string',format:'date-time'},expiresAt:{type:'string',format:'date-time'},sourceReference:{type:'string'}}}}}}}},responses:{'200':{description:'Persisted network revision; previous broker session revoked'},'403':{description:'HTTPS, origin or CSRF required'},'409':{description:'Configuration changed; reload before saving'},'422':{description:'Invalid network verification evidence'}}}},
     '/api/v1/system/daily-structure/{id}': {get:{operationId:'dailyStructureEvidence',security:[{session:[]}],parameters:[{name:'id',in:'path',required:true,schema:{type:'string',pattern:'^[0-9a-f]{64}$'}}],responses:{'200':{description:'Immutable source inputs, prior execution identity, breakout decision and subsequent detector result'},'400':{description:'Invalid ID'},'401':{description:'Authentication required'},'404':{description:'Execution not found'}}}},
     '/api/v1/system/data-gaps': {get:{operationId:'dataGaps',security:[{session:[]}],responses:{'200':{description:'Latest scan missing and excluded listings, or explicit NO_COMPLETED_SCAN UNKNOWN state'}}}},
     '/api/v1/system/jobs': {get:{operationId:'historicalSyncJobs',security:[{session:[]}],parameters:[{name:'runId',in:'query',schema:{type:'string',format:'uuid'}},{name:'after',in:'query',schema:{type:'string',format:'uuid'}},{name:'limit',in:'query',schema:{type:'integer',minimum:1,maximum:200}}],responses:{'200':{description:'Persistent sync windows, attempts, exact response coverage and retry state'},'400':{description:'Invalid filters'}}}},
@@ -462,18 +467,27 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       }
     }
   }
+  @Controller('configuration')
+  class ConfigurationController {
+    @Get() get(@Req() request:BrokerRequest){return configurationStatus(db,request.ownerId!,request,auth.origin)}
+    @Put('network') async network(@Req() request:BrokerRequest){
+      requireBrokerTransport(request,auth.origin);
+      const revision=request.headers['if-match'];if(typeof revision!=='string'||!(/^(none|[a-f0-9-]{36})$/).test(revision))throw new BadRequestException('If-Match required');
+      try{return await saveBrokerNetwork(db,request.ownerId!,request.body,revision)}catch(error){if(error instanceof Error&&error.message==='INVALID_BROKER_NETWORK')throw new HttpException(error.message,422);if(error instanceof Error&&error.message==='BROKER_NETWORK_CONFLICT')throw new HttpException(error.message,409);throw error}
+    }
+  }
   @Controller('broker/angel-one')
   class BrokerHealthController {
     @Post('logout') async logout(@Req() request:AuthRequest&{secure?:boolean}){
-      if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);
+      requireBrokerTransport(request,auth.origin);
       strictBody(request,[]);await logoutBroker(db,request.ownerId!);return readBrokerConnection(db,request.ownerId!);
     }
     @Get('status') status(@Req() request:AuthRequest){return readRuntimeBrokerStatus(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'],options.brokerStatusDependencies)}
     @Post('login') async login(@Req() request:AuthRequest&{secure?:boolean}){
-      try{if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);const body=strictBody(request,['pin','totp']);await loginOwnerBroker(db,request.ownerId!,body,options.brokerLoginDependencies);return await readBrokerConnection(db,request.ownerId!)}catch(error){if(error instanceof HttpException)throw error;const candidate=error instanceof Error?error.message:'',code=['BROKER_LOGIN_RATE_LIMITED','BROKER_LOGIN_IN_PROGRESS','BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN','APP_CONFIG_INVALID','STATIC_IP_NOT_VERIFIED','SESSION_EXPIRED','PROVIDER_UNAVAILABLE'].includes(candidate)?candidate:'PROVIDER_UNAVAILABLE';throw new HttpException(code,code==='BROKER_LOGIN_RATE_LIMITED'?429:code==='BROKER_LOGIN_IN_PROGRESS'?409:['BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN'].includes(code)?422:503)}finally{request.body=undefined}
+      try{requireBrokerTransport(request,auth.origin);const body=strictBody(request,['pin','totp']);await loginOwnerBroker(db,request.ownerId!,body,options.brokerLoginDependencies);return await readBrokerConnection(db,request.ownerId!)}catch(error){if(error instanceof HttpException)throw error;const candidate=error instanceof Error?error.message:'',code=['BROKER_LOGIN_RATE_LIMITED','BROKER_LOGIN_IN_PROGRESS','BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN','APP_CONFIG_INVALID','STATIC_IP_NOT_VERIFIED','SESSION_EXPIRED','PROVIDER_UNAVAILABLE'].includes(candidate)?candidate:'PROVIDER_UNAVAILABLE';throw new HttpException(code,code==='BROKER_LOGIN_RATE_LIMITED'?429:code==='BROKER_LOGIN_IN_PROGRESS'?409:['BAD_TOTP','BAD_CREDENTIALS','INVALID_BROKER_LOGIN'].includes(code)?422:503)}finally{request.body=undefined}
     }
     @Put('config') async configure(@Req() request:AuthRequest&{secure?:boolean}){
-      if(!request.secure)throw new HttpException('BROKER_HTTPS_REQUIRED',403);
+      requireBrokerTransport(request,auth.origin);
       const body=strictBody(request,['apiKey','clientCode']),receipt=request.headers['idempotency-key'];if(typeof receipt!=='string')throw new BadRequestException('Idempotency-Key required');
       const file=process.env['VCP_BROKER_CONFIGURATION_KEY_FILE'];if(!file)throw new HttpException('BROKER_CONFIGURATION_UNAVAILABLE',503);
       let key:Buffer;try{key=await readFile(file);if(key.length!==32){key.fill(0);throw new Error()}}catch{throw new HttpException('BROKER_CONFIGURATION_UNAVAILABLE',503)}
@@ -549,7 +563,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[AlertController,SignalController,DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await entryObservations.close();await db.$disconnect()}}}]})
+  @Module({controllers:[ConfigurationController,AlertController,SignalController,DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await entryObservations.close();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   if(trustedProxies.length)app.getHttpAdapter().getInstance().set('trust proxy',trustedProxies);
