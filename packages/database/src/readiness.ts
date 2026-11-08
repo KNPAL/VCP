@@ -40,6 +40,12 @@ export async function persistReadiness(db:PrismaClient,proof:Omit<GateProof,'id'
 export async function getReadiness(db:Pick<PrismaClient,'$queryRaw'>,asOf=new Date().toISOString()){
  const rows=await db.$queryRaw<{evidence:GateProof}[]>`SELECT DISTINCT ON ("gate") "evidence" FROM "ReadinessProof" WHERE "probeAt"<=${utcInstant(asOf)} ORDER BY "gate","probeAt" DESC,"id" ASC`;
  const proofs=rows.map(row=>row.evidence),license=proofs.find(proof=>proof.gate==='G07');
+ const broker=proofs.find(proof=>proof.gate==='G01');
+ const binding=broker?.details as {kind?:string;accountKey?:string;sessionRevision?:string}|undefined;
+ if(broker?.status==='PASS'&&binding?.kind==='BROKER_SESSION'){
+  const active=await db.$queryRaw<{present:boolean}[]>`SELECT true AS present FROM "BrokerCircuit" c WHERE c."accountKey"=${binding.accountKey??''} AND c."sessionRevision"::text=${binding.sessionRevision??''} AND NOT c.open AND c."verifiedAt"<=${utcInstant(asOf)} AND c."expiresAt">${utcInstant(asOf)} AND EXISTS(SELECT 1 FROM "BrokerCredential" b WHERE b."accountKey"=c."accountKey" AND b."sessionRevision"=c."sessionRevision" AND b."expiresAt"=c."expiresAt")`;
+  if(!active.length)proofs[proofs.indexOf(broker)]={...broker,status:'UNKNOWN',reason:'BROKER_SESSION_NO_LONGER_ACTIVE'};
+ }
  const benchmark=proofs.find(proof=>proof.gate==='G04');
  if(benchmark?.status==='PASS'&&utcInstant(benchmark.expiresAt)>utcInstant(asOf)){
   const check=await evaluateStoredBenchmark(db,benchmark.details,benchmark.probeAt);

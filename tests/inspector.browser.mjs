@@ -24,7 +24,7 @@ test('inspector renders stored annotations and accessible mobile charts without 
   await page.screenshot({path:'.runtime/inspector-desktop.png',fullPage:true});await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'.runtime/inspector-mobile.png',fullPage:true});
   await page.getByRole('region',{name:'Confirmed swings',exact:true}).focus();assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('role')),'region');
   for(const code of ['403','503']){mode=code;await page.getByRole('button',{name:'Refresh executions',exact:true}).click();await main.getByRole('alert').waitFor();assert.match(await main.getByRole('alert').innerText(),new RegExp(code));assert.equal(await page.locator('.inspector-chart').count(),0)}
-  mode='unknown';await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByRole('heading',{name:'UNKNOWN — No stored daily executions',exact:true}).waitFor();
+  mode='unknown';await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByRole('heading',{name:'No charts to inspect yet',exact:true}).waitFor();
   mode='empty';await page.getByRole('button',{name:'Refresh executions',exact:true}).click();await page.getByRole('heading',{name:'Empty — no candles in this execution',exact:true}).waitFor();
   mode='loading';await page.getByRole('button',{name:'Refresh executions',exact:true}).click();await page.getByText('Loading inspector evidence…',{exact:true}).waitFor();await page.getByRole('button',{name:'Fit chart',exact:true}).waitFor();assert.deepEqual(errors,[]);
   await context.request.post('/api/v1/auth/logout',{headers:{origin:base,'x-csrf-token':auth.csrfToken}});

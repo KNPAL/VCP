@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomBytes,createHash} from 'node:crypto';
 import {isolatedDatabase} from '../fixtures/isolated-database.mjs';
 import {createApp} from '../apps/api/dist/app.js';
-import {readBrokerNetwork,saveBrokerConfiguration,readBrokerConnection} from '../packages/database/dist/index.js';
+import {readBrokerNetwork,saveBrokerConfiguration,readBrokerConnection,getReadiness} from '../packages/database/dist/index.js';
 test('local configuration persists, rejects stale/unauthorized writes and connects without HTTPS',async()=>{
  const fixture=await isolatedDatabase('configuration'),db=fixture.db,key=randomBytes(32),old={NODE_ENV:process.env.NODE_ENV,VCP_ALLOW_LOCAL_BROKER_HTTP:process.env.VCP_ALLOW_LOCAL_BROKER_HTTP};let app;
  try{
@@ -21,7 +21,7 @@ test('local configuration persists, rejects stale/unauthorized writes and connec
   const saved=await fetch(url,{method:'PUT',headers,body:JSON.stringify(network)});assert.equal(saved.status,200);const value=await saved.json();assert.deepEqual((await readBrokerNetwork(db,owner)).network,network);
   const status=await (await fetch(base+'/api/v1/configuration',{headers})).json();assert.equal(status.runtime.transportAllowed,true);assert.equal(status.revision,value.revision);assert.ok(!JSON.stringify(status).includes('synthetic-key'));
   assert.equal((await fetch(url,{method:'PUT',headers,body:JSON.stringify(network)})).status,409);
-  const login=await fetch(base+'/api/v1/broker/angel-one/login',{method:'POST',headers,body:JSON.stringify({pin:'4926',totp:'725419'})});assert.equal(login.status,201,await login.text());assert.equal(calls,2);assert.equal((await readBrokerConnection(db,owner)).sessionState,'CONNECTED');
-  assert.equal((await fetch(url,{method:'PUT',headers:{...headers,'if-match':value.revision},body:JSON.stringify({...network,macAddress:'00:11:22:33:44:66'})})).status,200);assert.equal((await readBrokerConnection(db,owner)).sessionState,'NEEDS_LOGIN');
+  const login=await fetch(base+'/api/v1/broker/angel-one/login',{method:'POST',headers,body:JSON.stringify({pin:'4926',totp:'725419'})});assert.equal(login.status,201,await login.text());assert.equal(calls,2);assert.equal((await readBrokerConnection(db,owner)).sessionState,'CONNECTED');assert.equal((await getReadiness(db)).items.find(item=>item.gate==='G01').status,'PASS');assert.equal((await getReadiness(db)).items.find(item=>item.gate==='G07').status,'UNKNOWN');
+  assert.equal((await fetch(url,{method:'PUT',headers:{...headers,'if-match':value.revision},body:JSON.stringify({...network,macAddress:'00:11:22:33:44:66'})})).status,200);assert.equal((await readBrokerConnection(db,owner)).sessionState,'NEEDS_LOGIN');assert.equal((await getReadiness(db)).items.find(item=>item.gate==='G01').status,'UNKNOWN');
  }finally{await app?.close();await fixture.close();key.fill(0);for(const [name,value] of Object.entries(old))if(value===undefined)delete process.env[name];else process.env[name]=value}
 });

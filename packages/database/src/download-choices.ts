@@ -24,5 +24,5 @@ export async function readDownloadChoices(db:PrismaClient,ownerId:string,account
   if(candidate){try{const checked=verifiedCalendar(calendars[0]?.evidence??null,candidate,candidate,asOf);if(checked.state==='KNOWN'&&checked.sessions.length===1)finalizedThrough=candidate}catch{/* Unverified evidence remains unavailable. */}}
   items.push({isin:member.isin,listingId:row.listingId,symbol:row.symbol,exchange:row.exchange,enabled:universe.state==='KNOWN',reason:universe.state!=='KNOWN'?'UNIVERSE_UNKNOWN':finalizedThrough?null:'FINAL_SESSION_UNKNOWN',finalizedThrough});
  }
- return {asOf,universeId:'NIFTY_500',state:universe.state,memberCount:universe.members.length,items,executable:false};
+ return {asOf,universeId:'NIFTY_500',state:universe.state,reason:universe.reason,memberCount:universe.members.length,items,executable:false};
 }

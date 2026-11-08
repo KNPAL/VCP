@@ -37,7 +37,7 @@ test('screener pins pages, renders evidence and failure states, and saves resear
   await page.getByRole('button',{name:'Save #1',exact:true}).click();await page.getByText('Saved to your research watchlist. Scan evidence is unchanged.').waitFor();assert.equal(writes[1].body.listingId,listing);
   for(const code of ['403','503']){mode=code;await page.getByRole('button',{name:'Refresh to latest scan'}).click();await page.locator('main').getByRole('alert').waitFor();assert.match(await page.locator('main').getByRole('alert').innerText(),new RegExp(code));assert.equal(await page.getByRole('table').count(),0)}
   mode='empty';await page.getByRole('button',{name:'Retry',exact:true}).click();await page.getByRole('heading',{name:'No candidates match this filter'}).waitFor();
-  mode='unknown';await page.getByRole('button',{name:'Refresh to latest scan'}).click();await page.getByRole('heading',{name:'UNKNOWN — No completed scan'}).waitFor();
+  mode='unknown';await page.getByRole('button',{name:'Refresh to latest scan'}).click();await page.getByRole('heading',{name:'No scan results yet'}).waitFor();
   mode='loading';await page.getByRole('button',{name:'Refresh to latest scan'}).click();await page.getByText('Loading scan evidence…',{exact:true}).waitFor();await page.getByRole('heading',{name:'PARTIAL scan'}).waitFor();
   await page.screenshot({path:'.runtime/screener-desktop.png',fullPage:true});
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));await page.screenshot({path:'.runtime/screener-mobile.png',fullPage:true});

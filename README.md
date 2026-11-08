@@ -6,6 +6,8 @@ The local setup runs the web application, API, worker, PostgreSQL and Redis. You
 
 ## Prerequisites
 
+NSE cash-equity holiday facts for **2015–2026** are included as a reproducible dataset. See [NSE holiday import](docs/nse-holidays.md) for importing the 231 dates into VCP and inspecting the database. This includes weekend observances and distinguishes Muhurat sessions; it does not yet provide the complete operational session calendar required for historical downloads.
+
 - Node.js **24** and pnpm **11.25.0**, matching `package.json`.
 - Docker Engine or Docker Desktop with Compose v2, running with Linux-container support.
 - A terminal at the repository root. Commands below work in PowerShell and POSIX shells unless stated otherwise.
@@ -50,6 +52,10 @@ Open **[http://localhost:3000/login](http://localhost:3000/login)**. Sign in as 
 
 **No `.env` edits are needed for this local startup.** The initializer preserves existing passwords and generates missing encryption keys in `.runtime/broker-configuration.key` and `.runtime/broker-keys`. The launcher supplies their paths to both API and worker. Keep `.runtime` private and backed up alongside your database: losing or replacing the encryption keys makes existing broker credentials/sessions unreadable. Never upload these files or paste their contents into logs.
 
+### Find your next step
+
+After login, **Start here** shows the broker, stock setup, download and research stages. The sidebar has direct **Download stocks** and **Download progress** links. Broker login does not create the stock list. Empty chart, screener and backtest screens explain their prerequisites and link back to setup. Missing data remains unverified; the UI does not fabricate records to populate controls.
+
 ### Configure Angel One
 
 After login, open **Configuration** in the sidebar, or [http://localhost:3000/configuration](http://localhost:3000/configuration). Substitute your selected web port if different.
@@ -92,9 +98,11 @@ If another project owns port 3000, set `VCP_WEB_PORT=3002` in **all three startu
 
 ## Download daily history
 
-After signing in, open **Universe & Data** and choose **Historical download**. Select the NIFTY 500, a saved list, or individual stocks. Choose an inclusive date range and preview stored coverage. The wizard uses the latest session verified for every selected stock. If that date is unknown, supply calendar and provider evidence or select stocks with verified dates.
+After signing in, open **Universe & Data** and choose **Set up historical download**. Select the NIFTY 500, a saved list, or individual stocks. Choose an inclusive date range and preview stored coverage. The wizard uses the latest session verified for every selected stock. If that date is unknown, supply calendar and provider evidence or select stocks with verified dates.
 
-**Missing sessions only** skips candles already stored. **Reconcile** also checks the latest three finalized sessions. Connect Angel One and select **Start download** to follow the background job. See [manual download configuration](docs/manual-downloads.md) for the signing key, feature flag and worker settings.
+**Missing sessions only** skips candles already stored. **Reconcile** also checks the latest three finalized sessions. Connect Angel One and select **Start download** to follow the background job. The local initializer creates a dedicated `.runtime/download-preview.key` and the local launcher enables manual downloads on both API and worker. An explicit environment override can disable them. No additional `.env` edit is required. Hosted deployments still configure these separately; see [manual download configuration](docs/manual-downloads.md).
+
+**An empty installation has no bundled stock master, NIFTY 500 membership or verified exchange calendar.** Angel One login does not import them. The wizard now reports missing setup instead of leaving an unexplained disabled entry button. Reviewed source-permission records, instrument mappings, universe membership, calendar and provider final-session evidence are required before a real download can start. `View past downloads` is navigation to existing jobs; it never starts one. A verified broker login records its authentication readiness automatically, but does not grant data permissions.
 
 ## Stop, restart and update
 

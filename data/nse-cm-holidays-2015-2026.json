@@ -1,0 +1,2208 @@
+{
+  "version": 1,
+  "exchange": "NSE",
+  "segment": "CM",
+  "fromYear": 2015,
+  "throughYear": 2026,
+  "reviewedOn": "2026-11-08",
+  "scope": "Annual named holiday observances including weekends and verified closure amendments. Muhurat dates are special trading sessions, with times not supplied. This is not a complete daily trading-session calendar.",
+  "sources": {
+    "CMTR28337": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR28337.pdf",
+      "sha256": "5733cf3b16cf5cf05879fb28777d0fbf6636c44c8dd204c8fe2f02ef9bb722c4",
+      "publishedOn": "2014-12-12",
+      "note": null
+    },
+    "CMTR31297": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR31297.pdf",
+      "sha256": "bf33e9aade8773908fc5d6de105cc731e93bf063cd1564a82fe1998c5aaf6432",
+      "publishedOn": "2015-12-07",
+      "note": null
+    },
+    "CMTR33746": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR33746.pdf",
+      "sha256": "2fd7ee17432434df26154bbdb9de549d3e4a7acd4cf567843513457e9c98fbce",
+      "publishedOn": "2016-12-05",
+      "note": null
+    },
+    "CMTR36475": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR36475.pdf",
+      "sha256": "d80ac64d32806f9ada629bc96ba91c6d85546dfde405f4468bbfcb194fdb22fb",
+      "publishedOn": "2017-12-12",
+      "note": null
+    },
+    "CMTR39612": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR39612.pdf",
+      "sha256": "3fe8f7356085b75a14efec16e765216d09b99be6f00ff2305d813a864394ab88",
+      "publishedOn": "2018-12-07",
+      "note": null
+    },
+    "CMTR42877": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR42877.pdf",
+      "sha256": "635535e35ddc37e79b188d9f21409210cfdef00f44cde1cb980c4f64ed005eaf",
+      "publishedOn": "2019-12-11",
+      "note": null
+    },
+    "CMTR46623": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR46623.pdf",
+      "sha256": "3c922e234ad2cbe8320cc34507e281477e0ce273ba9ee39d73da2a49d5629add",
+      "publishedOn": "2020-12-11",
+      "note": null
+    },
+    "CMTR50560": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR50560.pdf",
+      "sha256": "731a4f0f3b3633e53ff344ffda23dab0277c4a6608f5a6da8874f931c9be4ead",
+      "publishedOn": "2021-12-10",
+      "note": null
+    },
+    "CMTR54757": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR54757.pdf",
+      "sha256": "035ea9a4178e322549b87c6d72f7fc74c7cec06e2d6074c01ac2a7e6a5a7b621",
+      "publishedOn": "2022-12-08",
+      "note": null
+    },
+    "CMTR59722": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR59722.pdf",
+      "sha256": "7157229ba94c179d280dd0d732da56d0992c482e862fac72d9d3879626c77c8a",
+      "publishedOn": "2023-12-12",
+      "note": null
+    },
+    "CMTR65587": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR65587.pdf",
+      "sha256": "1e0f85615fbbcde9243dd6cafbbad4d9b581b8d2467fd9e27c0a4fe42a720c7d",
+      "publishedOn": "2024-12-13",
+      "note": null
+    },
+    "CMTR71775": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR71775.pdf",
+      "sha256": "aa97e0afc0ce394097f2fc62631c68e3c2e4c7c23541ed35f21d9fc06b0dcacb",
+      "publishedOn": "2025-12-12",
+      "note": null
+    },
+    "CMTR40536": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR40536.pdf",
+      "sha256": "0ffd5d5c6f2e967947b0fafc45f285c2eff70abbde138b06e35d4ac8169ebc65",
+      "publishedOn": "2019-03-26",
+      "note": null
+    },
+    "MSD42319": {
+      "url": "https://archives.nseindia.com/content/circulars/MSD42319.pdf",
+      "sha256": "bc49d7698fefa2b9ed3a5fbb2477dd74e5ed04dc69cec3ff5e9aca074fcc1b8a",
+      "publishedOn": "2019-10-07",
+      "note": null
+    },
+    "SURV60342": {
+      "url": "https://archives.nseindia.com/content/circulars/SURV60342.pdf",
+      "sha256": "8772f06a149e42733aa1a8391d991548c734485ce13112a7c5e6d5eb865d843a",
+      "publishedOn": "2024-01-19",
+      "note": "Confirms NSE/CMTR/60338; original PDF unavailable from NSE archive at retrieval."
+    },
+    "CMTR61518": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR61518.pdf",
+      "sha256": "8f44e5dab885e081e9809aa41cbc6017309cf35281d29655a219d822e6f31a39",
+      "publishedOn": "2024-04-08",
+      "note": null
+    },
+    "CMTR64960": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR64960.pdf",
+      "sha256": "342b404b2f6631e8d2b74bb203e53faeb5e8b02abc21eb31094ef0c53b168e31",
+      "publishedOn": "2024-11-08",
+      "note": null
+    },
+    "CMTR72260": {
+      "url": "https://nsearchives.nseindia.com/content/circulars/CMTR72260.pdf",
+      "sha256": "c5d32a838b46d5044717b830a4793479a51a40f8e4e19d3896c65682d15b6ebc",
+      "publishedOn": "2026-01-12",
+      "note": null
+    },
+    "CMPT57296": {
+      "url": "https://archives.nseindia.com/content/circulars/CMPT57296.pdf",
+      "sha256": "b71de0cae04ffb9d0250e0c45a31aa739b12fc910542e5efbefbe10901ebd958",
+      "publishedOn": "2023-06-27",
+      "note": "References NSE/CMTR/57285, corroborating the June 28 to June 29 change; original PDF unavailable from NSE archive at retrieval."
+    }
+  },
+  "holidays": [
+    {
+      "date": "2015-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-02-17",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-03-06",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-03-28",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-04-02",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-04-03",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-04-14",
+      "name": "Dr. Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-07-18",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-09-17",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-09-25",
+      "name": "Bakri ID",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-10-22",
+      "name": "Dasera",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-10-24",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-11-11",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-11-12",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-11-25",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2015-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR28337"
+      ]
+    },
+    {
+      "date": "2016-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-03-07",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-03-24",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-03-25",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-04-14",
+      "name": "Dr. Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-04-15",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-04-19",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-07-06",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-09-05",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-09-13",
+      "name": "Bakri ID",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-10-11",
+      "name": "Dasera",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-10-12",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-10-30",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-10-31",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-11-14",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2016-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR31297"
+      ]
+    },
+    {
+      "date": "2017-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-02-24",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-03-13",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-04-04",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-04-09",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-04-14",
+      "name": "Good Friday / Dr. Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-06-26",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-08-25",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-09-02",
+      "name": "Bakri ID",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-09-30",
+      "name": "Dasera",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-10-01",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-10-02",
+      "name": "Mahatama Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-10-19",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-10-20",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-11-04",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2017-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR33746"
+      ]
+    },
+    {
+      "date": "2018-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-02-13",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-03-02",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-03-25",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-03-29",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-03-30",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-04-14",
+      "name": "Dr.Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-06-16",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-08-22",
+      "name": "Bakri ID",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-09-13",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-09-20",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-10-02",
+      "name": "Mahatama Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-10-18",
+      "name": "Dasera",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-11-07",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-11-08",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-11-23",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2018-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR36475"
+      ]
+    },
+    {
+      "date": "2019-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-03-04",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-03-21",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-04-13",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-04-14",
+      "name": "Dr.Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-04-17",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-04-19",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-04-29",
+      "name": "Parliamentary Elections in Mumbai",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR40536"
+      ]
+    },
+    {
+      "date": "2019-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-06-05",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-08-12",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-09-02",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-09-10",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-10-08",
+      "name": "Dasera",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-10-21",
+      "name": "Assembly Elections in Maharashtra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "MSD42319"
+      ]
+    },
+    {
+      "date": "2019-10-27",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-10-28",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-11-12",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2019-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR39612"
+      ]
+    },
+    {
+      "date": "2020-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-02-21",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-03-10",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-04-02",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-04-06",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-04-10",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-04-14",
+      "name": "Dr.Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-05-25",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-08-01",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-08-22",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-08-30",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-10-25",
+      "name": "Dasera",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-11-14",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-11-16",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-11-30",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2020-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR42877"
+      ]
+    },
+    {
+      "date": "2021-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-03-11",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-03-29",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-04-02",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-04-14",
+      "name": "Dr.Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-04-21",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-04-25",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-05-13",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-07-21",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-08-19",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-09-10",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-10-15",
+      "name": "Dussehra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-11-04",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-11-05",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-11-19",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2021-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR46623"
+      ]
+    },
+    {
+      "date": "2022-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-03-01",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-03-18",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-04-10",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-04-14",
+      "name": "Dr. Baba Saheb Ambedkar Jayanti/ Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-04-15",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-05-03",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-07-10",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-08-09",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-08-31",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-10-05",
+      "name": "Dussehra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-10-24",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-10-26",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-11-08",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2022-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR50560"
+      ]
+    },
+    {
+      "date": "2023-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-02-18",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-03-07",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-03-30",
+      "name": "Ram Navami",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-04-04",
+      "name": "Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-04-07",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-04-14",
+      "name": "Dr. Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-04-22",
+      "name": "Id-Ul-Fitr (Ramzan ID)",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-06-29",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757",
+        "CMPT57296"
+      ],
+      "supersedesDate": "2023-06-28"
+    },
+    {
+      "date": "2023-07-29",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-09-19",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-10-24",
+      "name": "Dussehra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-11-12",
+      "name": "Diwali-Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-11-14",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-11-27",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2023-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR54757"
+      ]
+    },
+    {
+      "date": "2024-01-22",
+      "name": "Public holiday declared under Negotiable Instruments Act",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "SURV60342"
+      ]
+    },
+    {
+      "date": "2024-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-03-08",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-03-25",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-03-29",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-04-11",
+      "name": "Id-Ul-Fitr (Ramadan Eid)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-04-14",
+      "name": "Dr. Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-04-17",
+      "name": "Shri Ram Navmi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-04-21",
+      "name": "Shri Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-05-20",
+      "name": "Parliamentary Elections in Mumbai",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR61518"
+      ]
+    },
+    {
+      "date": "2024-06-17",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-07-17",
+      "name": "Moharram",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-08-15",
+      "name": "Independence Day/Parsi New Year",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-09-07",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-10-12",
+      "name": "Dussehra",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-11-01",
+      "name": "Diwali Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-11-02",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-11-15",
+      "name": "Gurunanak Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2024-11-20",
+      "name": "Assembly Elections in Maharashtra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR64960"
+      ]
+    },
+    {
+      "date": "2024-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR59722"
+      ]
+    },
+    {
+      "date": "2025-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-02-26",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-03-14",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-03-31",
+      "name": "Id-Ul-Fitr (Ramadan Eid)",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-04-06",
+      "name": "Shri Ram Navami",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-04-10",
+      "name": "Shri Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-04-14",
+      "name": "Dr. Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-04-18",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-06-07",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-07-06",
+      "name": "Muharram",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-08-27",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-10-02",
+      "name": "Mahatma Gandhi Jayanti/Dussehra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-10-21",
+      "name": "Diwali Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-10-22",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-11-05",
+      "name": "Prakash Gurpurb Sri Guru Nanak Dev",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2025-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR65587"
+      ]
+    },
+    {
+      "date": "2026-01-15",
+      "name": "Municipal Corporation Election in Maharashtra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR72260"
+      ]
+    },
+    {
+      "date": "2026-01-26",
+      "name": "Republic Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-02-15",
+      "name": "Mahashivratri",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-03-03",
+      "name": "Holi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-03-21",
+      "name": "Id-Ul-Fitr (Ramadan Eid)",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-03-26",
+      "name": "Shri Ram Navami",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-03-31",
+      "name": "Shri Mahavir Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-04-03",
+      "name": "Good Friday",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-04-14",
+      "name": "Dr. Baba Saheb Ambedkar Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-05-01",
+      "name": "Maharashtra Day",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-05-28",
+      "name": "Bakri Id",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-06-26",
+      "name": "Muharram",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-08-15",
+      "name": "Independence Day",
+      "kind": "CLOSED",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-09-14",
+      "name": "Ganesh Chaturthi",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-10-02",
+      "name": "Mahatma Gandhi Jayanti",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-10-20",
+      "name": "Dussehra",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Diwali Laxmi Pujan",
+      "kind": "MUHURAT_SESSION",
+      "weekend": true,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-11-10",
+      "name": "Diwali-Balipratipada",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-11-24",
+      "name": "Prakash Gurpurb Sri Guru Nanak Dev",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    },
+    {
+      "date": "2026-12-25",
+      "name": "Christmas",
+      "kind": "CLOSED",
+      "weekend": false,
+      "sourceRefs": [
+        "CMTR71775"
+      ]
+    }
+  ]
+}

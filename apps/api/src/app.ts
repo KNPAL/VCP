@@ -421,7 +421,11 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('history/downloads')
   class DownloadPreviewController {
-    @Get('choices') choices(@Req() request:AuthRequest){return readDownloadChoices(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY'])}
+    @Get('choices') async choices(@Req() request:AuthRequest){
+      const choices=await readDownloadChoices(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY']);let signingKeyReady=false;
+      try{const key=await readFile(process.env['VCP_DOWNLOAD_PREVIEW_KEY_FILE']??'');signingKeyReady=key.length===32;key.fill(0)}catch{/* Expose setup state, never the key path or contents. */}
+      return {...choices,setup:{executionEnabled:process.env['VCP_ENABLE_MANUAL_DOWNLOADS']==='true',signingKeyReady,instrumentMappingReady:choices.items.some(item=>item.enabled&&item.listingId)}};
+    }
     async mapped<T>(work:()=>Promise<T>){try{return await work()}catch(error){if(error instanceof HttpException)throw error;if(error instanceof Error){if(error.message==='DOWNLOAD_RUN_NOT_FOUND')throw new NotFoundException('Own download not found');if(error.message==='DOWNLOAD_IDEMPOTENCY_CONFLICT'||error.message==='DOWNLOAD_PREVIEW_CHANGED')throw new HttpException(error.message,409);if(error.message.startsWith('DOWNLOAD_')||error.message.startsWith('INVALID_DOWNLOAD_'))throw new HttpException(error.message,422)}throw error}}
     @Get() list(@Req() request:AuthRequest,@Query('cursor') cursor?:string){return this.mapped(()=>listManualDownloads(db,request.ownerId!,cursor))}
     @Get(':id/candles/:listing') async candles(@Req() request:AuthRequest,@Param('id') id:string,@Param('listing') listing:string){

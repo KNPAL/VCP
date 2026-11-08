@@ -979,3 +979,16 @@ model BrokerNetworkEvent {
  evidence Json
  createdAt DateTime @default(now()) @db.Timestamptz(6)
 }
+
+// Official named observances, not a complete or execution-ready session calendar.
+model ExchangeHoliday {
+ exchange String
+ segment String
+ date DateTime @db.Date
+ name String
+ kind String
+ weekend Boolean
+ evidence Json
+ importedAt DateTime @default(now()) @db.Timestamptz(6)
+ @@id([exchange, segment, date])
+}

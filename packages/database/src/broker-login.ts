@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import type {PrismaClient,Prisma} from '@prisma/client';
 import type {BrokerSecrets,CredentialBinding} from '@vcp/market-data';
 import {installBrokerSession,type BrokerKeyResolver} from './broker-credentials.js';
@@ -53,5 +53,8 @@ export async function completeBrokerLogin(db:PrismaClient,ownerId:string,attempt
   if(!attempts.length)throw new Error('BROKER_LOGIN_SUPERSEDED');
   await tx.$executeRaw`UPDATE "BrokerLoginAttempt" SET "state"='CONNECTED',"sessionRevision"=${binding.sessionRevision}::uuid,"finishedAt"=clock_timestamp() WHERE "id"=${attemptId}::uuid`;
   await event(tx,attemptId,'CONNECTED',null);
+  const gate={gate:'G01',status:'PASS',probeAt:proof.verifiedAt,sourceAt:proof.verifiedAt,expiresAt:binding.expiresAt,sourceReference:'SmartAPI profile verification / '+attemptId,reason:null,details:{kind:'BROKER_SESSION',accountKey:binding.accountKey,sessionRevision:binding.sessionRevision,authenticated:proof.authenticated,staticIpVerified:proof.staticIpVerified}};
+  const id=createHash('sha256').update(JSON.stringify(gate)).digest('hex');
+  await tx.$executeRaw`INSERT INTO "ReadinessProof" (id,gate,status,"probeAt","sourceAt","expiresAt",evidence) VALUES (${id},'G01','PASS',${new Date(gate.probeAt)},${new Date(gate.sourceAt)},${new Date(gate.expiresAt)},${JSON.stringify({id,...gate})}::jsonb) ON CONFLICT (id) DO NOTHING`;
  });
 }
