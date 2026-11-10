@@ -2,6 +2,8 @@
 
 The workspace implements owner-scoped signed-preview submission, newest-first job history, progress details, cancellation and explicit retry. The UI is at `/data/historical/download` and `/data/historical/downloads`. Existing stored data remains readable without a broker session. Local runtime readiness is shown in Configuration and in the download wizard.
 
+The [Data setup & downloads screen](market-data-setup.md) now initializes official stock reference data and the supported calendar for personal research use.
+
 ## Configuration and rollout
 
 The documented local launcher now creates a dedicated preview-signing key and enables manual download execution in both API and worker, unless explicitly overridden in the environment. This does not populate market metadata or approve source permissions. Hosted deployments remain off by default. For a hosted deployment:
@@ -10,9 +12,9 @@ The documented local launcher now creates a dedicated preview-signing key and en
 2. Build database, API, worker and web packages. Run API and worker against the same database and Redis.
 3. Generate and configure the dedicated signing key using [download authorization](download-authorization.md). Set `VCP_DOWNLOAD_PREVIEW_KEY_FILE` on the API and configure the owner broker account. `VCP_BROKER_ACCOUNT_KEY` is a legacy fallback only when no saved owner configuration exists.
 4. Set `VCP_ENABLE_MANUAL_DOWNLOADS=true` on both API and worker. Enabling only the API accepts requests that no enabled worker will prepare. The flag does not establish source permission or broker readiness.
-5. Provide verified universe, instrument, calendar and source evidence, current broker authentication and readiness proofs. The preview still blocks unpopulated ranges without authoritative provider-final-session evidence.
+5. Provide verified universe, instrument, calendar and source evidence, current broker authentication and readiness proofs. First downloads can plan completed sessions from the verified calendar without pre-existing provider candles; actual coverage is established by the downloaded response.
 
-Keep operational execution disabled until migrations and the verified workspace build are deployed. No live broker calls have been made during development.
+Keep operational execution disabled until migrations and the verified workspace build are deployed. A live one-stock validation on 10 November 2026 completed successfully with seven RELIANCE candles stored.
 
 ## Public API and screens
 

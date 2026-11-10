@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 export const navigation = [
- ['Start here','/start','→'],['Overview','/dashboard','◫'],['Download stocks','/data/historical/download','↓'],['Download progress','/data/historical/downloads','◷'],['Universe & data','/universe','◎'],
+ ['Start here','/start','→'],['Overview','/dashboard','◫'],['Data setup & downloads','/data/setup','⇩'],['Download stocks','/data/historical/download','↓'],['Download progress','/data/historical/downloads','◷'],['Universe & data','/universe','◎'],
  ['My watchlists','/watchlists','☆'],['VCP screener','/screener','⌕'],['Chart inspector','/inspector','⌁'],['BUY signals','/buy','↗'],['My positions','/positions','▣'],['SELL alerts','/sell','↙'],['Alert inbox','/alerts','◇'],['Backtests','/backtests','◷'],['IPO research','/research/ipo','◇'],['SME research','/research/sme','◇'],['Configuration','/configuration','⚙'],['Settings','/settings','⚙'],['Operations','/operations','◇'],
 ] as const;
 export function Navigation(){const path=usePathname();return <nav aria-label="Main navigation">{navigation.map(([label,href,icon])=><Link className="navlink" aria-current={path===href?'page':undefined} key={href} href={href}><span className="navicon" aria-hidden="true">{icon}</span>{label}</Link>)}</nav>}

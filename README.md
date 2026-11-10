@@ -6,7 +6,7 @@ The local setup runs the web application, API, worker, PostgreSQL and Redis. You
 
 ## Prerequisites
 
-NSE cash-equity holiday facts for **2015–2026** are included as a reproducible dataset. See [NSE holiday import](docs/nse-holidays.md) for importing the 231 dates into VCP and inspecting the database. This includes weekend observances and distinguishes Muhurat sessions; it does not yet provide the complete operational session calendar required for historical downloads.
+NSE cash-equity holiday facts for **2015–2026** are included as a reproducible dataset. See [NSE holiday import](docs/nse-holidays.md) for importing the 231 dates into VCP and inspecting the database. This includes weekend observances and distinguishes Muhurat sessions; the Data setup screen builds a supported daily session calendar for 1 January 2025 through 10 November 2026.
 
 - Node.js **24** and pnpm **11.25.0**, matching `package.json`.
 - Docker Engine or Docker Desktop with Compose v2, running with Linux-container support.
@@ -98,11 +98,11 @@ If another project owns port 3000, set `VCP_WEB_PORT=3002` in **all three startu
 
 ## Download daily history
 
-After signing in, open **Universe & Data** and choose **Set up historical download**. Select the NIFTY 500, a saved list, or individual stocks. Choose an inclusive date range and preview stored coverage. The wizard uses the latest session verified for every selected stock. If that date is unknown, supply calendar and provider evidence or select stocks with verified dates.
+After signing in, open **Data setup & downloads** (`http://localhost:3000/data/setup`). Confirm personal research use and click **Initialize market data**. This fetches official stock sources, matches Angel One tokens to NSE identities, imports current NIFTY 500 membership, and builds the supported daily calendar. Then click **Download stocks**, select all eligible stocks or a custom selection, choose dates and preview coverage. See the [step-by-step data setup guide](docs/market-data-setup.md).
 
 **Missing sessions only** skips candles already stored. **Reconcile** also checks the latest three finalized sessions. Connect Angel One and select **Start download** to follow the background job. The local initializer creates a dedicated `.runtime/download-preview.key` and the local launcher enables manual downloads on both API and worker. An explicit environment override can disable them. No additional `.env` edit is required. Hosted deployments still configure these separately; see [manual download configuration](docs/manual-downloads.md).
 
-**An empty installation has no bundled stock master, NIFTY 500 membership or verified exchange calendar.** Angel One login does not import them. The wizard now reports missing setup instead of leaving an unexplained disabled entry button. Reviewed source-permission records, instrument mappings, universe membership, calendar and provider final-session evidence are required before a real download can start. `View past downloads` is navigation to existing jobs; it never starts one. A verified broker login records its authentication readiness automatically, but does not grant data permissions.
+**Broker login does not itself download stocks.** Use the initialization button first, then preview and submit a download. Personal use is recorded as an owner declaration without requiring an agreement reference; it is not a reviewed license proof. The operational calendar currently covers **1 January 2025–10 November 2026**, including verified Budget and Muhurat sessions. The first download plans expected completed sessions without requiring a pre-existing provider candle. Actual coverage is established by downloaded responses. `View past downloads` only opens existing jobs.
 
 ## Stop, restart and update
 

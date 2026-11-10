@@ -1,7 +1,8 @@
 import {authorizeInstrumentRows} from './instruments.js';
 import {authorizedUniverseAt} from './instruments.js';
 import type {PrismaClient} from '@prisma/client';
-import {canonicalListings,type InstrumentSnapshot,type UniverseSnapshot} from '@vcp/market-data';
+import {canonicalListings,sourcePermission,HISTORICAL_ENDPOINT,type InstrumentSnapshot,type UniverseSnapshot} from '@vcp/market-data';
+import {currentSource} from './source-authority.js';
 import type {CompletedScan} from '@vcp/strategy';
 import {getReadiness} from './readiness.js';
 import {syncJobs} from './sync-progress.js';
@@ -11,6 +12,12 @@ export async function readBrokerHealth(db:Pick<PrismaClient,'$queryRaw'>,account
  const unavailable={asOf,state:'NOT_CONFIGURED',authenticated:false,historyReady:false,sourceAt:null,validUntil:null,reasons:['BROKER_ACCOUNT_NOT_CONFIGURED'],gates,executable:false};
  if(!accountKey)return unavailable;
  if(!/^[a-f0-9]{64}$/.test(accountKey))throw new Error('INVALID_BROKER_ACCOUNT_KEY');
+ // Personal-use download authorization is scoped to the declared owner and source.
+ // It does not claim a reviewed G07 license proof or authorize live trading signals.
+ const source=await currentSource(db,{dataset:'DAILY_CANDLES',provider:'ANGEL_ONE',endpointOrFile:HISTORICAL_ENDPOINT},asOf);
+ const owners=await db.$queryRaw<{ownerId:string}[]>`SELECT "ownerId" FROM "BrokerConfiguration" WHERE "accountKey"=${accountKey}`;
+ const personal=!!source&&owners.some(o=>source.evidence.licenseRef?.startsWith('OWNER_DECLARED_PERSONAL_USE:'+o.ownerId+':'))&&(['DOWNLOAD','STORE','DERIVE','DISPLAY'] as const).every(use=>sourcePermission(source.evidence,use,asOf).status==='PASS');
+ if(personal){const index=gates.findIndex(g=>g.gate==='G07');if(index>=0&&gates[index]!.status!=='FAIL')gates.splice(index,1)}
  const rows=await db.$queryRaw<{open:boolean;expiresAt:Date;verifiedAt:Date;credentialPresent:boolean}[]>`SELECT c."open",c."expiresAt",c."verifiedAt",EXISTS(SELECT 1 FROM "BrokerCredential" b WHERE b."accountKey"=c."accountKey" AND b."sessionRevision"=c."sessionRevision" AND b."expiresAt"=c."expiresAt") AS "credentialPresent" FROM "BrokerCircuit" c WHERE c."accountKey"=${accountKey}`;
  const row=rows[0],now=Date.parse(asOf),authenticated=!!row&&!row.open&&row.expiresAt.valueOf()>now&&row.verifiedAt.valueOf()<=now&&row.credentialPresent;
  const reasons=[...(!row?['BROKER_SESSION_MISSING']:row.open?['BROKER_CIRCUIT_OPEN']:row.expiresAt.valueOf()<=now?['BROKER_SESSION_EXPIRED']:row.verifiedAt.valueOf()>now?['BROKER_PROOF_FROM_FUTURE']:!row.credentialPresent?['BROKER_CREDENTIAL_MISSING']:[]),...gates.filter(g=>g.status!=='PASS').map(g=>g.gate+':'+(g.reason??g.failure))];

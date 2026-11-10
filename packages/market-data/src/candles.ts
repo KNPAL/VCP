@@ -4,9 +4,16 @@ export interface CalendarDay {date:string;kind:'TRADING'|'SPECIAL'|'HOLIDAY';ope
 export interface DailyCandle {listingId:string;session:string;provider:string;open:string;high:string;low:string;close:string;volume:string;receivedAt:string;finalizedAt:string|null;zeroVolumeVerified:boolean}
 const at=(value:string)=>utcInstant(value).valueOf();
 const uuid=(value:string)=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+type CalendarCheck={state:'KNOWN'|'UNKNOWN';reasons:string[];sessions:CalendarDay[]};
+// Only deeply frozen request snapshots are cacheable. Mutable caller input is
+// always revalidated, and returned arrays never expose the cached containers.
+const calendarChecks=new WeakMap<readonly CalendarDay[],Map<string,CalendarCheck>>();
 export function verifiedCalendar(days:readonly CalendarDay[]|null,from:string,to:string,asOf:string){
  sessionDate(from);sessionDate(to);const cutoff=at(asOf);if(from>to)throw new Error('INVALID_CALENDAR_RANGE');
  if(!days)return {state:'UNKNOWN' as const,reasons:['CALENDAR_UNAVAILABLE'],sessions:[] as CalendarDay[]};
+ const cacheable=Object.isFrozen(days)&&days.every(day=>Object.isFrozen(day)),key=from+'|'+to+'|'+asOf;
+ const cached=cacheable?calendarChecks.get(days)?.get(key):undefined;
+ if(cached)return {...cached,reasons:[...cached.reasons],sessions:[...cached.sessions]};
  const map=new Map<string,CalendarDay>();
  for(const day of days){sessionDate(day.date);if(map.has(day.date))throw new Error('DUPLICATE_CALENDAR_DATE');map.set(day.date,day)}
  const reasons:string[]=[],sessions:CalendarDay[]=[];
@@ -19,7 +26,9 @@ export function verifiedCalendar(days:readonly CalendarDay[]|null,from:string,to
   if(day.finalizedAt&&at(day.finalizedAt)<at(day.closesAt))throw new Error('PREMATURE_SESSION_FINALIZATION');
   if(day.finalizedAt&&at(day.finalizedAt)<=cutoff)sessions.push(day);
  }
- return {state:reasons.length?'UNKNOWN' as const:'KNOWN' as const,reasons,sessions};
+ const result={state:reasons.length?'UNKNOWN' as const:'KNOWN' as const,reasons,sessions};
+ if(cacheable){const entries=calendarChecks.get(days)??new Map<string,CalendarCheck>();if(entries.size>=100)entries.clear();entries.set(key,result);calendarChecks.set(days,entries)}
+ return {...result,reasons:[...reasons],sessions:[...sessions]};
 }
 export function validateCandle(bar:DailyCandle,asOf:string){
  const reasons:string[]=[];

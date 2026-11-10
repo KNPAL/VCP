@@ -35,6 +35,18 @@ export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,owne
  if(permissions['DISPLAY']!.status==='FAIL'||permissions['DERIVE']!.status==='FAIL')throw new Error('DOWNLOAD_PREVIEW_PERMISSION_DENIED');
  const selected=new Set(request.listingIds),members=canonicalListings(mapping?[mapping]:[],universe.members,checkedAt);
  const blocked:{listingId:string|null;isin:string|null;reason:string}[]=[],items=[];
+ const listingIds=members.flatMap(m=>m.primary&&(!request.listingIds||selected.has(m.primary.listingId))?[m.primary.listingId]:[]);
+ const [allCoverage,allStored,allFinalBars,allProbes]=await Promise.all([
+  db.$queryRaw<{listingId:string;evidence:{calendarHash?:string}}[]>`SELECT "listingId",evidence FROM "CandleCoverage" WHERE "listingId"=ANY(${listingIds}::uuid[]) AND provider='ANGEL_ONE' AND "checkedAt"<=${at}`,
+  db.$queryRaw<{listingId:string;session:Date;open:string;high:string;low:string;close:string;volume:string;finalizedAt:Date;receivedAt:Date;revisionId:string;contentHash:string}[]>`SELECT "listingId",session,open::text,high::text,low::text,close::text,volume::text,"finalizedAt","receivedAt","revisionId","contentHash" FROM "RawDailyCandle" WHERE "listingId"=ANY(${listingIds}::uuid[]) AND provider='ANGEL_ONE' AND session>=${new Date(request.fromDate)} AND session<=${new Date(request.toDate)} AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "listingId",session`,
+  db.$queryRaw<{listingId:string;session:Date;revisionId:string;contentHash:string}[]>`SELECT DISTINCT ON ("listingId") "listingId",session,"revisionId","contentHash" FROM "RawDailyCandle" WHERE "listingId"=ANY(${listingIds}::uuid[]) AND provider='ANGEL_ONE' AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "listingId",session DESC`,
+  accountKey?db.$queryRaw<{listingId:string;id:string;revision:string;finalSession:string}[]>`SELECT DISTINCT ON (evidence->'wide'->>'listingId') evidence->'wide'->>'listingId' AS "listingId",id,revision,evidence->'wide'->>'actualTo' AS "finalSession" FROM "HistoricalProbe" WHERE "accountKey"=${accountKey} AND "asOf"<=${at} AND "createdAt"<=${at} AND evidence->>'status'='PASSED' AND evidence->'wide'->>'status'='COMPLETE' AND evidence->'wide'->>'provider'='ANGEL_ONE' AND evidence->'wide'->>'listingId'=ANY(${listingIds}::text[]) AND evidence->'wide'->>'mappingSnapshotId'=${mapping?.id??''} AND evidence->'wide'->>'actualTo' IS NOT NULL ORDER BY evidence->'wide'->>'listingId',evidence->'wide'->>'actualTo' DESC,"asOf" DESC,id LIMIT 500`:Promise.resolve([])
+ ]);
+ const calendarIds=[...new Set(allCoverage.flatMap(c=>c.evidence.calendarHash?[c.evidence.calendarHash]:[]))];
+ const allCalendars=await db.$queryRaw<{id:string;evidence:CalendarDay[]|null}[]>`SELECT id,evidence FROM "CalendarSnapshot" WHERE id=ANY(${calendarIds}::text[]) AND "createdAt"<=${at}`.then(rows=>authorizeCalendarRows(db,rows));
+ for(const calendar of allCalendars){if(calendar.evidence){calendar.evidence.forEach(day=>Object.freeze(day));Object.freeze(calendar.evidence)}}
+ const grouped=<T extends {listingId:string}>(rows:T[])=>{const map=new Map<string,T[]>();for(const row of rows){const group=map.get(row.listingId)??[];group.push(row);map.set(row.listingId,group)}return map};
+ const coverageByListing=grouped(allCoverage),storedByListing=grouped(allStored),finalByListing=grouped(allFinalBars),probesByListing=grouped(allProbes),calendarById=new Map(allCalendars.map(c=>[c.id,c]));
  const revisions:unknown[]=[];
  for(const member of members){
   const row=member.primary;
@@ -42,18 +54,20 @@ export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,owne
   if(!row){blocked.push({listingId:null,isin:member.isin,reason:member.reason??'MAPPING_UNKNOWN'});continue}
   if(row.provider!=='ANGEL_ONE'){blocked.push({listingId:row.listingId,isin:member.isin,reason:'PROVIDER_UNSUPPORTED'});continue}
   if(universe.state!=='KNOWN'||permissions['DISPLAY']!.status!=='PASS'||permissions['DERIVE']!.status!=='PASS'){blocked.push({listingId:row.listingId,isin:member.isin,reason:'UNIVERSE_OR_SOURCE_UNVERIFIED'});continue}
-  const coverage=await db.$queryRaw<{evidence:{calendarHash?:string}}[]>`SELECT "evidence" FROM "CandleCoverage" WHERE "listingId"=${row.listingId}::uuid AND "provider"='ANGEL_ONE' AND "checkedAt"<=${at}`;
+  const coverage=coverageByListing.get(row.listingId)??[];
   const calendarId=coverage[0]?.evidence.calendarHash??null;
-  const calendars=await db.$queryRaw<{evidence:CalendarDay[]|null}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${calendarId} AND "createdAt"<=${at}`.then(rows=>authorizeCalendarRows(db,rows));
-  const stored=await db.$queryRaw<{session:Date;open:string;high:string;low:string;close:string;volume:string;finalizedAt:Date;receivedAt:Date;revisionId:string;contentHash:string}[]>`SELECT "session","open"::text,"high"::text,"low"::text,"close"::text,"volume"::text,"finalizedAt","receivedAt","revisionId","contentHash" FROM "RawDailyCandle" WHERE "listingId"=${row.listingId}::uuid AND "provider"='ANGEL_ONE' AND "session">=${new Date(request.fromDate)} AND "session"<=${new Date(request.toDate)} AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "session"`;
+  const calendars=calendarId&&calendarById.has(calendarId)?[calendarById.get(calendarId)!]:[];
+  const stored=storedByListing.get(row.listingId)??[];
   const bars:DailyCandle[]=stored.map(b=>{const bar={listingId:row.listingId,provider:'ANGEL_ONE',session:b.session.toISOString().slice(0,10),open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume,finalizedAt:b.finalizedAt.toISOString(),receivedAt:b.receivedAt.toISOString(),zeroVolumeVerified:false};return {...bar,zeroVolumeVerified:b.volume==='0'&&candleHash({...bar,zeroVolumeVerified:true})===b.contentHash}});
   // A later observed provider candle can bound an older request; never infer a later market date.
-  const finalBars=await db.$queryRaw<{session:Date;revisionId:string;contentHash:string}[]>`SELECT "session","revisionId","contentHash" FROM "RawDailyCandle" WHERE "listingId"=${row.listingId}::uuid AND "provider"='ANGEL_ONE' AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "session" DESC LIMIT 1`;
-  const probes=accountKey?await db.$queryRaw<{id:string;revision:string;finalSession:string}[]>`SELECT "id","revision","evidence"->'wide'->>'actualTo' AS "finalSession" FROM "HistoricalProbe" WHERE "accountKey"=${accountKey} AND "asOf"<=${at} AND "createdAt"<=${at} AND "evidence"->>'status'='PASSED' AND "evidence"->'wide'->>'status'='COMPLETE' AND "evidence"->'wide'->>'provider'='ANGEL_ONE' AND "evidence"->'wide'->>'listingId'=${row.listingId} AND "evidence"->'wide'->>'mappingSnapshotId'=${mapping!.id} AND "evidence"->'wide'->>'actualTo' IS NOT NULL ORDER BY "evidence"->'wide'->>'actualTo' DESC,"asOf" DESC,"id" LIMIT 1`:[];
+  const finalBars=finalByListing.get(row.listingId)??[];
+  const probes=probesByListing.get(row.listingId)??[];
   const providerFinalSession=[finalBars[0]?.session.toISOString().slice(0,10),probes[0]?.finalSession].filter((d):d is string=>!!d).sort().at(-1)??null;
-  const plan=previewDownloadRange({...request,asOf:checkedAt,listingId:row.listingId,provider:'ANGEL_ONE',listingDate:row.listingDate,calendar:calendars[0]?.evidence??null,bars,providerFinalSession});
+  const initialCalendar=calendars[0]?.evidence;
+  const initialDownload=(!providerFinalSession||request.toDate>providerFinalSession)&&!!initialCalendar?.some(day=>day.kind!=='HOLIDAY'&&day.finalizedAt&&day.finalizedAt<=checkedAt&&day.date===request.toDate);
+  const plan=previewDownloadRange({...request,asOf:checkedAt,listingId:row.listingId,provider:'ANGEL_ONE',listingDate:row.listingDate,calendar:initialCalendar??null,bars,providerFinalSession,allowInitialDownload:initialDownload});
   revisions.push({listingId:row.listingId,calendarId,providerProbe:probes[0]??null,providerFinalEvidence:finalBars[0]?{session:providerFinalSession,revisionId:finalBars[0].revisionId,contentHash:finalBars[0].contentHash}:null,candles:stored.map(b=>[b.session.toISOString(),b.revisionId,b.contentHash])});
-  items.push({listingId:row.listingId,isin:row.isin,symbol:row.symbol,exchange:row.exchange,calendarId,providerFinalSession,...plan});
+  items.push({listingId:row.listingId,isin:row.isin,symbol:row.symbol,exchange:row.exchange,calendarId,providerFinalSession,coverageBasis:initialDownload?'CALENDAR_EXPECTATION':'OBSERVED_PROVIDER',...plan});
  }
  for(const id of selected)if(!members.some(m=>m.primary?.listingId===id))blocked.push({listingId:id,isin:null,reason:'NOT_CANONICAL_UNIVERSE_LISTING'});
  const dataRevision=createHash('sha256').update(canonical(revisions)).digest('hex'),expiresAt=new Date(at.valueOf()+300000).toISOString();

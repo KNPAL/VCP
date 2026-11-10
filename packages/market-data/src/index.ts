@@ -20,3 +20,5 @@ export * from './sme-research.js';
 
 export * from './broker-budget.js';
 export * from './instrument-master.js';
+
+export {catalogUrls,sourceText} from './setup-sources.js';

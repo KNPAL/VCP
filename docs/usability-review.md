@@ -13,10 +13,10 @@
 
 ## Remaining functional limitations
 
-These UI changes do not populate VCP with invented market data. The independent PostgreSQL database still needs reviewed instrument mappings, NIFTY 500 membership, calendar/final-session evidence and source authorization. There is no completed one-click market-data initializer in this version. This is an application capability gap, not something solved by reconnecting the broker. Scan/replay creation also still uses operator workflows; result pages now disclose this limitation.
+Updated 10 November 2026: Data setup & downloads now initializes official stock reference data and a supported daily calendar under the owner-declared personal-use setting. VCP has 495 eligible stock mappings; unsupported source entries are listed explicitly. Calendar coverage is currently 1 January 2025 through 10 November 2026. Older session history needs further review. Scan/replay creation still uses operator workflows. See [market-data setup](market-data-setup.md).
 
 The broker authentication implementation and stored credentials are preserved. No brokerage orders or synthetic production stock records were created.
 
 ## Validation
 
-Production web build and repository lint passed. All 13 browser checks passed, including first-login navigation, mobile layout, populated chart/backtest views, broker reconnect/expiry, historical downloads and empty installations. Restarted the local app and verified Start here plus the download setup state against the real VCP database. The database still reports zero selectable stocks; no real market-data download was claimed or fabricated.
+Production web build and repository lint passed. All 13 browser checks passed, including first-login navigation, mobile layout, populated chart/backtest views, broker reconnect/expiry, historical downloads and empty installations. Restarted the local app and verified Start here plus the download setup state against the real VCP database. That earlier empty-installation audit is superseded by the 10 November validation: 495 selectable stocks and a completed live download storing seven RELIANCE candles. The new setup/download browser checks and integration results are documented in the market-data setup guide.

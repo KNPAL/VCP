@@ -8,6 +8,7 @@ import {readRuntimeBrokerStatus,type BrokerStatusDependencies} from './broker-st
 import {entryObservationReader} from './entry-observation.js';
 import {loginOwnerBroker,type BrokerLoginDependencies} from './broker-login.js';
 import 'reflect-metadata';
+import {initializeCatalog} from './market-data-setup.js';
 import {isIP} from 'node:net';
 import { randomUUID } from 'node:crypto';
 import {readFile} from 'node:fs/promises';
@@ -412,6 +413,16 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
   }
   @Controller('data')
   class DataHealthController {
+    @Post('initialize') async initialize(@Req() request:AuthRequest){return initializeCatalog(db,request.ownerId!,request.body)}
+    @Get('setup') async setup(){
+      const [holidays,calendars,mappings]=await Promise.all([
+        db.$queryRaw<{count:number}[]>`SELECT count(*)::integer AS count FROM "ExchangeHoliday" WHERE exchange='NSE' AND segment='CM'`,
+        db.$queryRaw<{count:number}[]>`SELECT count(*)::integer AS count FROM "CalendarSnapshot"`,
+        db.$queryRaw<{sourceReference:string}[]>`SELECT "sourceReference" FROM "InstrumentSnapshot" ORDER BY "knownAt" DESC,id LIMIT 1`
+      ]);
+      let excluded:string[]=[];try{const parsed=JSON.parse(mappings[0]?.sourceReference??'{}');if(Array.isArray(parsed.excluded))excluded=parsed.excluded.filter((v:unknown)=>typeof v==='string')}catch{/* Legacy snapshot reference. */}
+      return {holidayCount:holidays[0]?.count??0,calendarSnapshots:calendars[0]?.count??0,excluded};
+    }
     @Get('operations') async operations(@Req() request:AuthRequest){
       const [metrics,host,workerQueue]=await Promise.all([readOperations(db,request.ownerId!,process.env['VCP_BROKER_ACCOUNT_KEY']),operationHostMetrics(process.env),workerQueueMetrics(process.env)]);
       const target=Number(process.env['VCP_SCAN_PUBLICATION_SLA_SECONDS']);
