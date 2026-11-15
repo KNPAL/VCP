@@ -12,6 +12,7 @@ model Owner {
   role String @default("OWNER")
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   sessions Session[]
+  historicalImports HistoricalDataImport[]
 }
 model Session {
   id String @id @db.VarChar(64)
@@ -991,4 +992,51 @@ model ExchangeHoliday {
  evidence Json
  importedAt DateTime @default(now()) @db.Timestamptz(6)
  @@id([exchange, segment, date])
+}
+
+model HistoricalDataImport {
+ id String @id
+ ownerId String @db.Uuid
+ owner Owner @relation(fields:[ownerId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+ records HistoricalImportRecord[]
+ bars HistoricalResearchBar[]
+ sourceSnapshotId String
+ status String
+ manifest Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ @@index([ownerId,createdAt(sort: Desc)],map: "HistoricalDataImport_owner_created")
+}
+model HistoricalImportRecord {
+ batch HistoricalDataImport @relation(fields:[importId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+ importId String
+ sourceTable String
+ sourceId String
+ evidence Json
+ @@id([importId,sourceTable,sourceId])
+}
+model HistoricalResearchBar {
+ batch HistoricalDataImport @relation(fields:[importId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+ importId String
+ symbol String
+ series String
+ session DateTime @db.Date
+ open Decimal @db.Decimal(20,6)
+ high Decimal @db.Decimal(20,6)
+ low Decimal @db.Decimal(20,6)
+ close Decimal @db.Decimal(20,6)
+ volume BigInt
+ source String
+ quality String
+ reasons Json
+ @@id([importId,symbol,series,session])
+}
+
+model ImportedVcpResearchScan {
+ id String @id
+ ownerId String @db.Uuid
+ importId String
+ session DateTime @db.Date
+ evidence Json
+ createdAt DateTime @default(now()) @db.Timestamptz(6)
+ @@index([ownerId,createdAt(sort: Desc)],map:"ImportedVcpResearchScan_owner_created")
 }

@@ -94,3 +94,5 @@ export * from './inbox.js';
 export {benchmarkSeriesDigest,verifyBenchmarkIdentity} from './benchmark-identity.js';
 
 export {readBrokerNetwork,saveBrokerNetwork,validateBrokerNetwork,type BrokerNetwork} from './broker-network.js';
+
+export {importedHistoryChoices,importedHistorySeries,importedVcpResearchScan} from './imported-history.js';

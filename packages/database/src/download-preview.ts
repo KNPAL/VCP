@@ -37,12 +37,12 @@ export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,owne
  const blocked:{listingId:string|null;isin:string|null;reason:string}[]=[],items=[];
  const listingIds=members.flatMap(m=>m.primary&&(!request.listingIds||selected.has(m.primary.listingId))?[m.primary.listingId]:[]);
  const [allCoverage,allStored,allFinalBars,allProbes]=await Promise.all([
-  db.$queryRaw<{listingId:string;evidence:{calendarHash?:string}}[]>`SELECT "listingId",evidence FROM "CandleCoverage" WHERE "listingId"=ANY(${listingIds}::uuid[]) AND provider='ANGEL_ONE' AND "checkedAt"<=${at}`,
+  db.$queryRaw<{listingId:string;evidence:{calendarHash?:string;planningCalendarHash?:string}}[]>`SELECT "listingId",evidence FROM "CandleCoverage" WHERE "listingId"=ANY(${listingIds}::uuid[]) AND provider='ANGEL_ONE' AND "checkedAt"<=${at}`,
   db.$queryRaw<{listingId:string;session:Date;open:string;high:string;low:string;close:string;volume:string;finalizedAt:Date;receivedAt:Date;revisionId:string;contentHash:string}[]>`SELECT "listingId",session,open::text,high::text,low::text,close::text,volume::text,"finalizedAt","receivedAt","revisionId","contentHash" FROM "RawDailyCandle" WHERE "listingId"=ANY(${listingIds}::uuid[]) AND provider='ANGEL_ONE' AND session>=${new Date(request.fromDate)} AND session<=${new Date(request.toDate)} AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "listingId",session`,
   db.$queryRaw<{listingId:string;session:Date;revisionId:string;contentHash:string}[]>`SELECT DISTINCT ON ("listingId") "listingId",session,"revisionId","contentHash" FROM "RawDailyCandle" WHERE "listingId"=ANY(${listingIds}::uuid[]) AND provider='ANGEL_ONE' AND "receivedAt"<=${at} AND "finalizedAt"<=${at} ORDER BY "listingId",session DESC`,
   accountKey?db.$queryRaw<{listingId:string;id:string;revision:string;finalSession:string}[]>`SELECT DISTINCT ON (evidence->'wide'->>'listingId') evidence->'wide'->>'listingId' AS "listingId",id,revision,evidence->'wide'->>'actualTo' AS "finalSession" FROM "HistoricalProbe" WHERE "accountKey"=${accountKey} AND "asOf"<=${at} AND "createdAt"<=${at} AND evidence->>'status'='PASSED' AND evidence->'wide'->>'status'='COMPLETE' AND evidence->'wide'->>'provider'='ANGEL_ONE' AND evidence->'wide'->>'listingId'=ANY(${listingIds}::text[]) AND evidence->'wide'->>'mappingSnapshotId'=${mapping?.id??''} AND evidence->'wide'->>'actualTo' IS NOT NULL ORDER BY evidence->'wide'->>'listingId',evidence->'wide'->>'actualTo' DESC,"asOf" DESC,id LIMIT 500`:Promise.resolve([])
  ]);
- const calendarIds=[...new Set(allCoverage.flatMap(c=>c.evidence.calendarHash?[c.evidence.calendarHash]:[]))];
+ const calendarIds=[...new Set(allCoverage.flatMap(c=>(c.evidence.planningCalendarHash??c.evidence.calendarHash)?[c.evidence.planningCalendarHash??c.evidence.calendarHash!]:[]))];
  const allCalendars=await db.$queryRaw<{id:string;evidence:CalendarDay[]|null}[]>`SELECT id,evidence FROM "CalendarSnapshot" WHERE id=ANY(${calendarIds}::text[]) AND "createdAt"<=${at}`.then(rows=>authorizeCalendarRows(db,rows));
  for(const calendar of allCalendars){if(calendar.evidence){calendar.evidence.forEach(day=>Object.freeze(day));Object.freeze(calendar.evidence)}}
  const grouped=<T extends {listingId:string}>(rows:T[])=>{const map=new Map<string,T[]>();for(const row of rows){const group=map.get(row.listingId)??[];group.push(row);map.set(row.listingId,group)}return map};
@@ -55,7 +55,7 @@ export async function readDownloadPreview(db:Pick<PrismaClient,'$queryRaw'>,owne
   if(row.provider!=='ANGEL_ONE'){blocked.push({listingId:row.listingId,isin:member.isin,reason:'PROVIDER_UNSUPPORTED'});continue}
   if(universe.state!=='KNOWN'||permissions['DISPLAY']!.status!=='PASS'||permissions['DERIVE']!.status!=='PASS'){blocked.push({listingId:row.listingId,isin:member.isin,reason:'UNIVERSE_OR_SOURCE_UNVERIFIED'});continue}
   const coverage=coverageByListing.get(row.listingId)??[];
-  const calendarId=coverage[0]?.evidence.calendarHash??null;
+  const calendarId=coverage[0]?.evidence.planningCalendarHash??coverage[0]?.evidence.calendarHash??null;
   const calendars=calendarId&&calendarById.has(calendarId)?[calendarById.get(calendarId)!]:[];
   const stored=storedByListing.get(row.listingId)??[];
   const bars:DailyCandle[]=stored.map(b=>{const bar={listingId:row.listingId,provider:'ANGEL_ONE',session:b.session.toISOString().slice(0,10),open:b.open,high:b.high,low:b.low,close:b.close,volume:b.volume,finalizedAt:b.finalizedAt.toISOString(),receivedAt:b.receivedAt.toISOString(),zeroVolumeVerified:false};return {...bar,zeroVolumeVerified:b.volume==='0'&&candleHash({...bar,zeroVolumeVerified:true})===b.contentHash}});

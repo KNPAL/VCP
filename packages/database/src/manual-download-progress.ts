@@ -1,4 +1,4 @@
-import {authorizeCalendarRows} from './calendar-permissions.js';
+import {downloadCalendars} from './download-calendar-cache.js';
 import type {PrismaClient} from '@prisma/client';
 import {verifiedCalendar,missingWindows,type CalendarDay} from '@vcp/market-data';
 type Item={listingId:string;symbol:string;calendarId:string;excludedDates:{reason:string;to:string}[];rangesToFetch:{sessions:string[]}[]};
@@ -8,12 +8,15 @@ export async function manualDownloadProgress(db:Pick<PrismaClient,'$queryRaw'>,r
  const windows=await db.$queryRaw<{id:string;listingId:string;generation:number;state:string;attempts:number;fromSession:Date;toSession:Date;nextAttemptAt:Date;reason:string|null}[]>`SELECT w."id",c."listingId",c."generation",w."state",w."attempts",w."fromSession",w."toSession",w."nextAttemptAt",w."reason" FROM "HistoricalSyncWindow" w JOIN "ManualDownloadChild" c ON c."syncRunId"=w."runId" WHERE c."manualRunId"=${runId}::uuid ORDER BY c."generation",c."listingId",w."fromSession",w."id"`;
  const attempts=await db.$queryRaw<{createdAt:Date;listingId:string;expectedSessions:string[];evidence:{missing?:{session:string}[];calendarReasons?:string[];actualResponseCount?:number}}[]>`SELECT a."createdAt",c."listingId",w."expectedSessions",a."evidence" FROM "HistoricalSyncAttempt" a JOIN "HistoricalSyncWindow" w ON w."id"=a."windowId" JOIN "ManualDownloadChild" c ON c."syncRunId"=w."runId" WHERE c."manualRunId"=${runId}::uuid`;
  const successful=new Map<string,Set<string>>();for(const attempt of attempts){const report=attempt.evidence;if(!Array.isArray(report.missing)||!Array.isArray(report.calendarReasons)||report.calendarReasons.length)continue;const missing=new Set(report.missing.map(d=>d.session)),done=attempt.expectedSessions.filter(d=>!missing.has(d));if(done.length!==report.actualResponseCount)continue;const sessions=successful.get(attempt.listingId)??new Set<string>();for(const d of done)sessions.add(d);successful.set(attempt.listingId,sessions)}
+ const calendars=await downloadCalendars(db,items.map(i=>i.calendarId));
+ const allBars=await db.$queryRaw<{listingId:string;session:Date;finalizedAt:Date}[]>`SELECT "listingId",session,"finalizedAt" FROM "RawDailyCandle" WHERE "listingId"=ANY(${items.map(i=>i.listingId)}::uuid[]) AND provider='ANGEL_ONE' AND session>=${new Date(request.fromDate)} AND session<=${new Date(request.toDate)} AND "receivedAt"<=${new Date(checkedAt)} AND "finalizedAt"<=${new Date(checkedAt)}`;
+ const barsByListing=new Map<string,typeof allBars>();for(const bar of allBars){const rows=barsByListing.get(bar.listingId)??[];rows.push(bar);barsByListing.set(bar.listingId,rows)}
  const instruments=[];
  for(const item of items){
-  const calendar=await db.$queryRaw<{evidence:CalendarDay[]}[]>`SELECT "evidence" FROM "CalendarSnapshot" WHERE "id"=${item.calendarId}`.then(rows=>authorizeCalendarRows(db,rows));
+  const calendar=[{evidence:calendars.get(item.calendarId)}];
   const excluded=item.excludedDates.find(d=>d.reason==='BEFORE_LISTING'),from=excluded?new Date(Date.parse(excluded.to+'T00:00:00Z')+86400000).toISOString().slice(0,10):request.fromDate;
   const expected=verifiedCalendar(calendar[0]?.evidence??null,from,request.toDate,checkedAt);
-  const bars=await db.$queryRaw<{session:Date;finalizedAt:Date}[]>`SELECT "session","finalizedAt" FROM "RawDailyCandle" WHERE "listingId"=${item.listingId}::uuid AND "provider"='ANGEL_ONE' AND "session">=${new Date(from)} AND "session"<=${new Date(request.toDate)} AND "receivedAt"<=${new Date(checkedAt)} AND "finalizedAt"<=${new Date(checkedAt)}`;
+  const bars=barsByListing.get(item.listingId)??[];
   const stored=new Map(bars.map(b=>[b.session.toISOString().slice(0,10),b.finalizedAt.valueOf()])),sessions=expected.sessions.map(d=>d.date),valid=expected.sessions.filter(d=>stored.has(d.date)&&stored.get(d.date)!>=Date.parse(d.finalizedAt!)).map(d=>d.date),targets=new Set(item.rangesToFetch.flatMap(w=>w.sessions)),done=successful.get(item.listingId)??new Set<string>();
   instruments.push({listingId:item.listingId,symbol:item.symbol,coverageState:expected.state,expectedSessions:expected.state==='KNOWN'?sessions.length:null,storedCandles:expected.state==='KNOWN'?valid.length:null,latestStoredSession:valid.at(-1)??null,latestSuccessfulSession:[...done].sort().at(-1)??null,remainingCoverageRanges:expected.state==='KNOWN'?missingWindows(sessions,valid):null,remainingRequestRanges:expected.state==='KNOWN'?missingWindows(sessions,sessions.filter(d=>!targets.has(d)||done.has(d)||(request.mode==='MISSING_ONLY'&&valid.includes(d)))):null});
  }

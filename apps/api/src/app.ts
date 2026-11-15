@@ -8,6 +8,7 @@ import {readRuntimeBrokerStatus,type BrokerStatusDependencies} from './broker-st
 import {entryObservationReader} from './entry-observation.js';
 import {loginOwnerBroker,type BrokerLoginDependencies} from './broker-login.js';
 import 'reflect-metadata';
+import {importedHistoryChoices,importedHistorySeries,importedVcpResearchScan} from '@vcp/database';
 import {initializeCatalog} from './market-data-setup.js';
 import {isIP} from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -411,6 +412,14 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       return signalPlanDto(result);
     }
   }
+  @Controller('history/imported')
+  class ImportedHistoryController {
+    @Get('vcp-scan') async scan(@Req() request:AuthRequest){return importedVcpResearchScan(db,request.ownerId!)}
+    @Get() async choices(@Req() request:AuthRequest){return importedHistoryChoices(db,request.ownerId!)}
+    @Get('candles') async candles(@Req() request:AuthRequest,@Query('symbol') symbol:string,@Query('series') series:string,@Query('from') from:string,@Query('to') to:string){
+      try{return await importedHistorySeries(db,request.ownerId!,{symbol,series,from,to})}catch(error){if(error instanceof Error&&error.message==='INVALID_HISTORY_SELECTION')throw new BadRequestException('Choose a symbol, series and valid date range.');if(error instanceof Error&&error.message==='HISTORY_IMPORT_NOT_FOUND')throw new NotFoundException('No completed history import.');throw error}
+    }
+  }
   @Controller('data')
   class DataHealthController {
     @Post('initialize') async initialize(@Req() request:AuthRequest){return initializeCatalog(db,request.ownerId!,request.body)}
@@ -578,7 +587,7 @@ export async function createApp(options: {db?:PrismaClient;origin?:string;secure
       const scan=await getScan(db,id);if(!scan)throw new NotFoundException('Scan not found');return scan;
     }
   }
-  @Module({controllers:[ConfigurationController,AlertController,SignalController,DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await entryObservations.close();await db.$disconnect()}}}]})
+  @Module({controllers:[ImportedHistoryController,ConfigurationController,AlertController,SignalController,DownloadPreviewController,DataHealthController,BrokerHealthController,BacktestController,SmeResearchController,IpoResearchController,SystemController,AuthController,PatternController,CandidateController,ScanController,PositionController,PortfolioController,SourceController,WatchlistController,StreamController],providers:[{provide:'database-lifecycle',useValue:{onModuleDestroy:async()=>{await closeStream();await entryObservations.close();await db.$disconnect()}}}]})
   class AppModule {}
   const app = await NestFactory.create(AppModule, { logger: false });
   if(trustedProxies.length)app.getHttpAdapter().getInstance().set('trust proxy',trustedProxies);

@@ -6,6 +6,28 @@ The local setup runs the web application, API, worker, PostgreSQL and Redis. You
 
 ## Prerequisites
 
+### Use imported NSE history for analysis
+
+After starting VCP, sign in and select **Historical analysis** in the sidebar, or open `/research/history`. Choose a symbol and series (normally **EQ**) and a date range. The page reads VCP's own database; a broker session and the original source database are not needed. It shows stored OHLC/volume and SMA50/150/200, with warmup from earlier observations. Prices are **unadjusted**: corporate-action jumps are not investment returns, and this view does not publish VCP trading signals or certify backtests.
+
+The local import completed on 11 November 2026 contains **209,072 price rows for 106 symbols**, covering **2020-01-01 through 2026-11-09**. It is not a complete NIFTY 500 history. The 1,903 rows with invalid `NAN` series are retained for audit but excluded from charts. Other series remain separate. Current universe memberships are never treated as historical constituents.
+
+To preview or repeat an import from another compatible NSE historical-downloader database:
+
+```powershell
+node scripts/database-command.mjs migrate
+node scripts/import-nse-history.mjs "E:\Antigravity\nse-historical\nse-historical-downloader\data\nse_historical.db"
+node scripts/import-nse-history.mjs "E:\Antigravity\nse-historical\nse-historical-downloader\data\nse_historical.db" --apply
+```
+
+The importer opens SQLite read-only and copies all seven source tables into an immutable, owner-scoped import. Original job records are retained as audit data; they do not become executable VCP jobs. It indexes prices separately and publishes a batch only after counts match. Repeating an identical completed snapshot reuses it. Interrupted imports can be resumed by rerunning the command. The report is `.runtime/nse-history-import-report.json`. Existing broker credentials, positions, candles and download jobs are preserved. Original source FLOAT prices are normalized to six decimals; the original row values are also retained.
+
+### Activated exchange calendar
+
+The local VCP database has an activated **2020-01-01–2026-12-31** calendar imported from Swing's reviewed calendar, preserving VCP's existing session definitions on overlapping dates. New download plans use it; existing jobs keep their pinned evidence. Calendar availability does not imply future candles exist. Each broker download request still supports a maximum two-year window.
+
+To activate a different validated, already-stored calendar, run `node scripts/activate-calendar.mjs <calendar-snapshot-id>`. The command checks calendar completeness and source access. The planning selection survives candle ingestion and market-data refreshes. Download progress uses shared calendar validation; preparation errors are recorded as FAILED with a reason rather than silently remaining QUEUED.
+
 NSE cash-equity holiday facts for **2015–2026** are included as a reproducible dataset. See [NSE holiday import](docs/nse-holidays.md) for importing the 231 dates into VCP and inspecting the database. This includes weekend observances and distinguishes Muhurat sessions; the Data setup screen builds a supported daily session calendar for 1 January 2025 through 10 November 2026.
 
 - Node.js **24** and pnpm **11.25.0**, matching `package.json`.
@@ -323,6 +345,30 @@ Direct candle imports, including quarantined data, require current DAILY_CANDLES
 Saving quote-bearing portfolio risk snapshots and entry plans requires LIVE_QUOTES STORE and DERIVE rights, separately from candle and display permissions. A plan submission or retry can return HTTP 403 after a permission change. No-quote snapshots remain available, and permission failures do not create or modify actual fills. See the source-registry guide for the remaining rollout limits.
 
 ## Operations dashboard
+
+### Imported EQ research scan
+
+After starting the local application and signing in, open **Imported EQ scan** at `http://localhost:3000/research/vcp`. **Historical analysis** at `/research/history` provides the original imported price history. Refresh results reloads the latest saved scan; it does not download data or start a new scan.
+
+The initial research snapshot targets **11 November 2026**, using 300 trading sessions from 26 August 2025. Preparation identified 98 eligible stocks from the 106 imported EQ symbols. ADANIENT, HINDUNILVR and VEDL have unsupported capital changes; GMRINFRA, ZOMATO, TATAMOTORS and ICICIPRULI have missing sessions; KOTAKBANK lacks a resolved instrument mapping. The screen lists exclusions explicitly.
+
+Official inputs are [NSE corporate actions](https://www.nseindia.com/companies-listing/corporate-filings-actions), [Nifty Indices historical price-index data](https://www.niftyindices.com/reports/historical-data), and NSE daily bhavcopies from `https://archives.nseindia.com/content/cm/`. These public downloads do not use broker passwords, PINs or OTPs. Corporate-action and benchmark responses are preserved with SHA-256 hashes in `.runtime/official-nse`. The local use declaration is not an exchange licensing certificate or approval for redistribution.
+
+This is a retrospective **imported-subset research scan**, not full-NIFTY-500 readiness or a point-in-time backtest. Relative-strength percentiles use the imported subset. Verified split/bonus adjustments are applied; unresolved rights issues and demergers are excluded. It does not create live BUY/SELL alerts or orders. Full-universe membership, benchmark review and the normal live-readiness gates remain separate.
+
+To reproduce the initial snapshot after importing history, building the workspace and applying migrations, run these commands from the repository root (Python with `requests` is required):
+
+```powershell
+python scripts/fetch-nse-scan-inputs.py 2026-11-11
+python scripts/fetch-nse-bhavcopies.py
+node scripts/audit-imported-eq.mjs
+node scripts/prepare-imported-eq-scan.mjs
+node scripts/verify-nse-action-bases.mjs
+node scripts/scan-imported-eq.mjs
+```
+
+The bhavcopy script retrieves the target session, missing special sessions and three pre-bonus sessions. Verification compares official pre-action closes and volumes with imported history before saving adjustment evidence. Preparation currently targets this initial dated snapshot; it is not an automatic daily downloader. A scan is published only after all eligible histories and adjustments pass verification. The scan command can take several minutes; progress is printed for each stock. Keep `.runtime/official-nse` as the local source-evidence archive.
+
 
 Open **Operations** after signing in to inspect G01–G10, hourly broker errors, historical queue delays, the last finalized session, scan coverage, held-position feed age and outstanding SELL deliveries. The page refreshes its metrics every 30 seconds. A failed or unknown gate blocks the readiness result.
 
